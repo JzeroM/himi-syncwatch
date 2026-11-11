@@ -64,6 +64,9 @@ public:
     /// 677：回传并排布局（`splitLayout` 帧）。
     void sendSplitLayout(const QJsonObject& layout);
 
+    /// 679：回传**用户**拖动/缩放后的窗口矩形（`windowMoved` 帧）。
+    void sendWindowMoved(const QJsonObject& rect);
+
 signals:
     /// 收到完整的一帧状态 JSON。
     void stateReceived(const QJsonObject& state);

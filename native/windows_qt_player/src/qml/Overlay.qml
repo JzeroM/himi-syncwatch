@@ -217,10 +217,6 @@ ApplicationWindow {
         decodeOpen: panel.visible && panel.title === "解码方式"
         adjustOpen: adjustPanel.visible
         videoFitMode: root.fitModes[root.fitIndex]
-        onBackClicked: {
-            pipeServer.sendCommand({"type": "requestExit"})
-            Qt.quit()
-        }
         onDecodeClicked: root.openDecodePanel()
         onSubtitleStyleClicked: root.openAdjustPanel()
         onVideoFitClicked: root.cycleVideoFitLocal()
@@ -299,27 +295,6 @@ ApplicationWindow {
         anchors.bottom: bottomBar.top
         anchors.leftMargin: Theme.barPadH
         anchors.bottomMargin: 8
-    }
-
-    // ── 678：房间资源面板（Qt 播放窗内的弹出侧栏）──
-    //
-    // 对齐 Flutter 播放器房间模式的 320dp 资源面板：房间头部（资源 /
-    // 加资源 / 在线人数 / 角色徽章）+ 季-集折叠列表 + 播报板。
-    // 显隐由 `playerState.resourcePanelOpen` 驱动（Dart 侧
-    // `toggleResourcePanel` 命令切换），非房间模式恒不显示。
-    RoomPanel {
-        id: roomPanel
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.rightMargin: Theme.panelRight
-        anchors.topMargin: Theme.topBarHeight + 8
-        onEpisodeClicked: (index) => {
-            pipeServer.sendCommand({"type": "selectEpisode", "index": index})
-            root.patchState("currentEpisodeIndex", index)
-        }
-        onSearchClicked: {
-            pipeServer.sendCommand({"type": "openResourceSearch"})
-        }
     }
 
     // ── 673：选集封面预取（对齐安卓优先级预载的简化版）──

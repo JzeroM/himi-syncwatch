@@ -381,19 +381,6 @@ Rectangle {
                     onClicked: root.episodeClicked()
                 }
 
-                // 678：房间资源面板开关（**仅房间模式**，对齐安卓
-                // `panelToggleButton.visibility = isRoom` / 鸿蒙同款）。
-                ControlButton {
-                    visible: playerState.isRoom
-                    icon: playerState.resourcePanelOpen
-                          ? Icons.chevronRight : Icons.expandMore
-                    iconSize: Theme.controlIconSize
-                    tooltip: playerState.resourcePanelOpen
-                             ? "收起资源面板" : "展开资源面板"
-                    onClicked: pipeServer.sendCommand(
-                        {"type": "toggleResourcePanel"})
-                }
-
                 // 倍速（662 瑕疵修复：EButton 的 label 强制 bold，"1.0x"
                 // 渲染得发糊发斜——改「图标 + 独立 Text(12px)」，与
                 // Flutter `Icon(speed,24) + Text(12px white70)` 同构）

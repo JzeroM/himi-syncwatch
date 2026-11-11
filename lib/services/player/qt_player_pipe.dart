@@ -60,6 +60,15 @@ class QtPlayerPipe {
       StreamController<Map<String, Object?>>.broadcast();
   Stream<Map<String, Object?>> get layouts => _layoutController.stream;
 
+  /// 679：Qt → Dart 的**用户拖动/缩放**流（`windowMoved` 帧）。
+  ///
+  /// 【与 layouts 的区别】`layouts` 是「进房间时 Qt 算好的初始摆位」；
+  /// 本流是「用户拖了/缩了 Qt 窗」→ Dart 要把 Flutter 面板窗跟着挪。
+  final StreamController<Map<String, Object?>> _windowMovedController =
+      StreamController<Map<String, Object?>>.broadcast();
+  Stream<Map<String, Object?>> get windowMoved =>
+      _windowMovedController.stream;
+
   /// 断开回调（Qt 进程退出/崩溃）。
   void Function()? onDisconnected;
 
@@ -182,6 +191,12 @@ class QtPlayerPipe {
             if (data is Map) {
               _layoutController.add(Map<String, Object?>.from(data));
             }
+          } else if (type == 'windowMoved') {
+            // 679：用户拖动/缩放 Qt 窗 → Flutter 面板窗跟随
+            final data = obj['data'];
+            if (data is Map) {
+              _windowMovedController.add(Map<String, Object?>.from(data));
+            }
           }
         } catch (e) {
           LogService().log('QtPlayer', '管道 JSON 解析失败: $e');
@@ -205,6 +220,7 @@ class QtPlayerPipe {
     unawaited(_playbackController.close());
     unawaited(_windowStateController.close());
     unawaited(_layoutController.close());
+    unawaited(_windowMovedController.close());
   }
 
   /// 推送播放器状态给 Qt。
@@ -270,6 +286,9 @@ class QtPlayerPipe {
     } catch (_) {}
     try {
       await _layoutController.close();
+    } catch (_) {}
+    try {
+      await _windowMovedController.close();
     } catch (_) {}
   }
 }

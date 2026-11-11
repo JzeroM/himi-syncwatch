@@ -98,6 +98,37 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     if (host == nullptr) return false;
     host_ = host;
     host_hwnd_ = reinterpret_cast<HWND>(host->winId());
+
+    // 679：用户拖动/缩放 → 回传（程序性移动由 applyingProgrammaticGeometry_
+    // 屏蔽，不会走到这里）。用几何变化的**去重**再压一层：同一矩形不重复发。
+    connect(host, &QWindow::xChanged, this, [this]() {
+        if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        const QRect g = host_->geometry();
+        if (g == lastUserRect_) return;
+        lastUserRect_ = g;
+        emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
+    });
+    connect(host, &QWindow::yChanged, this, [this]() {
+        if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        const QRect g = host_->geometry();
+        if (g == lastUserRect_) return;
+        lastUserRect_ = g;
+        emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
+    });
+    connect(host, &QWindow::widthChanged, this, [this]() {
+        if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        const QRect g = host_->geometry();
+        if (g == lastUserRect_) return;
+        lastUserRect_ = g;
+        emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
+    });
+    connect(host, &QWindow::heightChanged, this, [this]() {
+        if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        const QRect g = host_->geometry();
+        if (g == lastUserRect_) return;
+        lastUserRect_ = g;
+        emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
+    });
     if (host_hwnd_ == nullptr) return false;
 
     hdrRequested_ = hdr;
@@ -456,7 +487,10 @@ void MpvWindow::setHostFullscreen(bool fullscreen) {
         host_->showNormal();
         // 显式回到并排矩形（覆盖 showNormal 的恢复值）。
         if (hasSplitRect_ && !splitRect_.isEmpty()) {
+            // 679：程序性移动——屏蔽 geometryChanged 回传（防双向死循环）
+            applyingProgrammaticGeometry_ = true;
             host_->setGeometry(splitRect_);
+            applyingProgrammaticGeometry_ = false;
             // 677：同步跟随缓存——否则下一拍 followParentOnce 会认为
             // 「矩形变了」再设一次（视觉无差异，但会多一次重绘/闪烁）。
             lastFollowRect_ = splitRect_;
@@ -487,7 +521,10 @@ void MpvWindow::setWindowRect(int x, int y, int w, int h) {
     splitRect_ = next;
     hasSplitRect_ = true;
     lastFollowRect_ = QRect();  // 让跟随逻辑重新应用一次
+    // 679：程序性移动——不回传 windowMoved
+    applyingProgrammaticGeometry_ = true;
     host_->setGeometry(next);
+    applyingProgrammaticGeometry_ = false;
 }
 
 void MpvWindow::setFollowParent(bool enabled) {
@@ -556,6 +593,26 @@ void MpvWindow::setWindowVisible(bool visible) {
         host_->requestActivate();
         raiseToFront();
     }
+}
+
+// ── 679：无边框窗口的拖动 / 拉伸 ─────────────────────────────
+
+void MpvWindow::startSystemMove() {
+    if (host_ == nullptr) return;
+    // Qt 6.5+ 的 QWindow::startSystemMove：交给系统做原生拖动
+    //（带 DWM 吸附、半屏贴靠），比自算 mouseMove 稳。
+    host_->startSystemMove();
+}
+
+void MpvWindow::startSystemResize(int edges) {
+    if (host_ == nullptr) return;
+    Qt::Edges e;
+    if (edges & 1) e |= Qt::LeftEdge;
+    if (edges & 2) e |= Qt::TopEdge;
+    if (edges & 4) e |= Qt::RightEdge;
+    if (edges & 8) e |= Qt::BottomEdge;
+    if (e == Qt::Edges()) return;
+    host_->startSystemResize(e);
 }
 
 /// 677：定位 Flutter 主窗。
@@ -674,7 +731,10 @@ void MpvWindow::followParentOnce() {
     lastFollowRect_ = next;
     splitRect_ = next;
     hasSplitRect_ = true;
+    // 679：跟随是程序性移动——不回传 windowMoved（否则死循环）
+    applyingProgrammaticGeometry_ = true;
     host_->setGeometry(next);
+    applyingProgrammaticGeometry_ = false;
 }
 
 bool MpvWindow::command(const QStringList& args) {

@@ -619,6 +619,16 @@ int main(int argc, char* argv[]) {
                              mpv.setWindowVisible(
                                  cmd.value(QLatin1String("visible"))
                                      .toBool(true));
+                         } else if (type == QLatin1String("startSystemMove")) {
+                             // 679：无边框窗口拖动（顶栏拖拽区）
+                             mpv.startSystemMove();
+                         } else if (type ==
+                                    QLatin1String("startSystemResize")) {
+                             // 679：无边框窗口边缘拉伸（1=左 2=上 4=右 8=下）
+                             mpv.startSystemResize(
+                                 static_cast<int>(
+                                     cmd.value(QLatin1String("edges"))
+                                         .toInt(0)));
                          } else if (type ==
                                     QLatin1String("setHostFullscreen")) {
                              // 677：全屏态可由 Dart 显式驱动（房间并排
@@ -708,6 +718,33 @@ int main(int argc, char* argv[]) {
     QObject::connect(syncTimer, &QTimer::timeout, &app, [&mpv]() {
         mpv.followParentOncePublic();
     });
+
+    // ── 679：用户拖动/缩放 Qt 窗 → 回传新矩形（`windowMoved` 帧）──
+    //
+    // 【双向跟随】Flutter 面板窗要跟着 Qt 窗走（用户要求「拖任意一个
+    // 另一个都跟随」）。程序性 setGeometry（跟随时）已在 MpvWindow 里
+    // 用 applyingProgrammaticGeometry_ 屏蔽 → 不发 userWindowMoved →
+    // 无死循环。
+    //
+    // 节流 80ms：拖动中每像素发一帧太密（Dart 侧要 setBounds，代价高）。
+    auto* movedTimer = new QTimer(&app);
+    movedTimer->setSingleShot(true);
+    movedTimer->setInterval(80);
+    QObject::connect(movedTimer, &QTimer::timeout, &app, [&mpv, &pipe, host]() {
+        if (host == nullptr) return;
+        const QRect g = host->geometry();
+        QJsonObject data;
+        data.insert(QStringLiteral("x"), g.x());
+        data.insert(QStringLiteral("y"), g.y());
+        data.insert(QStringLiteral("w"), g.width());
+        data.insert(QStringLiteral("h"), g.height());
+        pipe.sendWindowMoved(data);
+        qInfo().noquote() << "[window] 用户移动/缩放 →" << g;
+    });
+    QObject::connect(&mpv, &MpvWindow::userWindowMoved, &app,
+                     [movedTimer](int, int, int, int) {
+                         if (!movedTimer->isActive()) movedTimer->start();
+                     });
 
     // ── 677：并排布局回传（Qt 算 → Dart 应用面板侧）──
     QObject::connect(

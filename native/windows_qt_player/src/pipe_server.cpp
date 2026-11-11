@@ -157,6 +157,14 @@ void PipeServer::sendSplitLayout(const QJsonObject& layout) {
     sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
 }
 
+void PipeServer::sendWindowMoved(const QJsonObject& rect) {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("windowMoved"));
+    frame.insert(QStringLiteral("data"), rect);
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
 void PipeServer::sendRaw(const QByteArray& payload) {
     if (client_ == nullptr) return;
     client_->write(payload);

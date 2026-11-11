@@ -691,76 +691,254 @@ void main() {
       expect(mainCpp, contains('setWindowVisible'));
     });
 
-    test('J4 Qt PlayerState 补房间面板字段', () {
-      for (final f in [
-        'Q_PROPERTY(QString roomCode',
-        'Q_PROPERTY(QString audienceName',
-        'Q_PROPERTY(QVariantList resourceGroups',
-        'Q_PROPERTY(QVariantList broadcasts',
-        'Q_PROPERTY(bool resourcePanelOpen',
-      ]) {
-        expect(stateH, contains(f), reason: 'PlayerState 缺 $f');
-      }
-      // 解析
-      expect(stateCpp, contains('setResourceGroups'));
-      expect(stateCpp, contains('setBroadcasts'));
-      expect(stateCpp, contains('readBool(json, "resourcePanelOpen"'));
-    });
-
-    test('J5 Qt 房间面板 QML 存在并接入 Overlay', () {
-      final roomPanel = read('$dir/src/qml/RoomPanel.qml');
-      expect(roomPanel, contains('playerState.resourceGroups'));
-      expect(roomPanel, contains('playerState.broadcasts'));
-      expect(roomPanel, contains('playerState.onlineUserCount'));
-      expect(roomPanel, contains('playerState.isHost'));
-      // 观众只读
-      expect(roomPanel, contains('if (!playerState.canControl) return'));
-      // 命令参数与 Dart NativePlayerCommand 一致
-      expect(roomPanel, contains('"type": "toggleResourceGroup", "index"'));
-      expect(roomPanel, contains('"groupIndex"'));
-      expect(roomPanel, contains('"seasonIndex"'));
-      // 加资源命令在 Overlay 装配处（RoomPanel 只发信号）
-      expect(overlayQml, contains('"type": "openResourceSearch"'));
-      // Overlay 装配
-      expect(overlayQml, contains('RoomPanel {'));
-      // CMake 注册
-      expect(read('$dir/CMakeLists.txt'), contains('RoomPanel'));
-    });
-
-    test('J6 底栏房间面板开关（仅房间模式）', () {
-      expect(bottomBar, contains('playerState.resourcePanelOpen'));
-      expect(bottomBar, contains('"type": "toggleResourcePanel"'));
-      // 该按钮必须由 isRoom 门控
-      final idx = bottomBar.indexOf('"type": "toggleResourcePanel"');
-      expect(idx, greaterThan(0));
-      final before = bottomBar.substring(0, idx);
-      final lastVisible = before.lastIndexOf('visible: playerState.isRoom');
-      expect(lastVisible, greaterThan(0));
-    });
-
-    test('J7 面板显隐由 Dart 的 resourcePanelOpen 驱动', () {
-      final roomPanel = read('$dir/src/qml/RoomPanel.qml');
-      expect(roomPanel, contains('property bool open: playerState.isRoom'));
-      expect(roomPanel, contains('playerState.resourcePanelOpen'));
-      expect(roomPanel, contains('visible: open'));
-    });
-
-    test('J8 RoomPanel 必须同时进 QML_FILES 与 alias 循环', () {
-      // 【CI 真机回归 43044933527】只加 alias 循环、漏加 QML_FILES →
-      // 文件不进 qrc → `RoomPanel is not a type`（冒烟退出码 -5）。
+    test('J4 679：Qt 资源面板已彻底移除（用户要求剔除）', () {
+      // 真机回归：上一版按「参考 Flutter 房间模式」加了 Qt 窗内 320 宽
+      // 资源侧栏，与 Flutter 面板窗重复 → 用户要求剔除。
+      expect(File('$dir/src/qml/RoomPanel.qml').existsSync(), isFalse,
+          reason: 'RoomPanel.qml 应已删除');
+      expect(overlayQml, isNot(contains('RoomPanel {')));
+      expect(bottomBar, isNot(contains('toggleResourcePanel')));
       final cmake = read('$dir/CMakeLists.txt');
-      final qmlFilesBlock = cmake.substring(
-        cmake.indexOf('QML_FILES'),
-        cmake.indexOf('# ── EvolveUI 资产'),
-      );
-      expect(qmlFilesBlock, contains('src/qml/RoomPanel.qml'),
-          reason: 'RoomPanel.qml 未进 QML_FILES → 不会被打进 qrc');
-      // alias 循环里也要有（否则 qrc 路径带 src/qml 前缀）
-      final aliasBlock = cmake.substring(
-        cmake.indexOf('foreach(_qml Main Overlay'),
-        cmake.indexOf('# EvolveUI vendor'),
-      );
-      expect(aliasBlock, contains('RoomPanel'));
+      expect(cmake, isNot(contains('RoomPanel')));
+      // PlayerState 不再解析面板字段（去注释后判定——注释里提到字段名
+      // 是「说明为什么不需要」，不算解析）
+      String codeOnly(String src) => src
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('///');
+          })
+          .join('\n');
+      expect(codeOnly(stateH), isNot(contains('resourceGroups')));
+      expect(codeOnly(stateH), isNot(contains('resourcePanelOpen')));
+      expect(codeOnly(stateCpp), isNot(contains('setResourceGroups')));
+    });
+
+    test('J5 679：Flutter 资源面板保留（房间资源只在这一侧操作）', () {
+      // Qt 侧删掉，但 Flutter 面板窗的资源列表必须还在
+      final panel = _extract(playerScreen, 'Widget _buildResourcePanel()');
+      expect(panel, contains('_resourceGroups'));
+      expect(panel, contains('_buildGroupWidget'));
+      expect(panel, contains('_buildBroadcastBoardInPanel'));
+      // 分享入口保留（仅房主）
+      expect(panel, contains('Icons.share'));
+      expect(panel, contains('_showShareRoomDialog'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // K. 679：无边框 / 双向跟随 / 关窗退出确认
+  // ═══════════════════════════════════════════════════════════════
+
+  group('K 无边框与双向跟随', () {
+    test('K1 Qt 窗无边框（去掉最小化/最大化/关闭三钮）', () {
+      expect(mainQml, contains('flags: Qt.FramelessWindowHint'));
+      expect(mainQml, isNot(contains('flags: Qt.Window\n')));
+    });
+
+    test('K2 左上角返回按钮已移除', () {
+      expect(topBar, isNot(contains('Icons.arrowBack')));
+      expect(topBar, isNot(contains('backClicked')));
+      expect(overlayQml, isNot(contains('onBackClicked')));
+    });
+
+    test('K3 顶栏拖拽区走 startSystemMove', () {
+      expect(topBar, contains('startSystemMove'));
+      expect(topBar, contains('MouseArea'));
+      expect(mpvH, contains('Q_INVOKABLE void startSystemMove()'));
+      expect(mpvCpp, contains('host_->startSystemMove()'));
+    });
+
+    test('K4 边缘拉伸走 startSystemResize（位掩码 1/2/4/8）', () {
+      expect(mpvH, contains('Q_INVOKABLE void startSystemResize(int edges)'));
+      expect(mpvCpp, contains('startSystemResize'));
+      expect(mpvCpp, contains('Qt::LeftEdge'));
+      expect(mpvCpp, contains('Qt::BottomEdge'));
+      expect(mainCpp, contains('startSystemResize'));
+    });
+
+    test('K5 windowMoved 帧协议（Qt → Dart）', () {
+      expect(pipeH, contains('sendWindowMoved'));
+      expect(pipeCpp, contains('"windowMoved"'));
+      expect(pipeDart, contains("type == 'windowMoved'"));
+      expect(pipeDart, contains('get windowMoved'));
+      expect(adapterDart, contains('onWindowMoved'));
+      expect(playerScreen, contains('_followQtWindow'));
+    });
+
+    test('K6 防回环：程序性 setGeometry 不回传', () {
+      expect(mpvH, contains('applyingProgrammaticGeometry_'));
+      // 三处程序性移动都要置位
+      final src = mpvCpp;
+      final guards = RegExp(r'applyingProgrammaticGeometry_ = true')
+          .allMatches(src)
+          .length;
+      expect(guards, greaterThanOrEqualTo(3),
+          reason: '跟随/摆位/退全屏三处都必须屏蔽回传');
+      // 几何变化回调里必须检查该标志
+      expect(src, contains('if (applyingProgrammaticGeometry_'));
+    });
+
+    test('K7 用户移动回传有去重（拖动中不逐像素发帧）', () {
+      expect(mpvCpp, contains('lastUserRect_'));
+      expect(mainCpp, contains('setInterval(80)'));
+    });
+  });
+
+  group('K8 关窗退出确认', () {
+    test('K8 房间模式拦截主窗关闭', () {
+      expect(playerScreen, contains('_setupRoomCloseInterception'));
+      expect(playerScreen, contains('setPreventClose(true)'));
+      expect(read('lib/services/room/room_exit_request.dart'),
+          contains('class RoomExitRequest'));
+      expect(read('lib/services/room/room_exit_request.dart'),
+          contains('ValueNotifier<int> seq'));
+    });
+
+    test('K9 观众也弹确认框（旧实现观众直接退房）', () {
+      final body = _extract(playerScreen, 'Future<bool> _confirmLeaveRoom()');
+      expect(body, isNot(contains('if (!_isHost || widget.roomCode == null)')));
+      expect(body, contains("isHost ? '解散房间' : '离开房间'"));
+    });
+
+    test('K10 解散广播只发一次（旧实现连发两次）', () {
+      final raw = _extract(playerScreen, 'Future<bool> _confirmLeaveRoom()');
+      // 去注释后统计——注释里提到旧实现「连发两次」不算代码
+      final body = raw
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('///');
+          })
+          .join('\n');
+      final count = RegExp(r'actionRoomDestroyed').allMatches(body).length;
+      expect(count, 1, reason: 'actionRoomDestroyed 只能出现一次');
+      // 观众走 leave
+      expect(body, contains("action: 'leave'"));
+    });
+
+    test('K11 取消则不关 Qt 窗（只把播放窗拉回最前）', () {
+      final body = _extract(playerScreen, 'Future<void> _handleRoomExitRequest');
+      expect(body, contains('if (!shouldExit)'));
+      expect(body, contains('focus()'));
+      expect(body, contains('closeQtPlayer'));
+    });
+
+    test('K12 拦截释放（防应用永远关不掉）', () {
+      expect(playerScreen, contains('_releasePreventClose'));
+      expect(playerScreen, contains('setPreventClose(false)'));
+      // dispose 里必须兜底释放 + 摘监听
+      final dispose = _extract(playerScreen, 'void dispose()');
+      expect(dispose, contains('_releasePreventClose'));
+      expect(dispose, contains('removeListener(_onRoomExitRequested)'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // L. 679：房间面板液态玻璃化
+  // ═══════════════════════════════════════════════════════════════
+
+  group('L 房间面板玻璃化', () {
+    test('L1 底层是近黑渐变而非实色（玻璃才有折射层次）', () {
+      final body = _extract(playerScreen, 'Widget _buildRoomPanelOnly()');
+      expect(body, isNot(contains('backgroundColor: const Color(0xFF12121C)')));
+      expect(body, contains('Colors.transparent'));
+      expect(body, contains('_RoomPanelBackdrop'));
+      expect(body, contains('_GlowOrb'));
+      // 渐变底色
+      expect(playerScreen, contains('class _RoomPanelBackdrop'));
+      expect(playerScreen, contains('Color(0xFF0B0B10)'));
+    });
+
+    test('L2 头部/列表/分组/行/播报板都是玻璃卡', () {
+      final panel = _extract(playerScreen, 'Widget _buildResourcePanel()');
+      expect(panel, contains('GlassContainer'));
+      expect(panel, contains('popup: true'));
+      final group = _extract(playerScreen, 'Widget _buildGroupWidget');
+      expect(group, contains('GlassContainer'));
+      final season = _extract(playerScreen, 'Widget _buildSeasonWidget');
+      expect(season, contains('GlassContainer'));
+      final item = _extract(playerScreen, 'Widget _buildEpisodeListItem');
+      expect(item, contains('GlassContainer'));
+      final bcast = _extract(playerScreen, 'Widget _buildBroadcastBoardInPanel');
+      expect(bcast, contains('GlassContainer'));
+    });
+
+    test('L3 用播放器弹层深色磨砂变体（popup: true = 65%）', () {
+      // popup:true → GlassConfig.playerPanelBase（0xA6 = 65%）
+      expect(playerScreen, contains('popup: true'));
+      expect(read('lib/widgets/glass/glass_config.dart'),
+          contains('playerPanelBase = Color(0xA61A1D23)'));
+    });
+
+    test('L4 光斑透明度 ≤8%（磨砂感不要太重）', () {
+      final body = _extract(playerScreen, 'Widget _buildRoomPanelOnly()');
+      // 0x14 = 8%, 0x0F = 6%
+      expect(body, contains('Color(0x146366F1)'));
+      expect(body, contains('Color(0x0F8B5CF6)'));
+      expect(playerScreen, contains('class _GlowOrb'));
+    });
+
+    test('L5 不改 GlassConfig 既有常量（保护其他页面）', () {
+      // panelTint 被 test/native_player_layout_test.dart 锁死
+      expect(read('lib/widgets/glass/glass_config.dart'),
+          contains('panelTint = Color(0x1F1A1D23)'));
+    });
+
+    test('L6 选中集加主色描边', () {
+      final item = _extract(playerScreen, 'Widget _buildEpisodeListItem');
+      expect(item, contains('Border.all'));
+      expect(item, contains('Color(0xFF6366F1)'));
+      expect(item, contains('width: 2'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // M. 679：资源分组展开动画
+  // ═══════════════════════════════════════════════════════════════
+
+  group('M 展开动画', () {
+    test('M1 分组用 AnimatedSize + AnimatedOpacity + AnimatedRotation', () {
+      final body = _extract(playerScreen, 'Widget _buildGroupWidget');
+      expect(body, contains('AnimatedSize'));
+      expect(body, contains('AnimatedOpacity'));
+      expect(body, contains('AnimatedRotation'));
+      expect(body, contains('ClipRect'));
+    });
+
+    test('M2 箭头旋转 90°（turns 0 → 0.25，不换图标）', () {
+      final body = _extract(playerScreen, 'Widget _buildGroupWidget');
+      expect(body, contains('turns: group.collapsed ? 0.0 : 0.25'));
+      // 固定 chevron_right，不再按状态换 expand_more
+      expect(body, contains('Icons.chevron_right'));
+      expect(body, isNot(contains('Icons.expand_more')));
+    });
+
+    test('M3 季分组同款动画', () {
+      final body = _extract(playerScreen, 'Widget _buildSeasonWidget');
+      expect(body, contains('AnimatedSize'));
+      expect(body, contains('AnimatedOpacity'));
+      expect(body, contains('AnimatedRotation'));
+      expect(body, contains('turns: season.collapsed ? 0.0 : 0.25'));
+    });
+
+    test('M4 收起态宽度占满（防宽度抖动）', () {
+      for (final sig in [
+        'Widget _buildGroupWidget',
+        'Widget _buildSeasonWidget',
+      ]) {
+        final body = _extract(playerScreen, sig);
+        expect(body, contains('SizedBox(width: double.infinity)'),
+            reason: '$sig 收起态必须占满宽度');
+      }
+    });
+
+    test('M5 时长/曲线常量复用（不两处硬编码）', () {
+      expect(playerScreen, contains('_kExpandDuration'));
+      expect(playerScreen, contains('_kExpandCurve'));
+      expect(playerScreen,
+          contains('Duration(milliseconds: 220)'));
+      expect(playerScreen, contains('Curves.easeOutCubic'));
     });
   });
 }

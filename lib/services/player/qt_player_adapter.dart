@@ -122,6 +122,7 @@ class QtPlayerAdapter implements PlayerAdapter {
     _pipe.playback.listen(_applyPlayback);
     _pipe.windowStates.listen(_applyWindowState);
     _pipe.layouts.listen((data) => onSplitLayout?.call(data));
+    _pipe.windowMoved.listen((data) => onWindowMoved?.call(data));
     _pipe.onDisconnected = () {
       if (_disposed) return;
       LogService().log('QtPlayer', 'Qt 进程已退出');
@@ -233,6 +234,23 @@ class QtPlayerAdapter implements PlayerAdapter {
 
   /// 677：并排布局回调（Qt → Dart，`splitLayout` 帧）。
   void Function(Map<String, Object?> layout)? onSplitLayout;
+
+  /// 679：用户拖动/缩放 Qt 窗回调（`windowMoved` 帧）。
+  ///
+  /// Dart 侧据此把 Flutter 面板窗跟着挪（双向跟随）。
+  void Function(Map<String, Object?> rect)? onWindowMoved;
+
+  /// 679：请求 Qt 开始系统拖动（无边框窗口的顶栏拖拽区）。
+  void startSystemMove() {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'startSystemMove'});
+  }
+
+  /// 679：请求 Qt 开始边缘拉伸（1=左 2=上 4=右 8=下）。
+  void startSystemResize(int edges) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'startSystemResize', 'edges': edges});
+  }
 
   /// 处理 Qt 发来的命令（`NativePlayerCommand` 的 JSON）。
   ///

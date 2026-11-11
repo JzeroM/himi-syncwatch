@@ -6,7 +6,6 @@
 #include <QSet>
 #include <QObject>
 #include <QString>
-#include <QStringList>
 #include <QVariantList>
 
 /// 656：Flutter 推送的播放器状态（只取 UI 需要的字段）。
@@ -128,20 +127,6 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool canControl READ canControl NOTIFY changed)
     Q_PROPERTY(bool segmentEnabled READ segmentEnabled NOTIFY changed)
 
-    // ── 678：房间资源面板（对齐 Flutter 播放器房间模式 / 安卓 / 鸿蒙）──
-    //
-    // 【为什么 Qt 也要有】用户明确「房间模式用两个面板：Qt 面板做播放器」，
-    // 且 Flutter 面板窗在右侧只做资源列表——Qt 窗口内仍需一个可弹出的
-    // 资源面板（对齐 Flutter 播放器的 `_showPanel` 320dp 侧栏）：
-    // 房主可在这里换集/加资源，观众只读。
-    Q_PROPERTY(QString roomCode READ roomCode NOTIFY changed)
-    Q_PROPERTY(QString audienceName READ audienceName NOTIFY changed)
-    Q_PROPERTY(QVariantList resourceGroups READ resourceGroupsVariant NOTIFY
-                   resourceGroupsChanged)
-    Q_PROPERTY(QVariantList broadcasts READ broadcastsVariant NOTIFY
-                   broadcastsChanged)
-    Q_PROPERTY(bool resourcePanelOpen READ resourcePanelOpen NOTIFY changed)
-
 public:
     explicit PlayerState(QObject* parent = nullptr);
 
@@ -236,42 +221,6 @@ public:
     bool canControl() const { return canControl_; }
     bool segmentEnabled() const { return segmentEnabled_; }
 
-    // ── 678：房间资源面板 ──
-    QString roomCode() const { return roomCode_; }
-    QString audienceName() const { return audienceName_; }
-    bool resourcePanelOpen() const { return resourcePanelOpen_; }
-
-    /// 资源分组（电影单条 / 剧集多季）——QML ListView model。
-    struct ResourceItem {
-        int index = 0;
-        QString name;
-        int season = 0;
-        int number = 0;
-        QString poster;
-        bool isPlaying = false;
-    };
-    struct ResourceSeason {
-        int seasonNumber = 0;
-        bool collapsed = true;
-        QList<ResourceItem> episodes;
-    };
-    struct ResourceGroup {
-        QString name;
-        bool isMovie = false;
-        bool collapsed = true;
-        QList<ResourceSeason> seasons;
-        int totalCount() const {
-            int n = 0;
-            for (const auto& s : seasons) n += s.episodes.size();
-            return n;
-        }
-    };
-    const QList<ResourceGroup>& resourceGroups() const { return resourceGroups_; }
-    QVariantList resourceGroupsVariant() const;
-
-    const QStringList& broadcasts() const { return broadcasts_; }
-    QVariantList broadcastsVariant() const;
-
     /// 选集列表（`episodes` 数组的轻量投影）。
     struct Episode {
         int index = 0;
@@ -315,16 +264,12 @@ signals:
     void tracksChanged();
     void versionsChanged();
     void danmakuChanged();
-    void resourceGroupsChanged();
-    void broadcastsChanged();
 
 private:
     void setEpisodes(const QJsonArray& arr);
     void setTracks(const QJsonArray& arr);
     void setVersions(const QJsonArray& arr);
     void setDanmakuItems(const QJsonArray& arr);
-    void setResourceGroups(const QJsonArray& arr);
-    void setBroadcasts(const QJsonArray& arr);
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
@@ -342,13 +287,6 @@ private:
     QString skipPrompt_;
     bool canControl_ = true;      ///< 677：房间观众为 false（隐藏播放控制）
     bool segmentEnabled_ = false; ///< 677：片头片尾标记开关（右键菜单门）
-
-    // 678：房间资源面板
-    QString roomCode_;
-    QString audienceName_;
-    bool resourcePanelOpen_ = true;
-    QList<ResourceGroup> resourceGroups_;
-    QStringList broadcasts_;
 
     QString title_;
     QString mediaTitle_;

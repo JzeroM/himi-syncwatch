@@ -155,13 +155,16 @@ void main() {
       expect(flutterPanel, contains('_player.state != AdapterPlaybackState.playing'));
     });
 
-    test('集行左边框 3 + accent@0.3 底', () {
-      expect(flutterPanel, contains('width: 3,'));
-      expect(flutterPanel, contains('withValues(alpha: 0.3)'));
+    test('679：集行改为玻璃卡 + 主色 2px 描边（原左边框 3 + accent@0.3 底）', () {
+      // 用户要求「行要玻璃卡片感」：左边框竖条改为整行玻璃卡 + 选中描边。
+      expect(flutterPanel, contains('Border.all('));
+      expect(flutterPanel, contains('width: 2,'));
+      expect(flutterPanel, contains('GlassContainer'));
     });
 
-    test('季标题内边距 left 24', () {
-      expect(flutterPanel, contains('EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6)'));
+    test('679：季标题改为玻璃条（原 left 24 缩进改 8+内距）', () {
+      expect(flutterPanel,
+          contains('EdgeInsets.only(left: 8, right: 4, top: 2)'));
     });
   });
 }

@@ -112,6 +112,19 @@ public:
     ///（黑屏一瞬）；`hide`/`show` 保住解码状态，弹窗关掉即恢复画面。
     Q_INVOKABLE void setWindowVisible(bool visible);
 
+    /// 679：无边框窗口的系统拖动（顶栏拖拽区调用）。
+    ///
+    /// 【为什么需要】`Qt.FramelessWindowHint` 去掉了系统标题栏，窗口不再
+    /// 可拖。Qt 6 的 `QWindow::startSystemMove()` 交给系统做原生拖动
+    ///（带 DWM 吸附/半屏贴靠），比自己算 mouseMove 更稳。
+    Q_INVOKABLE void startSystemMove();
+
+    /// 679：无边框窗口的边缘拉伸。
+    ///
+    /// [edges] 位掩码：1=左 2=上 4=右 8=下（与 `Qt::Edges` 数值一致，
+    /// QML 侧用数字传，避免引入 Qt::Edge 枚举绑定）。
+    Q_INVOKABLE void startSystemResize(int edges);
+
     /// 677：触发 Escape 语义（main.cpp 的事件过滤器调用）。
     ///
     /// 信号不能从类外 emit（虽然 Qt 的 `signals` 是 public，但语义上
@@ -168,6 +181,13 @@ signals:
                           int videoX, int videoY, int videoW, int videoH,
                           int maxPanelW, int maxPanelH, bool ok);
 
+    /// 679：**用户**拖动/缩放窗口后回传新矩形（`windowMoved` 帧）。
+    ///
+    /// 【只回传用户操作】程序性 `setGeometry`（跟随时）会置
+    /// `applyingProgrammaticGeometry_` 标志，那条路径**不发**本信号——
+    /// 否则「A 跟随 B → B 收到通知又跟随 A」形成死循环。
+    void userWindowMoved(int x, int y, int w, int h);
+
     /// 677：Escape 按下（**两窗统一入口**）。
     ///
     /// 【为什么放 C++】旧实现两窗各挂一份 `Shortcut { sequence: "Escape" }`：
@@ -207,6 +227,11 @@ private:
     HWND parentHwnd_ = nullptr;    ///< Flutter 主窗（缓存，失效重找）
     qint64 parentPid_ = 0;         ///< --parent-pid
     QRect lastFollowRect_;         ///< 上一次应用的跟随矩形（变化才动）
+
+    /// 679：程序性几何变更标志（防双向跟随死循环）。
+    bool applyingProgrammaticGeometry_ = false;
+    /// 679：上一次回传的用户矩形（去重，避免拖动中每像素发一帧）。
+    QRect lastUserRect_;
 
     int insetTop_ = 0;
     int insetBottom_ = 0;

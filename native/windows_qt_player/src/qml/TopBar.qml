@@ -26,7 +26,6 @@ Rectangle {
     /// 当前画面比例（665：本地循环状态，图标随之切换）
     property string videoFitMode: "contain"
 
-    signal backClicked()
     signal decodeClicked()
     signal subtitleStyleClicked()
     signal videoFitClicked()
@@ -61,20 +60,27 @@ Rectangle {
         return "自适应"
     }
 
+    // ── 679：顶栏拖拽区（无边框窗口的移动手柄）──
+    //
+    // 放在 RowLayout **之前**（z 序在下），按钮先消费事件，空白处才落到
+    // 这里 → 拖动不会误触按钮。整条顶栏可拖（用户选定的方案）。
+    MouseArea {
+        anchors.fill: parent
+        // 只在按到空白区域时接管（子控件已处理的不再冒泡到这里）
+        propagateComposedEvents: false
+        onPressed: (mouse) => {
+            mpvWindow.startSystemMove()
+            mouse.accepted = true
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: Theme.barPadH
         anchors.rightMargin: Theme.barPadH
         spacing: 8
 
-        // 返回
-        ControlButton {
-            icon: Icons.arrowBack
-            iconSize: Theme.topIconSize
-            tooltip: "返回"
-            onClicked: root.backClicked()
-        }
-
+        // 679：返回按钮已移除（退出统一走 Flutter 面板窗关闭 + Esc）
         // 标题（保底 56 宽，超出省略）
         Text {
             Layout.fillWidth: true

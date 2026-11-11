@@ -16,6 +16,7 @@ import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/player/room_panel_layout.dart';
+import 'package:himi_syncwatch/services/room/room_exit_request.dart';
 import 'package:himi_syncwatch/services/platform/windows_window_style.dart';
 import 'package:himi_syncwatch/services/player/qt_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/qt_player_session.dart';
@@ -82,6 +83,7 @@ import 'package:himi_syncwatch/utils/room_code.dart';
 import 'package:himi_syncwatch/utils/segment_mark_rules.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/room/room_share_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_back_confirm.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -2056,6 +2058,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _manualSegments =
         widget.manualSegmentRepository ?? LocalManualSegmentStore();
     WidgetsBinding.instance.addObserver(this);
+    // 679：房间模式下拦截主窗关闭（点 X → 弹「退出房间」确认，不直接杀窗）
+    _setupRoomCloseInterception();
     // 669 B1/B3：Qt 模式（非房间）起播**不露 Flutter 播放页**——首帧即
     // 隐藏本页 UI（详情页在下方透出），并立即预启动 Qt 进程：窗口直接
     // 弹出、加载在 Qt 窗口内完成。任何失败路径走 [_abandonQtTakeover]
@@ -3504,11 +3508,77 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 671 B3：本页持有的会话（被新会话顶替时本页退场的判定依据）。
   QtPlayerSession? _mySession;
 
-  /// 677：房间并排——主窗进入并排前的 bounds（退房恢复）。
+  /// 679：房间模式的「点 X 关窗 → 弹退出确认」接线。
+  ///
+  /// 【链路】用户点 Flutter 主窗的关闭
+  ///   → `window_manager.setPreventClose(true)` 吞掉 WM_CLOSE
+  ///   → 但**插件吞掉后不会回调 onWindowClose**，所以这里换个思路：
+  ///     `setPreventClose` 只负责「别让系统关窗」，退出请求由播放页
+  ///     自己发起（`RoomExitRequest` 由 main.dart 的监听触发）。
+  ///
+  /// 【为什么不能直接监听 onWindowClose】`setPreventClose(true)` 时
+  /// `WM_CLOSE` 在插件里直接 `return -1`，`onWindowClose` 根本不会触发。
+  /// 因此改用 `window_manager` 的 `onWindowClose` **仅在非拦截态**生效，
+  /// 房间态由 [RoomExitRequest] 通道驱动（见 `main.dart`）。
+  void _setupRoomCloseInterception() {
+    if (widget.roomCode == null) return;
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    unawaited(_enablePreventClose());
+    RoomExitRequest.seq.addListener(_onRoomExitRequested);
+  }
+
+  Future<void> _enablePreventClose() async {
+    try {
+      await windowManager.setPreventClose(true);
+      LogService().log('Room', '已拦截主窗关闭（点 X 弹退出确认）');
+    } catch (e) {
+      LogService().log('Room', '拦截主窗关闭失败: $e');
+    }
+  }
+
+  /// 679：收到「退出房间」请求 → 弹确认框。
+  void _onRoomExitRequested() {
+    if (!mounted || _disposed) return;
+    unawaited(_handleRoomExitRequest());
+  }
+
+  Future<void> _handleRoomExitRequest() async {
+    if (_roomExitDialogOpen) return;  // 防重复弹窗
+    _roomExitDialogOpen = true;
+    try {
+      final shouldExit = await _confirmLeaveRoom();
+      if (!mounted || _disposed) return;
+      if (!shouldExit) {
+        // 取消：Qt 播放窗保持不动，主窗也不关（setPreventClose 继续拦截）
+        MpvSessionPlatform.activeQtAdapter?.focus();
+        return;
+      }
+      // 确认：关 Qt 播放窗 + 回详情页
+      await MpvSessionPlatform.closeQtPlayer();
+      if (!mounted || _disposed) return;
+      await _safePopPlayerPage();
+    } finally {
+      _roomExitDialogOpen = false;
+    }
+  }
+
+  /// 679：释放关闭拦截（退房成功 / 页面销毁时调用，防应用永远关不掉）。
+  Future<void> _releasePreventClose() async {
+    if (widget.roomCode == null) return;
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    try {
+      await windowManager.setPreventClose(false);
+    } catch (_) {}
+  }
+
+  /// 679：房间并排——主窗进入并排前的 bounds（退房恢复）。
   Rect? _roomRestoreBounds;
 
   /// 677：是否已请求并排布局（收到 `splitLayout` 帧时才应用）。
   bool _roomSplitRequested = false;
+
+  /// 679：退出房间确认框是否已打开（防重复弹窗）。
+  bool _roomExitDialogOpen = false;
 
   /// 677：房间 Qt 适配器是否已接线（预启动与起播都会触发，防重复摆位）。
   bool _roomQtWired = false;
@@ -3704,6 +3774,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     adapter.onSplitLayout = (layout) {
       unawaited(_applyRoomSplitLayout(layout));
     };
+    // 679：双向跟随——用户拖/缩 Qt 窗 → 面板窗贴到它右侧、等高
+    adapter.onWindowMoved = (rect) {
+      unawaited(_followQtWindow(rect));
+    };
     adapter.onFullscreenChanged = (fullscreen) {
       if (!mounted || _disposed) return;
       // 全屏期间暂停跟随（Qt 侧已自行跳过，这里只记账）
@@ -3807,6 +3881,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       LogService().log('Room', '房间并排已应用: panel=$panelRect');
     } catch (e) {
       LogService().log('Room', '房间并排失败: $e');
+    }
+  }
+
+  /// 679：Qt 窗被用户拖动/缩放 → Flutter 面板窗跟随（贴其右侧、等高）。
+  ///
+  /// 【规则】面板窗 = Qt 右边缘 → 屏幕右边缘，纵向与 Qt 完全等高。
+  /// 宽度不足 [RoomPanelLayout.minPanelWidth] 时不再挤压（保持当前宽度），
+  /// 避免把面板压成一条缝。
+  ///
+  /// 【防回环】本方法只调 `setBounds`，不会回发 Qt 摆位命令；
+  /// Qt 侧对程序性 `setGeometry` 也有 `applyingProgrammaticGeometry_` 屏蔽。
+  Future<void> _followQtWindow(Map<String, Object?> rect) async {
+    if (!mounted || _disposed) return;
+    if (!_roomSplitRequested) return;
+    final x = (rect['x'] as num?)?.toDouble();
+    final y = (rect['y'] as num?)?.toDouble();
+    final w = (rect['w'] as num?)?.toDouble();
+    final h = (rect['h'] as num?)?.toDouble();
+    if (x == null || y == null || w == null || h == null) return;
+    if (w <= 0 || h <= 0) return;
+    try {
+      // 屏幕右边缘：用 Flutter view 的逻辑宽（window_manager 同坐标系）。
+      final view = WidgetsBinding.instance.platformDispatcher.views.first;
+      final dpr = view.devicePixelRatio;
+      final screenW = view.physicalSize.width / (dpr > 0 ? dpr : 1.0);
+      final panelLeft = x + w;
+      final panelW = screenW - panelLeft;
+      if (panelW < RoomPanelLayout.minPanelWidth) return;  // 太窄不压
+      await windowManager.setBounds(
+        Rect.fromLTWH(panelLeft, y, panelW, h),
+      );
+    } catch (e) {
+      LogService().log('Room', '面板跟随 Qt 失败: $e');
     }
   }
 
@@ -6440,12 +6547,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Future<bool> _confirmLeaveRoom() async {
-    if (!_isHost || widget.roomCode == null) return true;
+    if (widget.roomCode == null) return true;
+    // 679：**观众也要弹确认框**（旧实现 `if (!_isHost ...) return true`
+    // 让观众点关闭直接退房，没有任何提示）。
+    final isHost = _isHost;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('解散房间'),
-        content: const Text('离开将解散当前房间，所有观众将被退出。确定离开吗？'),
+        title: Text(isHost ? '解散房间' : '离开房间'),
+        content: Text(isHost
+            ? '离开将解散当前房间，所有观众将被退出。确定离开吗？'
+            : '确定离开当前房间吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -6455,24 +6567,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             onPressed: () => Navigator.pop(ctx, true),
             // TV 模式：打开即聚焦确认键，遥控器 OK 一步完成确认
             autofocus: ref.read(settingsProvider.select((s) => s.tvMode)),
-            child: const Text('确定离开'),
+            child: Text(isHost ? '确定解散' : '确定离开'),
           ),
         ],
       ),
     );
-    if (result == true && _rtmChannel != null) {
+    if (result != true) return false;
+    // 679：广播只发**一次**（旧实现连续发了两次 actionRoomDestroyed，
+    // 观众会收到两条解散消息）。
+    if (_rtmChannel != null) {
       final rtmService = ref.read(rtmServiceProvider);
-      await rtmService.sendJoinLeave(
-        action: AppConstants.actionRoomDestroyed,
-        userName: _audienceName ?? '房主',
-      );
-      await rtmService.sendJoinLeave(
-        action: AppConstants.actionRoomDestroyed,
-        userName: _audienceName ?? '房主',
-      );
-      await Future.delayed(const Duration(milliseconds: 500));
+      if (isHost) {
+        await rtmService.sendJoinLeave(
+          action: AppConstants.actionRoomDestroyed,
+          userName: _audienceName ?? '房主',
+        );
+      } else {
+        await rtmService.sendJoinLeave(
+          action: 'leave',
+          userName: _audienceName ?? '观众',
+        );
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
     }
-    return result ?? false;
+    return true;
   }
 
   void _addBroadcastMessage(String msg) {
@@ -8520,6 +8638,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 677：退房恢复主窗（并排摆位）——不能等到 Qt 窗关掉才恢复，
     // 否则用户在「已退房但 Qt 还在关」的窗口里看到面板窗只有 380 宽。
     unawaited(_exitRoomSplitLayout());
+    // 679：释放关闭拦截（否则应用永远关不掉）+ 摘掉退出请求监听
+    RoomExitRequest.seq.removeListener(_onRoomExitRequested);
+    unawaited(_releasePreventClose());
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
     _tracksSubscription?.cancel();
@@ -8773,9 +8894,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (shouldPop) await _safePopPlayerPage();
       },
       child: Scaffold(
-        // 实底（不能透明）：路由 opaque:false，详情页在下方
-        backgroundColor: const Color(0xFF12121C),
-        body: SafeArea(child: _buildResourcePanel()),
+        // 679：液态玻璃面板——底层透明，改用「近黑渐变 + 光斑」做折射源。
+        //
+        // 【为什么不能全透明】路由 `opaque: false` 会让详情页透出，
+        // 而玻璃需要稳定的深色背景才「透得有层次」（否则文字压在杂乱
+        // 内容上不可读）。用户要求「黑底磨砂感、不要太重、有点透」。
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // ① 近黑渐变底（磨砂感的「底」，不是死黑）
+            const Positioned.fill(child: _RoomPanelBackdrop()),
+            // ② 极淡光斑（玻璃折射它们才有层次；透明度 4~6%）
+            const Positioned(
+              top: -90,
+              right: -70,
+              child: _GlowOrb(size: 280, color: Color(0x146366F1)),
+            ),
+            const Positioned(
+              bottom: 30,
+              left: -90,
+              child: _GlowOrb(size: 240, color: Color(0x0F8B5CF6)),
+            ),
+            // ③ 玻璃面板内容
+            SafeArea(child: _buildResourcePanel()),
+          ],
+        ),
       ),
     );
   }
@@ -11497,16 +11640,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   // ========== 资源面板 ==========
   Widget _buildResourcePanel() {
-    return Container(
-      color: const Color(0xFF1A1A2E),
+    // 679：液态玻璃面板——头部 / 列表 / 播报板各是一张玻璃卡
+    // （`popup: true` = 播放器弹层专用的 65% 深色磨砂 + 白描边 + 投影）。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Column(
         children: [
-          // 面板头部
-          Container(
+          // ── 面板头部（玻璃卡）──
+          GlassContainer(
+            popup: true,
+            borderRadius: BorderRadius.circular(14),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.white12)),
-            ),
             child: Row(
               children: [
                 const Expanded(
@@ -11594,84 +11738,135 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ],
             ),
           ),
+          const SizedBox(height: 8),
 
-          // 资源分组列表
+          // ── 资源分组列表（玻璃卡）──
           Expanded(
-            child: _resourceGroups.isEmpty
-                ? const Center(
-                    child: Text('暂无资源',
-                        style: TextStyle(color: Colors.white24, fontSize: 13)),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: _resourceGroups.length,
-                    itemBuilder: (ctx, i) =>
-                        _buildGroupWidget(_resourceGroups[i]),
-                  ),
+            child: GlassContainer(
+              popup: true,
+              borderRadius: BorderRadius.circular(14),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: _resourceGroups.isEmpty
+                  ? const Center(
+                      child: Text('暂无资源',
+                          style:
+                              TextStyle(color: Colors.white24, fontSize: 13)),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 4),
+                      itemCount: _resourceGroups.length,
+                      itemBuilder: (ctx, i) =>
+                          _buildGroupWidget(_resourceGroups[i]),
+                    ),
+            ),
           ),
 
-          // 播报板（底部）
-          if (_roomData != null) _buildBroadcastBoardInPanel(),
+          // ── 播报板（玻璃卡）──
+          if (_roomData != null) ...[
+            const SizedBox(height: 8),
+            _buildBroadcastBoardInPanel(),
+          ],
         ],
       ),
     );
   }
 
+  /// 679：展开/收起动画参数（分组与季分组共用，避免两处硬编码）。
+  static const Duration _kExpandDuration = Duration(milliseconds: 220);
+  static const Curve _kExpandCurve = Curves.easeOutCubic;
+
   Widget _buildGroupWidget(_ResourceGroup group) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 组标题（电影 / 剧名）
-        InkWell(
-          onTap: () => setState(() => group.collapsed = !group.collapsed),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            color: const Color(0xFF16213E),
-            child: Row(
-              children: [
-                Icon(
-                  group.collapsed ? Icons.chevron_right : Icons.expand_more,
-                  color: Colors.white70,
-                  size: 20,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    group.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+        // 组标题（玻璃卡）
+        GlassContainer(
+          popup: true,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => group.collapsed = !group.collapsed),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                children: [
+                  // 679：箭头旋转 90°（收起 0° → 展开 90°），不再换图标。
+                  // `chevron_right` 是「尖朝右的 V」，顺时针转 90° 后尖朝下，
+                  // 视觉上等价 `expand_more`，但能平滑过渡。
+                  AnimatedRotation(
+                    turns: group.collapsed ? 0.0 : 0.25,
+                    duration: _kExpandDuration,
+                    curve: _kExpandCurve,
+                    child: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white70,
+                      size: 20,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Text(
-                  group.isMovie
-                      ? '(${group.totalCount})'
-                      : '(${group.totalCount}集)',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      group.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    group.isMovie
+                        ? '(${group.totalCount})'
+                        : '(${group.totalCount}集)',
+                    style:
+                        const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
 
-        // 展开内容
-        if (!group.collapsed)
-          if (group.isMovie)
-            // 电影组：直接列出
-            if (group.seasons.isNotEmpty)
-              ...group.seasons.first.episodes.map((item) {
-                final flatIndex = _findFlatIndex(item.id);
-                return _buildEpisodeListItem(flatIndex, item);
-              })
-            else
-              const SizedBox.shrink()
-          else
-            // 电视剧组：按季分组
-            ...group.seasons.map((season) => _buildSeasonWidget(group, season)),
+        // 展开内容（679：高度动画 + 淡入，不再瞬间跳变）
+        ClipRect(
+          child: AnimatedSize(
+            duration: _kExpandDuration,
+            curve: _kExpandCurve,
+            alignment: Alignment.topCenter,
+            child: AnimatedOpacity(
+              opacity: group.collapsed ? 0 : 1,
+              duration: _kExpandDuration,
+              curve: Curves.easeOut,
+              child: group.collapsed
+                  // 收起态保持宽度占满（`SizedBox.shrink` 会让宽度抖动）
+                  ? const SizedBox(width: double.infinity)
+                  : _buildGroupContent(group),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  /// 679：分组展开内容（抽出来给 `AnimatedSize` 用）。
+  Widget _buildGroupContent(_ResourceGroup group) {
+    if (group.isMovie) {
+      if (group.seasons.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: group.seasons.first.episodes.map((item) {
+          final flatIndex = _findFlatIndex(item.id);
+          return _buildEpisodeListItem(flatIndex, item);
+        }).toList(growable: false),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: group.seasons
+          .map((season) => _buildSeasonWidget(group, season))
+          .toList(growable: false),
     );
   }
 
@@ -11679,46 +11874,76 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 季标题
-        InkWell(
-          onTap: () => setState(() => season.collapsed = !season.collapsed),
-          child: Container(
-            padding:
-                const EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6),
-            color: const Color(0xFF1A1A2E),
-            child: Row(
-              children: [
-                Icon(
-                  season.collapsed ? Icons.chevron_right : Icons.expand_more,
-                  color: Colors.white54,
-                  size: 16,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '第${season.seasonNumber}季',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+        // 季标题（679：玻璃条 + 箭头旋转）
+        Padding(
+          padding: const EdgeInsets.only(left: 8, right: 4, top: 2),
+          child: GlassContainer(
+            popup: true,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () =>
+                  setState(() => season.collapsed = !season.collapsed),
+              child: Padding(
+                padding:
+                    const EdgeInsets.only(left: 10, right: 8, top: 6, bottom: 6),
+                child: Row(
+                  children: [
+                    AnimatedRotation(
+                      turns: season.collapsed ? 0.0 : 0.25,
+                      duration: _kExpandDuration,
+                      curve: _kExpandCurve,
+                      child: const Icon(
+                        Icons.chevron_right,
+                        color: Colors.white54,
+                        size: 16,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '第${season.seasonNumber}季',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '(${season.episodes.length}集)',
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 11),
+                    ),
+                  ],
                 ),
-                Text(
-                  '(${season.episodes.length}集)',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-              ],
+              ),
             ),
           ),
         ),
 
-        // 展开时显示集列表
-        if (!season.collapsed)
-          ...season.episodes.map((item) {
-            final flatIndex = _findFlatIndex(item.id);
-            return _buildEpisodeListItem(flatIndex, item);
-          }),
+        // 展开时显示集列表（679：高度动画 + 淡入）
+        ClipRect(
+          child: AnimatedSize(
+            duration: _kExpandDuration,
+            curve: _kExpandCurve,
+            alignment: Alignment.topCenter,
+            child: AnimatedOpacity(
+              opacity: season.collapsed ? 0 : 1,
+              duration: _kExpandDuration,
+              curve: Curves.easeOut,
+              child: season.collapsed
+                  ? const SizedBox(width: double.infinity)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: season.episodes.map((item) {
+                        final flatIndex = _findFlatIndex(item.id);
+                        return _buildEpisodeListItem(flatIndex, item);
+                      }).toList(growable: false),
+                    ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -11731,54 +11956,64 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final isPlaying = flatIndex == _currentEpisodeIndex;
     final isMovie = item.isMovie;
 
-    return InkWell(
-      onTap: () {
-        if (!_isHost) return;
-        if (isPlaying) {
-          _togglePlayPause();
-        } else {
-          _switchToEpisode(flatIndex);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color:
-              isPlaying ? const Color(0xFF6366F1).withValues(alpha: 0.3) : null,
-          border: Border(
-            left: BorderSide(
-              color: isPlaying ? const Color(0xFF6366F1) : Colors.transparent,
-              width: 3,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            // 播放/暂停按钮（仅房主）
-            if (_isHost)
-              TvFocusable(
-                onTap: () {
-                  if (isPlaying) {
-                    _togglePlayPause();
-                  } else {
-                    _switchToEpisode(flatIndex);
-                  }
-                },
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _isPlayingNotifier,
-                  builder: (context, isPlayingNow, child) {
-                    return Icon(
-                      isPlaying && isPlayingNow
-                          ? Icons.pause_circle
-                          : Icons.play_circle,
-                      color:
-                          isPlaying ? const Color(0xFF6366F1) : Colors.white54,
-                      size: 22,
-                    );
-                  },
-                ),
+    // 679：玻璃卡片行；选中态加主色 2px 描边（原为左侧竖条 + 底色）。
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: GlassContainer(
+        popup: true,
+        borderRadius: BorderRadius.circular(10),
+        tint: isPlaying
+            ? const Color(0xFF6366F1).withValues(alpha: 0.22)
+            : GlassConfig.panelTint,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            if (!_isHost) return;
+            if (isPlaying) {
+              _togglePlayPause();
+            } else {
+              _switchToEpisode(flatIndex);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isPlaying
+                    ? const Color(0xFF6366F1)
+                    : Colors.transparent,
+                width: 2,
               ),
-            if (_isHost) const SizedBox(width: 8),
+            ),
+            child: Row(
+              children: [
+                // 播放/暂停按钮（仅房主）
+                if (_isHost)
+                  TvFocusable(
+                    onTap: () {
+                      if (isPlaying) {
+                        _togglePlayPause();
+                      } else {
+                        _switchToEpisode(flatIndex);
+                      }
+                    },
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _isPlayingNotifier,
+                      builder: (context, isPlayingNow, child) {
+                        return Icon(
+                          isPlaying && isPlayingNow
+                              ? Icons.pause_circle
+                              : Icons.play_circle,
+                          color: isPlaying
+                              ? const Color(0xFF6366F1)
+                              : Colors.white54,
+                          size: 22,
+                        );
+                      },
+                    ),
+                  ),
+                if (_isHost) const SizedBox(width: 8),
 
             // 缩略图
             ClipRRect(
@@ -11844,55 +12079,61 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
           ],
         ),
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildBroadcastBoardInPanel() {
-    return Container(
-      height: 120,
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Colors.white12)),
-      ),
-      child: ValueListenableBuilder<int>(
-        valueListenable: _broadcastVersion,
-        builder: (context, version, _) {
-          return Column(
-            children: [
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.campaign, color: Colors.white70, size: 12),
-                    const SizedBox(width: 4),
-                    Text('播报 (${_broadcastMessages.length})',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 11)),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _broadcastMessages.isEmpty
-                    ? const Center(
-                        child: Text('暂无消息',
-                            style:
-                                TextStyle(color: Colors.white24, fontSize: 11)),
-                      )
-                    : ListView.builder(
-                        controller: _broadcastScrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        itemCount: _broadcastMessages.length,
-                        itemBuilder: (ctx, i) => Text(
-                          _broadcastMessages[i],
+    // 679：玻璃卡（播报板）
+    return GlassContainer(
+      popup: true,
+      borderRadius: BorderRadius.circular(12),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SizedBox(
+        height: 112,
+        child: ValueListenableBuilder<int>(
+          valueListenable: _broadcastVersion,
+          builder: (context, version, _) {
+            return Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.campaign,
+                          color: Colors.white70, size: 12),
+                      const SizedBox(width: 4),
+                      Text('播报 (${_broadcastMessages.length})',
                           style: const TextStyle(
-                              color: Colors.white54, fontSize: 11),
+                              color: Colors.white70, fontSize: 11)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _broadcastMessages.isEmpty
+                      ? const Center(
+                          child: Text('暂无消息',
+                              style: TextStyle(
+                                  color: Colors.white24, fontSize: 11)),
+                        )
+                      : ListView.builder(
+                          controller: _broadcastScrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          itemCount: _broadcastMessages.length,
+                          itemBuilder: (ctx, i) => Text(
+                            _broadcastMessages[i],
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 11),
+                          ),
                         ),
-                      ),
-              ),
-            ],
-          );
-        },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -12392,6 +12633,61 @@ class ValueListenableBuilder2<A, B> extends StatelessWidget {
           child: child,
         );
       },
+    );
+  }
+}
+
+/// 679：房间面板窗的**底层渐变**（玻璃的折射源）。
+///
+/// 【为什么不用纯色】纯 `0xFF12121C` 会让上面的玻璃层「折射出死黑」，
+/// 磨砂感变成一块实板。这里用「近黑 → 略亮 → 近黑」的竖向渐变，
+/// 玻璃才有可辨识的层次（用户要求「黑底磨砂感、有点透」）。
+class _RoomPanelBackdrop extends StatelessWidget {
+  const _RoomPanelBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF0B0B10),
+            Color(0xFF14141E),
+            Color(0xFF0B0B10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 679：极淡的柔光光斑（给玻璃提供可折射的层次）。
+///
+/// 透明度刻意压得很低（4~6%）——用户明确「磨砂感不要太重」。
+/// 它不参与交互，也不消耗额外图层（纯 Decoration）。
+class _GlowOrb extends StatelessWidget {
+  const _GlowOrb({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [color, color.withValues(alpha: 0)],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

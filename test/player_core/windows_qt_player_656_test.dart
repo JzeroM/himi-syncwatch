@@ -190,13 +190,15 @@ void main() {
       //   解码图标是 memory（原 highQuality 是「HD」错字形）；
       //   新增 tune（显示调节）；倍速/全屏**不在顶栏**（桌面倍速在底栏、
       //   全屏只在底栏，用户明确）。
+      // 679：返回按钮已按用户要求移除（退出统一走 Flutter 面板窗关闭）
       for (final icon in [
-        'Icons.arrowBack',
         'Icons.memory',
         'Icons.tune',
       ]) {
         expect(topBar, contains(icon), reason: '顶栏缺 $icon');
       }
+      expect(topBar, isNot(contains('Icons.arrowBack')),
+          reason: '679：返回按钮已移除');
       expect(topBar, contains('playerState.title'));
       expect(topBar, contains('playerState.networkSpeedText'));
       // 667：内核胶囊已删（Qt 恒 MPV，用户要求去引擎控件）
@@ -390,15 +392,15 @@ void main() {
           reason: 'detachedWithStdio 的管道不读会阻塞子进程');
     });
 
-    test('宿主窗口不用 FramelessWindowHint（可拖动缩放；悬浮层除外）', () {
-      // 668：控件悬浮层（Overlay）必须无边框，断言只针对宿主 Main.qml
+    test('679：宿主窗口改为无边框（去掉最小化/最大化/关闭三钮）', () {
+      // 用户要求：Qt 窗不要系统窗口控件。无边框后拖动/缩放由
+      // TopBar 拖拽区（startSystemMove）+ startSystemResize 接管。
       final codeLines = read('$dir/src/qml/Main.qml')
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
-      expect(codeLines, isNot(contains('FramelessWindowHint')),
-          reason: '无边框宿主窗没有标题栏，用户无法拖动/缩放/最小化');
-      expect(codeLines, contains('flags: Qt.Window'));
+      expect(codeLines, contains('flags: Qt.FramelessWindowHint'));
+      expect(codeLines, isNot(contains('flags: Qt.Window\n')));
     });
   });
 
@@ -545,9 +547,8 @@ void main() {
     final bottomBar = read('$dir/src/qml/BottomBar.qml');
     final mainQmlSrc = (read('$dir/src/qml/Overlay.qml') + read('$dir/src/qml/Main.qml'));
 
-    test('顶栏按钮齐全：返回/标题/网速/显示调节/解码/比例（引擎控件已删）', () {
+    test('顶栏按钮齐全：标题/网速/显示调节/解码/比例（返回已移除）', () {
       for (final token in [
-        'Icons.arrowBack',
         'playerState.title',
         'playerState.networkSpeedText',
         'Icons.tune',

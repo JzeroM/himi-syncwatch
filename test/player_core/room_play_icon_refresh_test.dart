@@ -121,9 +121,12 @@ void main() {
     });
 
     test('Flutter 颜色只看 isPlaying', () {
+      // 679：玻璃化后缩进/换行变化，用正则宽松匹配「只看 isPlaying」
       expect(
         flutterScreen,
-        contains('color:\n                          isPlaying ? const Color(0xFF6366F1) : Colors.white54'),
+        contains(RegExp(
+          r'color:\s*isPlaying\s*\?\s*const Color\(0xFF6366F1\)\s*:\s*Colors\.white54',
+        )),
       );
     });
   });

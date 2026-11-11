@@ -19,7 +19,12 @@ ApplicationWindow {
     title: (playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player")
            + (playerState.windowDiag !== "" ? " [" + playerState.windowDiag + "]" : "")
     color: "#000000"
-    flags: Qt.Window
+    // 679：无边框——去掉系统标题栏（最小化/最大化/关闭三钮）。
+    //
+    // 【为什么】房间模式下 Qt 窗是「播放器」，退出统一走 Flutter 面板窗
+    // 的确认流程（避免用户误点 X 直接杀掉播放窗、房间悬空）。
+    // 无边框后拖动/缩放由 TopBar 拖拽区 + startSystemResize 接管。
+    flags: Qt.FramelessWindowHint
 
     // 播放快捷键（两窗共用组件；焦点在任一窗都有效）
     PlayerShortcuts { }
