@@ -361,7 +361,6 @@ void MpvWindow::selectTrack(const QString& type, int index) {
     }
     mpv_node node{};
     if (mpv_get_property(mpv_, "track-list", MPV_FORMAT_NODE, &node) < 0) {
-        restoreSid();
         return;
     }
     int nth = -1;
@@ -486,6 +485,8 @@ void MpvWindow::setDanmakuAss(const QString& assText) {
     // （mpv 0.37+ 双字幕轨；wid 直出下 ASS 是唯一浮绘通道）。
     mpv_node node{};
     if (mpv_get_property(mpv_, "track-list", MPV_FORMAT_NODE, &node) < 0) {
+        // 676：拿不到 track-list 也要把用户主字幕还回去
+        restoreSid();
         return;
     }
     if (node.format == MPV_FORMAT_NODE_ARRAY && node.u.list != nullptr) {

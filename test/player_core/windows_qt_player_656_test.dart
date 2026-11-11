@@ -1851,6 +1851,21 @@ void main() {
       expect(mpvCpp9, contains('int64_t sidBefore = -1;'));
       expect(mpvCpp9, contains('mpv_set_property_string(mpv_, "sid",'));
       expect(mpvCpp9, isNot(contains('QStringLiteral("select")')));
+      // 作用域守卫：restoreSid 是 setDanmakuAss 的局部 lambda——
+      // 676 首版被误插到 selectTrack（后者无此标识符），CI 编译
+      // C3861 挂掉。这里钉死：定义与全部调用都必须落在 setDanmakuAss
+      // 函数体内，selectTrack 段内不得出现。
+      final danmakuStart = mpvCpp9.indexOf('void MpvWindow::setDanmakuAss');
+      final danmakuEnd = mpvCpp9.indexOf('void MpvWindow::setVolume');
+      expect(danmakuStart, greaterThan(0));
+      expect(danmakuEnd, greaterThan(danmakuStart));
+      final danmakuBody = mpvCpp9.substring(danmakuStart, danmakuEnd);
+      expect(danmakuBody, contains('const auto restoreSid'));
+      expect(danmakuBody, contains('restoreSid();'));
+      final selectStart = mpvCpp9.indexOf('void MpvWindow::selectTrack');
+      expect(selectStart, greaterThan(0));
+      expect(mpvCpp9.substring(selectStart, danmakuStart),
+          isNot(contains('restoreSid')));
     });
 
     test('C 字幕/音轨面板可滚动 + 固定长度滚动条（够长才显示）', () {
