@@ -37,18 +37,14 @@ Item {
     implicitHeight: 44
     implicitWidth: 260
 
-    // 轨道点击跳转（在 ESlider 之下，不抢手柄事件）
+    // 轨道点击跳转（在 ESlider 之下，不抢手柄事件）。
+    // 671 A3：映射走 ESlider 内部精确几何（mapXToValue，与拖动互逆）
+    // ——旧实现用魔法数字猜轨道左边界，点击位置偏离。
     MouseArea {
         id: trackClick
         anchors.fill: parent
         onClicked: (mouse) => {
-            var trackLeft = (root.labelWidth > 0 ? root.labelWidth : 0)
-                    + slider.itemSpacing + slider.containerMargins
-            var trackW = Math.max(1, width - trackLeft
-                                 - (root.showValue ? 60 : 0)
-                                 - slider.containerMargins)
-            var ratio = Math.max(0, Math.min(1, (mouse.x - trackLeft) / trackW))
-            var v = root.minimumValue + ratio * (root.maximumValue - root.minimumValue)
+            var v = slider.mapXToValue(mouse.x)
             slider.value = v
             root.moved(v)
             root.finished(v)

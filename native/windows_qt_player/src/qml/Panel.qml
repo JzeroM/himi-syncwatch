@@ -22,8 +22,27 @@ EUI.ECard {
     property var items: []           // [{ id, display, sub, selected, poster? }]
     property bool cardMode: false
 
+    // 【671 B2】选集列数控件（− [n] +）：每列宽 = 封面横卡**原始宽度**
+    //（Flutter EpisodeSelectPanel cacheWidth 280 + 16:9 + 196 行跨距，
+    // 不压缩卡片），面板宽度随列数自适应；上限收紧到总宽不超播放器宽。
+    property int columns: 2
+    property int currentIndex: -1
+    readonly property int cardWidth: 280
+    readonly property int cardStride: 196
+    readonly property int maxColumns: Math.max(1, Math.min(8,
+        Math.floor(((parent ? parent.width : 1280) - root.padding * 2)
+                   / cardWidth)))
+
     signal itemClicked(var id)
     signal closed()
+
+    onColumnsChanged: columns = Math.max(1, Math.min(columns, maxColumns))
+    onVisibleChanged: {
+        if (visible && cardMode && currentIndex >= 0
+            && currentIndex < items.length) {
+            cards.positionViewAtIndex(currentIndex, GridView.Contain)
+        }
+    }
 
     /// 行高合计（列表模式）
     readonly property real rowsHeight: {
@@ -37,13 +56,16 @@ EUI.ECard {
         return h
     }
 
-    width: Math.max(Theme.panelMinWidth,
-                    Math.min(Theme.panelMaxWidth,
-                             parent ? parent.width * 0.42 : Theme.panelMinWidth))
+    width: cardMode
+           ? root.padding * 2 + Math.min(columns, maxColumns) * cardWidth
+           : Math.max(Theme.panelMinWidth,
+                     Math.min(Theme.panelMaxWidth,
+                              parent ? parent.width * 0.42 : Theme.panelMinWidth))
     height: Math.min(parent ? parent.height - Theme.panelTopOffset
                                   - Theme.panelBottomOffset : 400,
                      root.padding * 2 + 36 + (cardMode
-                         ? Math.ceil(items.length / 2) * 196 + 8
+                         ? Math.ceil(items.length / Math.min(columns, maxColumns))
+                           * cardStride + 8
                          : rowsHeight))
     radius: 20
     // 668：液态玻璃卡（半透明，视频透过来）
@@ -61,6 +83,63 @@ EUI.ECard {
             color: theme.textColor
             font.pixelSize: Theme.panelTitleSize
             font.weight: 600
+        }
+
+        // 【671 B2】列数控件（仅选集卡片形态）：− [n] +
+        RowLayout {
+            visible: root.cardMode
+            spacing: 4
+            Layout.preferredHeight: 28
+
+            Rectangle {
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                radius: 14
+                color: colMinusMouse.containsMouse
+                       ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
+                Text {
+                    anchors.centerIn: parent
+                    text: "\u2212"
+                    color: theme.textColor
+                    font.pixelSize: 16
+                }
+                MouseArea {
+                    id: colMinusMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.columns = Math.max(1, root.columns - 1)
+                }
+            }
+            Text {
+                Layout.preferredWidth: 28
+                horizontalAlignment: Text.AlignHCenter
+                text: root.columns
+                color: theme.textColor
+                font.pixelSize: Theme.panelOptionSize
+                font.weight: 600
+            }
+            Rectangle {
+                Layout.preferredWidth: 28
+                Layout.preferredHeight: 28
+                radius: 14
+                color: colPlusMouse.containsMouse
+                       ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.07)
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: theme.textColor
+                    font.pixelSize: 16
+                }
+                MouseArea {
+                    id: colPlusMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.columns = Math.min(root.maxColumns,
+                                                       root.columns + 1)
+                }
+            }
         }
     }
 
@@ -143,12 +222,26 @@ EUI.ECard {
         Layout.fillWidth: true
         Layout.preferredHeight: parent ? Math.min(
             root.height - root.padding * 2 - 36,
-            Math.ceil(root.items.length / 2) * 196 + 8) : 300
+            Math.ceil(root.items.length / Math.min(root.columns, root.maxColumns))
+                * root.cardStride + 8) : 300
         visible: root.cardMode
         clip: true
-        cellWidth: width / 2
-        cellHeight: 196
+        // 671 B2：每列 = 横卡**原始宽度**（280，不压缩），列数可调
+        cellWidth: root.cardWidth
+        cellHeight: root.cardStride
         model: root.items
+
+        // 【671 B2】纵向滚动条（玻璃样式）
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+            width: 8
+            contentItem: Rectangle {
+                implicitWidth: 6
+                radius: 3
+                color: Qt.rgba(1, 1, 1, 0.35)
+            }
+            background: Item { }
+        }
 
         delegate: Item {
             width: cards.cellWidth

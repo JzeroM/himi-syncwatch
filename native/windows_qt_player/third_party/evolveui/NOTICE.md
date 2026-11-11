@@ -10,7 +10,7 @@
 |---|---|---|
 | `src/qml/evolveui/ETheme.qml` | `components/ETheme.qml` | **未修改** |
 | `src/qml/evolveui/EButton.qml` | `components/EButton.qml` | **未修改** |
-| `src/qml/evolveui/ESlider.qml` | `components/ESlider.qml` | **未修改** |
+| `src/qml/evolveui/ESlider.qml` | `components/ESlider.qml` | **有修改**（671）：① 手柄/填充的 `Behavior` 平滑动画 `enabled` 取反（原实现拖动期间启用平滑 → 手柄滞后光标「拖动偏离鼠标」，改为仅程序性跳转时平滑）；② 新增 `mapXToValue(xInRoot)` 精确坐标→值映射（与拖动映射互逆，PlayerSlider 轨道点击跳转用，替代魔法数字猜测） |
 | `src/qml/evolveui/ECard.qml` | `components/ECard.qml` | **未修改** |
 | `src/qml/evolveui/ELoader.qml` | `components/ELoader.qml` | **未修改** |
 | `src/qml/evolveui/EList.qml` | `components/EList.qml` | **有扩展**（664）：行支持可选 `sub`（副文第二行，有则行高 56）与 `selected`（选中态：accent 文字 + 右侧 fa-check 勾）；模型无这两个字段时行为与上游完全一致 |

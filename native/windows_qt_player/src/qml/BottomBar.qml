@@ -182,53 +182,99 @@ Rectangle {
                 }
             }
 
-            // 音量：图标 + 滑杆(96) + 数值
-            RowLayout {
-                spacing: 4
-                Text {
-                    text: playerState.volume <= 0.001 ? Icons.volumeOff
-                          : playerState.volume < 0.5 ? Icons.volumeDown
-                          : Icons.volumeUp
-                    font.family: iconFont.name
-                    font.pixelSize: Theme.fpSliderIconSize
-                    color: Theme.mutedText
-                }
-                PlayerSlider {
-                    Layout.preferredWidth: Theme.fpSliderWidth
-                    Layout.preferredHeight: 32
-                    text: ""
-                    labelWidth: 0
-                    showValue: true
-                    minimumValue: 0
-                    maximumValue: 100
-                    value: playerState.volume * 100
-                    onMoved: (v) => root.volumeChanged(v / 100)
+            // 【671 B1】音量玻璃胶囊：图标 + 加长滑杆 + 数值包裹一体（无 %）
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: 210
+                radius: 16
+                color: Qt.rgba(1, 1, 1, 0.10)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 6
+                    spacing: 6
+
+                    Text {
+                        text: playerState.volume <= 0.001 ? Icons.volumeOff
+                              : playerState.volume < 0.5 ? Icons.volumeDown
+                              : Icons.volumeUp
+                        font.family: iconFont.name
+                        font.pixelSize: Theme.fpSliderIconSize
+                        color: Theme.mutedText
+                    }
+                    PlayerSlider {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 30
+                        text: ""
+                        labelWidth: 0
+                        showValue: false
+                        minimumValue: 0
+                        maximumValue: 100
+                        value: playerState.volume * 100
+                        onMoved: (v) => root.volumeChanged(v / 100)
+                    }
+                    // 数值（包裹进小圆角盒；数值不带 %）
+                    Rectangle {
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 22
+                        radius: 6
+                        color: Qt.rgba(1, 1, 1, 0.10)
+                        Text {
+                            anchors.centerIn: parent
+                            text: Math.round(playerState.volume * 100)
+                            color: theme.textColor
+                            font.pixelSize: Theme.captionSize
+                        }
+                    }
                 }
             }
 
-            Item { Layout.preferredWidth: 16 }
+            Item { Layout.preferredWidth: 10 }
 
-            // 亮度：图标 + 滑杆(96) + 数值
-            RowLayout {
-                spacing: 4
-                Text {
-                    text: Icons.brightness
-                    font.family: iconFont.name
-                    font.pixelSize: Theme.fpSliderIconSize
-                    color: Theme.fpBrightnessIcon
-                }
-                PlayerSlider {
-                    Layout.preferredWidth: Theme.fpSliderWidth
-                    Layout.preferredHeight: 32
-                    text: ""
-                    labelWidth: 0
-                    showValue: true
-                    valueSuffix: "%"
-                    fillColor: Theme.fpBrightnessIcon
-                    minimumValue: 0
-                    maximumValue: 100
-                    value: playerState.brightness * 100
-                    onMoved: (v) => root.brightnessChanged(v / 100)
+            // 【671 B1】亮度玻璃胶囊（同音量；数值不带 %）
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: 210
+                radius: 16
+                color: Qt.rgba(1, 1, 1, 0.10)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 6
+                    spacing: 6
+
+                    Text {
+                        text: Icons.brightness
+                        font.family: iconFont.name
+                        font.pixelSize: Theme.fpSliderIconSize
+                        color: Theme.fpBrightnessIcon
+                    }
+                    PlayerSlider {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 30
+                        text: ""
+                        labelWidth: 0
+                        showValue: false
+                        fillColor: Theme.fpBrightnessIcon
+                        minimumValue: 0
+                        maximumValue: 100
+                        value: playerState.brightness * 100
+                        onMoved: (v) => root.brightnessChanged(v / 100)
+                    }
+                    Rectangle {
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 22
+                        radius: 6
+                        color: Qt.rgba(1, 1, 1, 0.10)
+                        Text {
+                            anchors.centerIn: parent
+                            text: Math.round(playerState.brightness * 100)
+                            color: theme.textColor
+                            font.pixelSize: Theme.captionSize
+                        }
+                    }
                 }
             }
 

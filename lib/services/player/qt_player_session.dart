@@ -42,6 +42,13 @@ class QtPlayerSession {
   /// 亮度应用（写系统亮度）。
   Future<void> Function(double brightness)? applyBrightness;
 
+  /// 671：切集后的轻量页面驱动（弹幕重拉 + 状态推送）——弹幕数据
+  /// 不能随会话接管断供（Qt 弹幕不显示的根因）。
+  Future<void> Function(int episodeIndex)? onEpisodeSwitched;
+
+  /// 671：被新会话顶替时回调（旧的隐身播放页据此退场）。
+  void Function()? onReplaced;
+
   /// 页面阶段的富处理兜底（`_handleNativeUiCommand`）：设置持久化等。
   /// pop 后其 mounted 守卫自动空转，可安全继续调用。
   Future<void> Function(NativePlayerCommand command)? fallback;
@@ -57,8 +64,12 @@ class QtPlayerSession {
   }) {
     // 新会话前先收掉旧的（同进程只留一个 Qt 窗口语义）。
     final old = active;
-    if (old != null && !identical(old.adapter, adapter)) {
-      old.adapter.dispose();
+    if (old != null) {
+      if (!identical(old.adapter, adapter)) {
+        old.adapter.dispose();
+      }
+      // 671：旧会话让位 → 旧的隐身播放页退场（调用方微任务判定自替换）
+      old.onReplaced?.call();
     }
     final session = QtPlayerSession._(adapter, Map.of(template));
     active = session;
@@ -89,6 +100,8 @@ class QtPlayerSession {
           return;
         }
         await _load(target, episodeIndex: index);
+        // 671：驱动页面管线（换集弹幕重拉 + 状态推送）
+        await onEpisodeSwitched?.call(index);
       case SelectVersion(:final index):
         final target = await resolveVersion?.call(index);
         if (target == null) {

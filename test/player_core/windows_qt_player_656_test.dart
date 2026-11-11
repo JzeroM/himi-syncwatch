@@ -1500,4 +1500,87 @@ void main() {
       expect(overlayQml3, contains('playerState.playerReady'));
     });
   });
+  group('㉗ 671：交互修复全集（弹幕不断供/滑杆/前台/缓存/面板）', () {
+    final mainCpp4 = read('$dir/src/main.cpp');
+    final overlay4 = read('$dir/src/qml/Overlay.qml');
+    final panel4 = read('$dir/src/qml/Panel.qml');
+    final bottom4 = read('$dir/src/qml/BottomBar.qml');
+    final adjust4 = read('$dir/src/qml/DisplayAdjustPanel.qml');
+    final eSlider4 = read('$dir/src/qml/evolveui/ESlider.qml');
+    final pSlider4 = read('$dir/src/qml/PlayerSlider.qml');
+    final screen4 = read('lib/screens/player/player_screen.dart');
+    final session4 = read('lib/services/player/qt_player_session.dart');
+    final adapter4 = read('lib/services/player/qt_player_adapter.dart');
+    final pipe4 = read('lib/services/player/qt_player_pipe.dart');
+    final plat4 = read('lib/services/player/mpv_session_platform.dart');
+
+    test('弹幕不断供：到达即推送 + 播放页隐身存活（不立即 pop）', () {
+      // 根因：弹幕到达不触发推送 + pop 后管线断供 → Qt 永远收不到弹幕
+      expect(screen4, contains('if (!_disposed) _syncNativePanelData()'));
+      expect(screen4, contains('不再立即 pop'));
+      expect(screen4, isNot(contains('立即回详情页（下一帧 pop')));
+      // 切集驱动页面管线重拉弹幕
+      expect(session4, contains('onEpisodeSwitched'));
+      expect(screen4, contains('_loadDanmaku()'));
+    });
+
+    test('会话替换退场（微任务判定自替换不误杀）', () {
+      expect(session4, contains('old.onReplaced?.call()'));
+      expect(screen4, contains('identical(_mySession, QtPlayerSession.active)'));
+    });
+
+    test('A1 死适配器不得复用（单飞缓存失效）', () {
+      expect(plat4, contains('_qtLaunched'));
+      expect(plat4, contains('launched.isAlive'));
+      expect(adapter4, contains('bool get isAlive'));
+      expect(pipe4, contains('bool get isClosed'));
+      // closeQtPlayer 同步作废缓存
+      expect(plat4, contains('_qtLaunchFuture = null;'));
+    });
+
+    test('A2 强制前台（Qt 窗口不再落在 Flutter 后面）', () {
+      expect(mainCpp4, contains('SetForegroundWindow'));
+      expect(mainCpp4, contains('AttachThreadInput'));
+      expect(mainCpp4, contains('forceForeground()'));
+    });
+
+    test('A3 滑杆拖动即时跟随（平滑只在程序性跳转）', () {
+      expect(eSlider4, contains('enabled: !root.isPressed'));
+      expect(eSlider4, contains('function mapXToValue'));
+      expect(pSlider4, contains('slider.mapXToValue(mouse.x)'));
+    });
+
+    test('A4 播放镜像字段以 mpv 为准（图标不失配）', () {
+      expect(mainCpp4, contains('filtered.remove(QStringLiteral("paused"))'));
+      expect(mainCpp4, contains('filtered.remove(QStringLiteral("positionMs"))'));
+    });
+
+    test('A5 面板反馈链（倍速回传 + 状态回推）', () {
+      expect(adapter4, contains('forwardSpeed'));
+      expect(screen4, contains('session.fallback = _handleNativeUiCommand'));
+    });
+
+    test('A6 root.hideTimer 笔误回归（id 不是 root 属性）', () {
+      expect(overlay4, isNot(contains('root.hideTimer')));
+    });
+
+    test('B1 音量/亮度玻璃胶囊 + 数值无 %', () {
+      expect(bottom4, contains('radius: 16'));
+      expect(bottom4, contains('Math.round(playerState.volume * 100)'));
+      expect(bottom4, contains('Math.round(playerState.brightness * 100)'));
+      expect(bottom4, isNot(contains('valueSuffix: "%"')));
+      expect(adjust4, isNot(contains('valueSuffix: "%"')));
+    });
+
+    test('B2 选集面板：横卡原始宽/列数控件/自动定位/纵向滚动条', () {
+      expect(panel4, contains('cardWidth: 280'));
+      expect(panel4, contains('maxColumns'));
+      expect(panel4, contains('positionViewAtIndex'));
+      expect(panel4, contains('ScrollBar.vertical'));
+      expect(panel4, contains('root.columns - 1'));
+      expect(panel4, contains('root.columns + 1'));
+      // 总宽不超播放器宽（列数上限收紧）
+      expect(panel4, contains('Math.floor(((parent ? parent.width : 1280)'));
+    });
+  });
 }

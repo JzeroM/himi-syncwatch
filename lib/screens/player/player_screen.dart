@@ -1261,6 +1261,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (mpv is MpvPlayerAdapter && !_disposed) {
       mpv.nativeDanmakuComments = value;
     }
+    // 671：弹幕到达**立即推送** Qt（此前推送入口纯事件驱动、弹幕到达
+    // 不触发 → Qt 永远收不到弹幕）。
+    if (!_disposed) _syncNativePanelData();
   }
 
   List<DanmakuComment> get _danmakuComments => __danmakuComments;
@@ -3493,6 +3496,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 页面退出/错误路径不得再关 Qt 窗。
   bool _qtHandedOver = false;
 
+  /// 671 B3：本页持有的会话（被新会话顶替时本页退场的判定依据）。
+  QtPlayerSession? _mySession;
+
   /// 669 B1：Qt 进程拉起**单飞**（670 提升为 [MpvSessionPlatform.ensureQtPlayer]
   /// 全局单飞：启动预热与起播共用一次，防并发互杀）。
   Future<QtPlayerAdapter?> _qtLaunchSingleFlight() =>
@@ -3586,8 +3592,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     session.resolveEpisode = resolveEpisode;
     session.resolveVersion = resolveVersion;
-    // 页面存活期的富处理兜底（设置持久化等）；pop 后 mounted 守卫空转
+    // 671：页面存活期的富处理兜底（设置持久化等）——页面隐身存活后
+    // **始终有效**（不再随 pop 失效），显示调节/恢复默认/面板选中反馈
+    // 都经这条链回推状态。
     session.fallback = _handleNativeUiCommand;
+    // 671：切集后轻量驱动页面管线（弹幕重拉 + 状态推送）——
+    // 弹幕数据此前在 pop 后断供（Qt 永远收不到弹幕的根因）。
+    session.onEpisodeSwitched = (index) async {
+      if (!mounted || _disposed) return;
+      _currentEpisodeIndex = index;
+      if (_danmakuOn) unawaited(_loadDanmaku());
+      _syncNativePanelData();
+    };
     session.applyBrightness = (v) async {
       try {
         await ScreenBrightness().setApplicationScreenBrightness(v);
@@ -3602,10 +3618,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _brightness = v;
       _brightnessNotifier.value = v;
     };
-    // 立即回详情页（下一帧 pop，让调用方先收尾）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_disposed) unawaited(_safePopPlayerPage());
-    });
+    // 【671 B3】不再立即 pop——播放页**隐身存活**（build 门禁
+    // SizedBox.shrink + 路由 opaque:false，详情页照常透出，视觉与
+    // pop 完全相同、664「另一窗=详情页」不变），弹幕装载/状态推送/
+    // 进度上报持续工作；Qt 进程退出才回详情页（onProcessExited）。
+    // 被新会话顶替时本页退场（微任务判定防自替换误杀）。
+    final owned = session;
+    _mySession = owned;
+    session.onReplaced = () {
+      scheduleMicrotask(() {
+        if (!mounted || _disposed) return;
+        if (!identical(_mySession, QtPlayerSession.active)) {
+          unawaited(_safePopPlayerPage());
+        }
+      });
+    };
     return true;
   }
 

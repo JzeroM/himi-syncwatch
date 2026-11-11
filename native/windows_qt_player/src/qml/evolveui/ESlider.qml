@@ -61,6 +61,18 @@ Rectangle {
         // 保持 fill.width 的绑定，不在此处赋值以免打断绑定
     }
 
+    /// 【671 A3】精确的 x→值映射（外部轨道点击用；与拖动映射互逆，
+    /// 点哪里手柄落哪里）。x 为**根元素坐标系**。
+    function mapXToValue(xInRoot) {
+        var p = track.mapFromItem(root, xInRoot, 0)
+        var maxX = Math.max(0, track.width - handle.width)
+        var denom = (valueLabel.visible || valueText.visible)
+                ? Math.max(0, maxX - 10) : maxX
+        var hx = Math.max(0, Math.min(denom, p.x - handle.width / 2))
+        var ratio = denom > 0 ? hx / denom : 0
+        return minimumValue + ratio * (maximumValue - minimumValue)
+    }
+
     function _updateValueFromHandle() {
         // 当显示数值时，限制滑块的最大位置，留出10像素间距
         const maxWidth = (valueLabel.visible || valueText.visible) ? track.width - handle.width - 10 : track.width - handle.width;
@@ -154,7 +166,7 @@ Rectangle {
                 antialiasing: true
                 smooth: true
                 Behavior on width {
-                    enabled: root.isPressed
+                    enabled: !root.isPressed
                     NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
                 }
             }
@@ -189,7 +201,9 @@ Rectangle {
                     Behavior on yScale { SpringAnimation { spring: 2.5; damping: 0.25 } }
                 }
 
-                Behavior on x { enabled: root.isPressed; SmoothedAnimation { duration: 100 } }
+                // 671 A3：拖动时必须**即时**跟随光标（平滑动画只在
+                // 程序性跳转时启用；原实现恰好写反 → 手柄滞后偏离鼠标）
+                Behavior on x { enabled: !root.isPressed; SmoothedAnimation { duration: 100 } }
 
                 // === 交互 ===
                 MouseArea {

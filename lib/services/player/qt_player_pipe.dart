@@ -40,6 +40,9 @@ class QtPlayerPipe {
   /// 断开回调（Qt 进程退出/崩溃）。
   void Function()? onDisconnected;
 
+  /// 671 A1：管道是否已断开（死适配器探测用）。
+  bool get isClosed => _closed;
+
   /// 拉起 Qt 播放器并连接。
   ///
   /// @param exePath   `himi_qt_player.exe` 的绝对路径

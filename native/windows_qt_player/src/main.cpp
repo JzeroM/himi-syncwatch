@@ -299,12 +299,31 @@ int main(int argc, char* argv[]) {
     // 配置全部就绪后再显示（隐藏创建→配置→显示：防 flags 重建丢 alpha）。
     // 【670】预热模式窗口隐藏待命，收到首条 load 命令再弹出（秒出窗）。
     bool windowsShown = false;
-    const auto showWindows = [host, overlay, &windowsShown]() {
+    const auto forceForeground = [host]() {
+        // 【671 A2】Windows 前台规则会把新弹出的窗放在 Flutter 窗口
+        // 后面（真机回归：「Qt 窗口出现在详情页后面」）——
+        // AttachThreadInput 组合拳 + HWND_TOP 强制到最前。
+        HWND h = reinterpret_cast<HWND>(host->winId());
+        ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        const DWORD fgThread =
+            ::GetWindowThreadProcessId(::GetForegroundWindow(), nullptr);
+        const DWORD myThread = ::GetCurrentThreadId();
+        const BOOL attached = (fgThread != myThread)
+                && ::AttachThreadInput(fgThread, myThread, TRUE);
+        ::SetForegroundWindow(h);
+        ::BringWindowToTop(h);
+        if (attached) ::AttachThreadInput(fgThread, myThread, FALSE);
+        host->requestActivate();
+    };
+    const auto showWindows = [host, overlay, &windowsShown, forceForeground]() {
         if (windowsShown) return;
         windowsShown = true;
         host->show();
         overlay->show();
         overlay->requestActivate();
+        forceForeground();
+        overlay->raise();
     };
     if (!prewarm) showWindows();
 
@@ -328,7 +347,16 @@ int main(int argc, char* argv[]) {
     // ── 状态：Flutter → mpv + QML ──
     QObject::connect(&pipe, &PipeServer::stateReceived, &state,
                      [&](const QJsonObject& json) {
-                         state.applyJson(json);
+                         // 【671 A4】播放镜像字段以本进程 mpv 事件为准：
+                         // Flutter 快照（200ms 节流/切集模板）里的
+                         // paused/position/duration 是过期值，直接覆盖
+                         // 本地补丁会让播放/暂停图标与真实状态失配
+                         //（真机回归）。弹幕/轨道/面板数据照常应用。
+                         QJsonObject filtered = json;
+                         filtered.remove(QStringLiteral("paused"));
+                         filtered.remove(QStringLiteral("positionMs"));
+                         filtered.remove(QStringLiteral("durationMs"));
+                         state.applyJson(filtered);
                          // 【不做 loadfile】播放地址只由 `command` 帧的
                          // `load` 指令驱动（单一入口）。
                          //
@@ -360,7 +388,10 @@ int main(int argc, char* argv[]) {
                          if (type == QLatin1String("load")) {
                              // 【670】首条 load = 媒体就绪 → 预热窗口
                              // 结束待命、弹出（起播窗口秒出的落点）。
+                             // 【671】每次 load 都拉前台（换资源/切集后
+                             // 窗口不再被 Flutter 盖住）。
                              showWindows();
+                             forceForeground();
                              const QString url =
                                  cmd.value(QLatin1String("url")).toString();
                              const qint64 startMs = static_cast<qint64>(

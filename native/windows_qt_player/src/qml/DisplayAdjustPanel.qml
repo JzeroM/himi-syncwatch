@@ -168,7 +168,7 @@ EUI.ECard {
             minimumValue: 10
             maximumValue: 100
             decimals: 0
-            valueSuffix: "%"
+            valueSuffix: ""
             value: playerState.danmakuOpacity * 100
             onMoved: (v) => root.adjust("danmakuOpacity", v / 100)
         }

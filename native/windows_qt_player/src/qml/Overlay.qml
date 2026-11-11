@@ -112,7 +112,7 @@ ApplicationWindow {
     VideoGestures {
         panelsOpen: () => root.panelOpen || root.adjustOpen
         closePanels: root.closePanels
-        showControls: () => root.hideTimer.restart()
+        showControls: () => hideTimer.restart()
         showGesture: (iconOrText) => root.showGesture(iconOrText)
     }
 
@@ -432,6 +432,7 @@ ApplicationWindow {
         }
         panel.title = "选集"
         panel.cardMode = true
+        panel.currentIndex = playerState.currentEpisodeIndex
         panel.items = list
         adjustOpen = false
         panelOpen = true

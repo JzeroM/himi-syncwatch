@@ -78,6 +78,9 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// Qt 进程退出回调（上层据此回详情页）。
   void Function()? onProcessExited;
 
+  /// 671 A1：是否存活（进程在 + 管道未断）——死适配器不得复用。
+  bool get isAlive => !_disposed && !_pipe.isClosed;
+
   /// Qt 亮度滑杆变更回调（由播放页注入）。
   void Function(double value)? onBrightnessChanged;
 
@@ -122,6 +125,13 @@ class QtPlayerAdapter implements PlayerAdapter {
         volume = (cmd['volume'] as num?)?.toDouble() ?? 1.0;
       case 'setSpeed':
         playbackRate = (cmd['speed'] as num?)?.toDouble() ?? 1.0;
+        // 671 A5：倍速也回传上层（面板选中态/状态推送需要）——
+        // 本 case 就地消化但不转发会让倍速反馈断链（面板选中不变）。
+        final speedCmd = NativePlayerCommand.fromMap(cmd);
+        final forwardSpeed = onNativeUiCommand;
+        if (speedCmd != null && forwardSpeed != null) {
+          unawaited(forwardSpeed(speedCmd));
+        }
       case 'setBrightness':
         final v = (cmd['brightness'] as num?)?.toDouble() ?? 0.5;
         onBrightnessChanged?.call(v);

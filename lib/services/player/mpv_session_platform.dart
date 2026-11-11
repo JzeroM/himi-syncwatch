@@ -103,6 +103,9 @@ class MpvSessionPlatform {
   /// 单飞放播放页 State 里会与预热并发互杀（launchQtPlayer 先关旧窗）。
   static Future<QtPlayerAdapter?>? _qtLaunchFuture;
 
+  /// 671 A1：单飞产物（存活校验用）——死适配器不得复用。
+  static QtPlayerAdapter? _qtLaunched;
+
   /// 656/670：Qt 播放器 exe 的绝对路径（Windows）。
   ///
   /// 产物布局：`<主 exe 目录>\himi_qt_player\himi_qt_player.exe`
@@ -126,8 +129,17 @@ class MpvSessionPlatform {
   /// 不显示窗口，收到 load 命令才弹出）——应用启动即调用，冷启动的
   /// 数秒被完全掩盖，起播窗口秒出。
   static Future<QtPlayerAdapter?> ensureQtPlayer({bool prewarm = false}) {
+    // 671 A1：死适配器不得复用（进程已退出/管道已断时缓存作废重拉）
+    // ——真机回归「播完返回再播 Qt 永不出现」：旧单飞永久缓存死适配器，
+    // 命令写进已关管道静默丢失。
+    final launched = _qtLaunched;
+    if (launched != null && !launched.isAlive) {
+      _qtLaunchFuture = null;
+      _qtLaunched = null;
+    }
     return _qtLaunchFuture ??= _doLaunchQtPlayer(prewarm: prewarm)
         .then((adapter) {
+      _qtLaunched = adapter;
       if (adapter == null) {
         _qtLaunchFuture = null;  // 启动失败：清缓存，下次可重试
       }
@@ -223,6 +235,9 @@ class MpvSessionPlatform {
   static Future<void> closeQtPlayer() async {
     final adapter = activeQtAdapter;
     activeQtAdapter = null;
+    // 671 A1：单飞缓存同步作废（死适配器不得被下次起播复用）
+    _qtLaunchFuture = null;
+    _qtLaunched = null;
     if (adapter == null) return;
     try {
       adapter.dispose();
