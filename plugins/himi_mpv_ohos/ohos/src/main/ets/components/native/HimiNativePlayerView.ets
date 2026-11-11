@@ -51,6 +51,17 @@ const ROOM_PANEL_HEIGHT = 280;
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 
+/** 680：房间面板玻璃底（65% 深色磨砂，与 Win `playerPanelBase` 同值）。 */
+const ROOM_PANEL_GLASS_BG = '#A61A1D23';
+/** 680：玻璃定界描边（白 20%）。 */
+const ROOM_PANEL_GLASS_RIM = '#33FFFFFF';
+/** 680：分组标题玻璃条。 */
+const ROOM_GROUP_GLASS_BG = '#14FFFFFF';
+/** 680：季标题玻璃条。 */
+const ROOM_SEASON_GLASS_BG = '#0FFFFFFF';
+/** 680：玻璃卡描边（白 12%）。 */
+const ROOM_CARD_GLASS_RIM = '#1FFFFFFF';
+
 /** 手势方向判定阈值（vp；对齐 Android ViewConfiguration 默认 8dp 量级）。 */
 const PAN_SLOP = 8;
 const DOMAIN = 0x0001;
@@ -1577,6 +1588,22 @@ export struct HimiNativePlayerView {
           // 611：固定尺寸、不参与收缩（等价安卓 llp(WRAP_CONTENT, dp(20))）。
           .constraintSize({ minWidth: 32, minHeight: 20 })
           .flexShrink(0);
+        // 680：分享按钮移到**面板头部**（对齐 Win：资源 | 搜索 | 人数 | 角色 | 分享）。
+        // 旧实现放在顶栏尾簇，与 Win 版位置不一致（用户要求三端统一）。
+        if (this.roomIsHost) {
+          Text(String.fromCodePoint(NativePlayerIcons.ICON_SHARE))
+            .fontFamily(NativePlayerIcons.FONT_FAMILY)
+            .fontSize(18)
+            .fontColor(Color.White)
+            .width(28)
+            .height(28)
+            .textAlign(TextAlign.Center)
+            .flexShrink(0)
+            .margin({ left: 6 })
+            .onClick((): void => {
+              HimiMpvNativeHost.getInstance().shareRoom();
+            });
+        }
       }
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -1608,9 +1635,12 @@ export struct HimiNativePlayerView {
                 .fontColor('#8AFFFFFF');
             }
             .width('100%')
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
             .alignItems(VerticalAlign.Center)
-            .backgroundColor('#16213E')
+            // 680：玻璃卡片（12 圆角 + 白描边）
+            .backgroundColor(ROOM_GROUP_GLASS_BG)
+            .borderRadius(12)
+            .border({ width: 1, color: ROOM_CARD_GLASS_RIM })
             .onClick((): void => {
               const fields: Map<string, Object> = new Map<string, Object>();
               fields.set('index', gi);
@@ -1649,9 +1679,12 @@ export struct HimiNativePlayerView {
                       .fontColor('#62FFFFFF');
                   }
                   .width('100%')
-                  .padding({ left: 24, right: 12, top: 6, bottom: 6 })
+                  .padding({ left: 10, right: 8, top: 6, bottom: 6 })
                   .alignItems(VerticalAlign.Center)
-                  .backgroundColor('#1A1A2E')
+                  // 680：玻璃条（10 圆角）
+                  .backgroundColor(ROOM_SEASON_GLASS_BG)
+                  .borderRadius(10)
+                  .border({ width: 1, color: ROOM_CARD_GLASS_RIM })
                   .onClick((): void => {
                     const fields: Map<string, Object> = new Map<string, Object>();
                     fields.set('groupIndex', gi);
@@ -1872,11 +1905,13 @@ export struct HimiNativePlayerView {
     .width('100%')
     .padding({ left: 8, right: 8, top: 6, bottom: 6 })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(ep.isPlaying ? '#4D6366F1' : Color.Transparent)
-    // 596：当前集左 3vp accent 边框（Flutter Border(left, 3)，不占布局宽）。
+    // 680：玻璃卡片行（10 圆角 + 描边；选中态主色 2vp 描边）
+    .backgroundColor(ep.isPlaying ? '#386366F1' : ROOM_SEASON_GLASS_BG)
+    .borderRadius(10)
     .border(ep.isPlaying
-      ? { width: { left: 3 }, color: SEL_COLOR }
-      : { width: 0, color: Color.Transparent });
+      ? { width: 2, color: SEL_COLOR }
+      : { width: 1, color: ROOM_CARD_GLASS_RIM })
+    .margin({ bottom: 4 });
   }
 
   /**
@@ -2064,7 +2099,13 @@ export struct HimiNativePlayerView {
         this.RoomPanel();
       }
       .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
-      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%');
+      .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')
+      // 680：液态玻璃近似（对齐 Win 的 GlassContainer(popup:true)）——
+      // 65% 深色磨砂 + 圆角 16 + 白 20% 描边。
+      .backgroundColor(ROOM_PANEL_GLASS_BG)
+      .borderRadius(16)
+      .border({ width: 1, color: ROOM_PANEL_GLASS_RIM })
+      .clip(true);
     }, (epoch: number): string => `room-${epoch}`);
   }
 
@@ -2636,16 +2677,8 @@ export struct HimiNativePlayerView {
         // 时钟（仅 TV 且格式非 off；对齐 Flutter PlayerClockLayer：
         // `if (!tvMode || !format.enabled) return shrink`）。
         if (this.state().isRoom) {
-          // 622：观众隐藏分享（@Builder 返回 void，不能链式加 .visibility
-          // ——用容器包一层控制可见性，保持占位不塌）。
-          Row() {
-            this.IconChip(String.fromCodePoint(NativePlayerIcons.ICON_SHARE), 22, 6, false,
-              false, 'share', (): void => {
-                this.pokeAutoHide();
-                HimiMpvNativeHost.getInstance().shareRoom();
-              }, 1);
-          }
-          .visibility(this.state().isHost ? Visibility.Visible : Visibility.Hidden);
+          // 680：分享按钮已移到**房间资源面板头部**（对齐 Win 版位置），
+          // 顶栏不再放（旧实现在这里放 IconChip(ICON_SHARE)）。
         } else if (this.state().tvMode && this.clockFormat !== 'off') {
           Text(this.currentTime)
             .fontSize(13)

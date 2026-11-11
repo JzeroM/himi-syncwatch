@@ -399,8 +399,8 @@ void main() {
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
-      expect(codeLines, contains('flags: Qt.FramelessWindowHint'));
-      expect(codeLines, isNot(contains('flags: Qt.Window\n')));
+      // 680：必须保留 Qt.Window 类型位（否则 WS_POPUP → 不进任务栏）
+      expect(codeLines, contains('Qt.Window | Qt.FramelessWindowHint'));
     });
   });
 

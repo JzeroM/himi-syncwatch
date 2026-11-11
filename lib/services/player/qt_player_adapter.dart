@@ -200,6 +200,26 @@ class QtPlayerAdapter implements PlayerAdapter {
     });
   }
 
+  /// 680：卸载当前媒体（删除「正在播放的资源」时调用）。
+  ///
+  /// 【为什么必须有】Qt 接管时真正的播放引擎是 Qt 进程里的 mpv，本页的
+  /// `_player` 是空闲引擎——只重置 `_player` 的话，Qt 窗会**继续播放
+  /// 已删除的那一集**（真机回归「删除在播资源后视频还在放」）。
+  ///
+  /// 语义对齐 `MpvPlayerAdapter.unloadMedia()`：清空进度/时长/缓冲、
+  /// 状态置 stopped，并让 Qt 侧 `stop` 掉 mpv（卸载媒体、释放解码器）。
+  Future<void> unloadMedia() async {
+    if (_disposed) return;
+    _positionMs = 0;
+    _durationMs = 0;
+    _bufferedMs = 0;
+    _mediaUri = '';
+    _setMediaStatus(AdapterMediaStatus.unloaded);
+    _pipe.sendCommandRaw({'type': 'stop'});
+    _setState(AdapterPlaybackState.stopped);
+    LogService().log('QtPlayer', '已卸载媒体（删除在播资源）');
+  }
+
   /// 677：房间并排跟随开关（Qt 自己读 Flutter 主窗矩形）。
   void setFollowParent(bool enabled) {
     if (_disposed) return;

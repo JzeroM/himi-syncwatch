@@ -3508,21 +3508,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 671 B3：本页持有的会话（被新会话顶替时本页退场的判定依据）。
   QtPlayerSession? _mySession;
 
-  /// 679：房间模式的「点 X 关窗 → 弹退出确认」接线。
+  /// 679/680：房间模式的「点 X 关窗 → 弹退出确认」接线。
   ///
-  /// 【链路】用户点 Flutter 主窗的关闭
-  ///   → `window_manager.setPreventClose(true)` 吞掉 WM_CLOSE
-  ///   → 但**插件吞掉后不会回调 onWindowClose**，所以这里换个思路：
-  ///     `setPreventClose` 只负责「别让系统关窗」，退出请求由播放页
-  ///     自己发起（`RoomExitRequest` 由 main.dart 的监听触发）。
+  /// 【链路（已按插件源码核实）】用户点 Flutter 主窗的关闭
+  ///   → `window_manager` 收到 `WM_CLOSE`，**先发 `close` 事件**、
+  ///     再检查 `IsPreventClose()`（插件源码 `window_manager_plugin.cpp`）
+  ///   → 所以 `onWindowClose` **拦截态也会触发**（早期实现误判它不触发，
+  ///     导致「点 X 直接关掉 Qt 窗、房间悬空」——真机回归「退出房间没生效」）
+  ///   → `main.dart` 检查 [RoomExitRequest.hasRoomListener]：
+  ///     房间态 → 只发退出请求（不关 Qt）；单人 → 直接关 Qt
+  ///   → 本页监听 [RoomExitRequest.seq] → 弹确认框
   ///
-  /// 【为什么不能直接监听 onWindowClose】`setPreventClose(true)` 时
-  /// `WM_CLOSE` 在插件里直接 `return -1`，`onWindowClose` 根本不会触发。
-  /// 因此改用 `window_manager` 的 `onWindowClose` **仅在非拦截态**生效，
-  /// 房间态由 [RoomExitRequest] 通道驱动（见 `main.dart`）。
+  /// 【`setPreventClose(true)` 仍需要】它负责「别让窗口真的关掉」，
+  /// 与「事件分发」是两件独立的事。
   void _setupRoomCloseInterception() {
     if (widget.roomCode == null) return;
     if (defaultTargetPlatform != TargetPlatform.windows) return;
+    // 680：注册「房间监听者」标记——main.dart 的 onWindowClose 据此决定
+    // 是「发退出请求弹确认」还是「直接关 Qt」。
+    // 【真机回归】旧实现只 setPreventClose(true) 不注册标记，且误以为
+    // onWindowClose 不会触发 → 点 X 直接关掉 Qt 窗、房间悬空。
+    RoomExitRequest.attach();
     unawaited(_enablePreventClose());
     RoomExitRequest.seq.addListener(_onRoomExitRequested);
   }
@@ -3553,7 +3559,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         MpvSessionPlatform.activeQtAdapter?.focus();
         return;
       }
-      // 确认：关 Qt 播放窗 + 回详情页
+      // 确认：先释放关闭拦截（否则主窗永远关不掉），再关 Qt + 退页
+      await _releasePreventClose();
+      RoomExitRequest.detach();
       await MpvSessionPlatform.closeQtPlayer();
       if (!mounted || _disposed) return;
       await _safePopPlayerPage();
@@ -3579,6 +3587,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 679：退出房间确认框是否已打开（防重复弹窗）。
   bool _roomExitDialogOpen = false;
+
+  /// 680：房间解散流程进行中（保持面板态，避免关闭 Qt 后页面跳回播放页布局）。
+  bool _roomDestroying = false;
 
   /// 677：房间 Qt 适配器是否已接线（预启动与起播都会触发，防重复摆位）。
   bool _roomQtWired = false;
@@ -6523,6 +6534,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _clearHostOfflineCheck();
     _player.state = AdapterPlaybackState.stopped;
     _syncPlayState();
+    // 680：置「解散中」——保持房间面板态直到退页，避免关闭 Qt 后
+    // `_roomPanelMode` 变 false 导致页面瞬间跳回播放页布局（视觉闪跳）。
+    if (mounted && !_roomDestroying) {
+      setState(() => _roomDestroying = true);
+    }
     if (_rtmChannel != null) {
       try {
         final rtmService = ref.read(rtmServiceProvider);
@@ -6532,6 +6548,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 604：先隐藏原生窗口，否则「房间已解散」对话框被它盖住
     //（观众端收到通知时原生 UI 通常还开着）。
     unawaited(_suspendNativeUiForDialog());
+    // 680：Windows Qt 播放窗是**独立顶层窗口**，不解散就会一直挂在桌面上
+    //（真机回归「房主解散后，观众的 Qt 播放窗不关」）。
+    //
+    // 【为什么不用 `_roomQtActive` 判断】它要求 `qt.isAlive`——若进程在
+    // 解散前刚好断开/退出，该判定为 false，但残留窗口仍在桌面上。
+    // `closeQtPlayer()` 本身幂等（无 adapter 直接返回），无条件调用最稳。
+    if (widget.roomCode != null) {
+      unawaited(MpvSessionPlatform.closeQtPlayer());
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -6542,6 +6567,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     Future.delayed(const Duration(milliseconds: 1500), () {
       // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 popUntil 根路由）。
+      // 680：观众端被解散 → 回首页（`popUntilFirst: true` 已经做到，
+      // 这里补一句注释明确语义）。
       if (mounted) unawaited(_safePopPlayerPage(popUntilFirst: true));
     });
   }
@@ -8165,11 +8192,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // ——`_prepared` 从不重置、duration/position 仍在 → 下一轮立刻把状态
       // 改回 playing → player.play() → 画面继续播。
       // 必须真正卸载媒体（重置 _prepared 与进度字段）。
+      //
+      // 【680 真机回归：Win 房间删在播资源后 Qt 窗还在放】Qt 接管时真正的
+      // 播放引擎是 Qt 进程里的 mpv，本页 `_player` 只是空闲引擎——只重置
+      // `_player` 的话 Qt 窗会继续播放已删除的那一集。
+      // 因此**两个引擎都要清**（各自幂等）。
       final p = _player;
       if (p is MpvPlayerAdapter) {
         unawaited(p.unloadMedia());
       } else {
         p.state = AdapterPlaybackState.stopped;
+      }
+      final qt = MpvSessionPlatform.activeQtAdapter;
+      if (qt != null && !qt.isDisposed) {
+        unawaited(qt.unloadMedia());
       }
       _syncPlayState();
     } else if (_currentEpisodeIndex > index) {
@@ -8640,6 +8676,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     unawaited(_exitRoomSplitLayout());
     // 679：释放关闭拦截（否则应用永远关不掉）+ 摘掉退出请求监听
     RoomExitRequest.seq.removeListener(_onRoomExitRequested);
+    RoomExitRequest.detach();
     unawaited(_releasePreventClose());
     _rtmSubscription?.cancel();
     _presenceSubscription?.cancel();
@@ -8874,8 +8911,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 此态下本页**全窗渲染房间面板**（不渲染视频区），Qt 窗只播视频。
   bool get _roomPanelMode =>
       widget.roomCode != null &&
-      _roomQtActive &&
-      defaultTargetPlatform == TargetPlatform.windows;
+      defaultTargetPlatform == TargetPlatform.windows &&
+      // 680：解散流程中也保持面板态（Qt 已关，但仍要显示「房间已解散」）
+      (_roomDestroying || _roomQtActive);
 
   /// 677：房间面板态的全窗版式。
   ///

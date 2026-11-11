@@ -23,8 +23,14 @@ ApplicationWindow {
     //
     // 【为什么】房间模式下 Qt 窗是「播放器」，退出统一走 Flutter 面板窗
     // 的确认流程（避免用户误点 X 直接杀掉播放窗、房间悬空）。
-    // 无边框后拖动/缩放由 TopBar 拖拽区 + startSystemResize 接管。
-    flags: Qt.FramelessWindowHint
+    // 无边框后拖动/缩放由 TopBar 拖拽区 + WindowResizeEdges 接管。
+    //
+    // 【680 真机回归：Qt 窗不进任务栏】旧值只写 `Qt.FramelessWindowHint`
+    // ——这行**完全替换** flags，类型位从 `Qt::Window`(0x1) 退化成
+    // `Qt::Widget`(0x0)，Qt 在 Windows 上改走 `WS_POPUP`；Win32 规则下
+    // `WS_POPUP` 窗口不进任务栏（除非有 WS_EX_APPWINDOW）。
+    // 必须显式保留 `Qt.Window` 类型位（C++ 侧再补 WS_EX_APPWINDOW 兜底）。
+    flags: Qt.Window | Qt.FramelessWindowHint
 
     // 播放快捷键（两窗共用组件；焦点在任一窗都有效）
     PlayerShortcuts { }

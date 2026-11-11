@@ -22,6 +22,7 @@ import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/env_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
+import 'package:himi_syncwatch/services/room/room_exit_request.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_syncwatch/services/update/update_package_cleaner.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
@@ -336,13 +337,23 @@ void main() async {
 
 /// 676：主窗口关闭事件 → 收掉 Qt 播放器进程（幂等）。
 ///
-/// 679：房间模式下播放页会开启 `setPreventClose(true)` 拦截系统关闭，
-/// 此时本回调**不会**触发（`WM_CLOSE` 被 `window_manager` 吞掉），
-/// 改由 [RoomExitRequest] 通知播放页弹「退出房间」确认框。
-/// 非拦截态（单人播放）走到这里就是正常关闭 → 直接关 Qt。
+/// 679/680：**`window_manager` 的 WM_CLOSE 是先发 `close` 事件、再检查
+/// `IsPreventClose()`**（见插件源码）——所以拦截态下本回调**也会**被调用。
+/// 早期实现误以为它不会触发，导致「房间模式点 X 直接关掉 Qt 播放窗、
+/// 房间悬空」（真机回归「退出房间没生效」）。
+///
+/// 正确分工：
+/// - 房间播放中（[RoomExitRequest.hasRoomListener]）→ 只发退出请求，
+///   **不关 Qt**；由播放页弹确认框决定后续
+/// - 单人播放 → 直接关 Qt（保持原语义）
 class _QtPlayerWindowCloseListener with WindowListener {
   @override
   void onWindowClose() {
+    if (RoomExitRequest.hasRoomListener) {
+      // 房间模式：交给播放页弹「退出房间」确认框
+      RoomExitRequest.request();
+      return;
+    }
     unawaited(MpvSessionPlatform.closeQtPlayer());
   }
 }

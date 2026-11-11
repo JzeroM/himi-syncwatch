@@ -46,6 +46,13 @@ public:
     /// 加载媒体。`headers` 用于 Emby 鉴权（拼进 `http-header-fields`）。
     void load(const QString& url, const QMap<QString, QString>& headers = {});
 
+    /// 680：卸载当前媒体（删除「正在播放的资源」时调用）。
+    ///
+    /// 语义对齐 Dart 侧 `unloadMedia()`：`stop` 结束 playlist、释放解码器，
+    /// 进度/时长归零，弹幕轨清空。只 pause 会让画面停在最后一帧
+    ///（真机回归「删了但还在播」）。
+    void stopPlayback();
+
     // 664：以下控件操作暴露给 QML 直驱（控件本地化）——Flutter 侧
     // 无人应答（播放页已回详情页）时控件依然可用；QML 同时把命令
     // 发给 Flutter 做记账（弹幕同步等），两边都写幂等无副作用。
@@ -203,10 +210,12 @@ private:
     void pumpEvents();
     void applyHdrOptions(bool hdr, bool hlg);
 
-    /// 677：定位 Flutter 主窗（`--parent-pid` + 类名 + 顶层可见）。
+    /// 679：定位 Flutter 主窗（`--parent-pid` + 类名 + 顶层可见）。
     HWND findParentWindow();
     /// 677：按 Flutter 主窗当前矩形重算并应用本窗矩形（房间并排跟随）。
     void followParentOnce();
+    /// 680：用户拖动/拉伸开始 → 挂起跟随托管（停手 400ms 自动恢复）。
+    void suspendFollowForUserGesture();
 
     /// 669：初始化前用 option、初始化后用 property（mpv 规则）。
     void setMpvString(const char* name, const QString& value);
@@ -232,6 +241,16 @@ private:
     bool applyingProgrammaticGeometry_ = false;
     /// 679：上一次回传的用户矩形（去重，避免拖动中每像素发一帧）。
     QRect lastUserRect_;
+
+    /// 680：用户正在拖动/拉伸本窗 → 挂起「跟随 Flutter 窗」的托管。
+    ///
+    /// 【真机回归：拖 Qt 窗面板不跟随】旧实现 `setFollowParent(true)` 下
+    /// `followParentOnce()` 每 50ms 把窗口拽回 Flutter 窗左侧——用户拖走
+    /// 后立刻被拉回，那次拉回又是程序性移动（被 applyingProgrammaticGeometry_
+    /// 屏蔽）→ 面板永远收不到 `windowMoved`。
+    /// 现在：拖动/拉伸期间挂起托管，停手 400ms 后自动恢复并重新对齐。
+    bool followParentSuspended_ = false;
+    QTimer* suspendResumeTimer_ = nullptr;
 
     int insetTop_ = 0;
     int insetBottom_ = 0;

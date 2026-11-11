@@ -1347,18 +1347,8 @@ class NativePlayerScreenView(
         applyPressFeedback(rotateIcon)
         topTail.addView(rotateIcon, llp(dp(34), dp(34), 8))
 
-        // 分享（仅房间模式；对齐 Flutter showShare: roomCode != null）。
-        shareButton.text = String(Character.toChars(NativePlayerIcons.ICON_SHARE))
-        shareButton.typeface = NativePlayerIcons.typeface(context)
-        shareButton.setTextColor(Color.WHITE)
-        shareButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-        shareButton.gravity = Gravity.CENTER
-        shareButton.includeFontPadding = false
-        shareButton.setPadding(dp(6), dp(6), dp(6), dp(6))
-        shareButton.isClickable = true
-        shareButton.setOnClickListener { listener?.onShare() }
-        applyPressFeedback(shareButton)
-        topTail.addView(shareButton, llp(dp(34), dp(34), 8))
+        // 680：分享按钮已移到**房间资源面板头部**（对齐 Win 版位置），
+        // 顶栏不再放（旧实现在这里 topTail.addView(shareButton)）。
 
         // 尾簇装进测量级缩放容器：小屏/竖屏整组等比缩小（等价 Flutter
         // FittedBox(scaleDown)），保证不出屏、不与标题/传输组重叠。
@@ -1953,7 +1943,16 @@ class NativePlayerScreenView(
     private fun configureRoomPanel() {
         roomPanel.orientation = LinearLayout.VERTICAL
         roomPanel.visibility = GONE
-        roomPanel.setBackgroundColor(0xFF1A1A2E.toInt())
+        // 680：液态玻璃近似（对齐 Win 的 GlassContainer(popup:true)）——
+        // 65% 深色磨砂 + 圆角 16 + 白 20% 描边。
+        // 【为什么不做真模糊】安卓原生层无 Flutter 的折射管线；用同值的
+        // 半透明深色 + 描边即可获得一致的「玻璃厚度」观感。
+        roomPanel.background = GradientDrawable().apply {
+            cornerRadius = dp(16).toFloat()
+            setColor(0xA61A1D23.toInt())
+            setStroke(dp(1), 0x33FFFFFF)
+        }
+        roomPanel.elevation = dp(8).toFloat()
 
         roomPanelHeader.orientation = LinearLayout.HORIZONTAL
         roomPanelHeader.gravity = Gravity.CENTER_VERTICAL
@@ -2021,6 +2020,21 @@ class NativePlayerScreenView(
         roomPanelRole.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
         roomPanelRole.setPadding(dp(6), dp(2), dp(6), dp(2))
         roomPanelHeader.addView(roomPanelRole, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(20), 6))
+
+        // 680：分享按钮移到**面板头部**（对齐 Win：资源 | 搜索 | 人数 | 角色 | 分享）。
+        // 旧实现放在顶栏尾簇，与 Win 版位置不一致（用户要求三端统一）。
+        shareButton.text = String(Character.toChars(NativePlayerIcons.ICON_SHARE))
+        shareButton.typeface = NativePlayerIcons.typeface(context)
+        shareButton.setTextColor(Color.WHITE)
+        shareButton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+        shareButton.gravity = Gravity.CENTER
+        shareButton.includeFontPadding = false
+        shareButton.setPadding(dp(4), dp(4), dp(4), dp(4))
+        shareButton.isClickable = true
+        shareButton.setOnClickListener { listener?.onShare() }
+        applyPressFeedback(shareButton)
+        roomPanelHeader.addView(shareButton, llp(dp(28), dp(28), 6))
+
         roomPanel.addView(
             roomPanelHeader,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
@@ -3461,8 +3475,13 @@ class NativePlayerScreenView(
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12), dp(8), dp(12), dp(8))
-        setBackgroundColor(0xFF16213E.toInt())
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        // 680：玻璃卡片（对齐 Win 分组标题：12 圆角 + 白描边 + 半透明）
+        background = GradientDrawable().apply {
+            cornerRadius = dp(12).toFloat()
+            setColor(0x14FFFFFF)
+            setStroke(dp(1), 0x1FFFFFFF)
+        }
         isClickable = true
         setOnClickListener {
             listener?.onToggleResourceGroup(groupIndex)
@@ -3508,9 +3527,14 @@ class NativePlayerScreenView(
     ): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        // Flutter `EdgeInsets.only(left: 24, right: 12, top: 6, bottom: 6)`。
-        setPadding(dp(24), dp(6), dp(12), dp(6))
-        setBackgroundColor(0xFF1A1A2E.toInt())
+        // Flutter `EdgeInsets.only(left: 8, right: 4, top: 2)`（679 玻璃化后）。
+        setPadding(dp(10), dp(6), dp(8), dp(6))
+        // 680：玻璃条（季标题：10 圆角）
+        background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(0x0FFFFFFF)
+            setStroke(dp(1), 0x1AFFFFFF)
+        }
         isClickable = true
         setOnClickListener {
             listener?.onToggleResourceSeason(groupIndex, seasonIndex)
@@ -3560,9 +3584,12 @@ class NativePlayerScreenView(
             gravity = Gravity.CENTER_VERTICAL
             // Flutter `EdgeInsets.symmetric(horizontal: 8, vertical: 6)`。
             setPadding(dp(8), dp(6), dp(8), dp(6))
-            if (ep.isPlaying) {
-                // Flutter `Color(0xFF6366F1).withValues(alpha: 0.3)`。
-                setBackgroundColor(0x4D6366F1)
+            // 680：玻璃卡片行（对齐 Win：10 圆角 + 描边；选中态主色 2dp 描边）。
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(if (ep.isPlaying) 0x386366F1 else 0x0FFFFFFF)
+                setStroke(dp(if (ep.isPlaying) 2 else 1),
+                    if (ep.isPlaying) NPTheme.ACCENT else 0x1AFFFFFF)
             }
             isClickable = true
             setOnClickListener {
@@ -4086,10 +4113,11 @@ class NativePlayerScreenView(
         // 分享：仅房间模式（对齐 Flutter showShare）。
         // 622：房间**观众**隐藏分享（只有房主能分享房间）。
         // 用 INVISIBLE 而非 GONE：保持顶栏尾部布局不塌（与 Flutter 观感一致）。
+        // 680：分享按钮现在在**房间面板头部**——只在「房间 + 房主」显示
+        // （旧实现在顶栏，观众用 INVISIBLE 占位；面板头部不需要占位，
+        // 直接用 GONE 让角色徽章贴边）。
         shareButton.visibility =
-            if (state.isRoom && !state.isHost) INVISIBLE
-            else if (state.isRoom) VISIBLE
-            else GONE
+            if (state.isRoom && state.isHost) VISIBLE else GONE
         // 642：时钟显隐跟随设置（默认 off）。原实现 TV 恒显示，导致
         // 「时钟关闭」时左侧仍占 100dp 空白，标题无法左移填充。
         clockWrap.visibility =

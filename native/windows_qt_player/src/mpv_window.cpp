@@ -77,6 +77,11 @@ QString nodeString(const mpv_node& node, const char* key) {
 MpvWindow::MpvWindow(QObject* parent) : QObject(parent) {}
 
 MpvWindow::~MpvWindow() {
+    if (suspendResumeTimer_ != nullptr) {
+        suspendResumeTimer_->stop();
+        delete suspendResumeTimer_;
+        suspendResumeTimer_ = nullptr;
+    }
     if (timer_ != nullptr) {
         timer_->stop();
         delete timer_;
@@ -103,6 +108,10 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     // 屏蔽，不会走到这里）。用几何变化的**去重**再压一层：同一矩形不重复发。
     connect(host, &QWindow::xChanged, this, [this]() {
         if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        // 680：用户拖动中 → 续期挂起（停手 400ms 才恢复跟随）
+        if (suspendResumeTimer_ != nullptr && suspendResumeTimer_->isActive()) {
+            suspendResumeTimer_->start(400);
+        }
         const QRect g = host_->geometry();
         if (g == lastUserRect_) return;
         lastUserRect_ = g;
@@ -110,6 +119,9 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     });
     connect(host, &QWindow::yChanged, this, [this]() {
         if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        if (suspendResumeTimer_ != nullptr && suspendResumeTimer_->isActive()) {
+            suspendResumeTimer_->start(400);
+        }
         const QRect g = host_->geometry();
         if (g == lastUserRect_) return;
         lastUserRect_ = g;
@@ -117,6 +129,9 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     });
     connect(host, &QWindow::widthChanged, this, [this]() {
         if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        if (suspendResumeTimer_ != nullptr && suspendResumeTimer_->isActive()) {
+            suspendResumeTimer_->start(400);
+        }
         const QRect g = host_->geometry();
         if (g == lastUserRect_) return;
         lastUserRect_ = g;
@@ -124,6 +139,9 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     });
     connect(host, &QWindow::heightChanged, this, [this]() {
         if (applyingProgrammaticGeometry_ || host_ == nullptr) return;
+        if (suspendResumeTimer_ != nullptr && suspendResumeTimer_->isActive()) {
+            suspendResumeTimer_->start(400);
+        }
         const QRect g = host_->geometry();
         if (g == lastUserRect_) return;
         lastUserRect_ = g;
@@ -364,6 +382,24 @@ int MpvWindow::activeTrackIndex(const QString& type) {
     return ordinal;
 }
 
+/// 680：卸载当前媒体（删除「正在播放的资源」时调用）。
+///
+/// 【为什么用 stop 而不是只清画面】`stop` 会真正结束 playlist、释放解码器
+/// 与缓冲；只 pause 的话画面停在最后一帧，用户会以为「删了但还在播」。
+/// 同时清空进度/时长，让 QML 进度条归零。
+void MpvWindow::stopPlayback() {
+    if (mpv_ == nullptr) return;
+    mpv_command_string(mpv_, "stop");
+    positionMs_ = 0;
+    durationMs_ = 0;
+    paused_ = true;
+    // 弹幕轨随媒体一起清掉（否则残留在次字幕轨上）
+    setDanmakuAss(QString());
+    emit positionChanged(0, 0);
+    emit pausedChanged(true);
+    qInfo() << "[mpv] stop：媒体已卸载（删除在播资源）";
+}
+
 void MpvWindow::load(const QString& url, const QMap<QString, QString>& headers) {
     if (mpv_ == nullptr || url.isEmpty()) return;
 
@@ -599,6 +635,9 @@ void MpvWindow::setWindowVisible(bool visible) {
 
 void MpvWindow::startSystemMove() {
     if (host_ == nullptr) return;
+    // 680：拖动期间挂起「跟随 Flutter 窗」的托管——否则 50ms 后就被拽回
+    // 原位，用户根本拖不动（真机回归「拖 Qt 窗面板不跟随」的根因）。
+    suspendFollowForUserGesture();
     // Qt 6.5+ 的 QWindow::startSystemMove：交给系统做原生拖动
     //（带 DWM 吸附、半屏贴靠），比自算 mouseMove 稳。
     host_->startSystemMove();
@@ -612,7 +651,28 @@ void MpvWindow::startSystemResize(int edges) {
     if (edges & 4) e |= Qt::RightEdge;
     if (edges & 8) e |= Qt::BottomEdge;
     if (e == Qt::Edges()) return;
+    suspendFollowForUserGesture();
     host_->startSystemResize(e);
+}
+
+/// 680：用户开始拖动/拉伸 → 挂起跟随，并在停手 400ms 后自动恢复。
+///
+/// 【为什么 400ms】系统拖动没有「结束」事件（`QWindow` 不提供），只能靠
+/// 几何变化停止来判定。拖动中每次几何变化都会续期，真正停手后 400ms
+/// 才恢复——足够覆盖 DWM 吸附/半屏贴靠的延迟。
+void MpvWindow::suspendFollowForUserGesture() {
+    followParentSuspended_ = true;
+    if (suspendResumeTimer_ == nullptr) {
+        suspendResumeTimer_ = new QTimer(this);
+        suspendResumeTimer_->setSingleShot(true);
+        connect(suspendResumeTimer_, &QTimer::timeout, this, [this]() {
+            followParentSuspended_ = false;
+            qInfo() << "[follow] 用户操作结束 → 恢复跟随托管";
+            // 恢复后立即对齐一次（把面板窗拉到新位置旁边）
+            followParentOnce();
+        });
+    }
+    suspendResumeTimer_->start(400);
 }
 
 /// 677：定位 Flutter 主窗。
@@ -671,6 +731,8 @@ HWND MpvWindow::findParentWindow() {
 /// Qt 只看 Flutter 窗的左边缘。
 void MpvWindow::followParentOnce() {
     if (!followParent_ || host_ == nullptr) return;
+    // 680：用户正在拖动/拉伸 → 暂停托管（否则会把他拖走的窗口拽回来）
+    if (followParentSuspended_) return;
     // 全屏时覆盖 Flutter 窗（用户明确例外），不跟随。
     if (isHostFullscreen()) return;
 

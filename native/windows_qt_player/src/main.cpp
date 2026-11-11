@@ -380,11 +380,43 @@ int main(int argc, char* argv[]) {
         if (attached) ::AttachThreadInput(fgThread, myThread, FALSE);
         host->requestActivate();
     };
-    const auto showWindows = [host, overlay, &windowsShown, forceForeground]() {
+    // 【680：两个窗口都要在任务栏】Qt 播放窗是 `WS_POPUP`（无边框），
+    // Win32 默认不给它任务栏图标。三步强制：
+    //   ① 清 owner —— 有 owner 的窗口任务栏不显示
+    //   ② 加 WS_EX_APPWINDOW —— 让 WS_POPUP 也能进任务栏
+    //   ③ SWP_FRAMECHANGED —— 改 exstyle 后必须发这个，任务栏才会立即重算
+    //      （不发的话要等下次显隐才更新）
+    //
+    // 【为什么只对 host 做】控件层 overlay 是 `Qt::Tool`，Win32 本就不给
+    // Tool 窗口任务栏图标（它应随宿主走）。Flutter 面板窗是标准 runner
+    // 窗口（WS_OVERLAPPEDWINDOW），本来就有图标。
+    const auto ensureTaskbarEntry = [host]() {
+        if (host == nullptr) return;
+        HWND h = reinterpret_cast<HWND>(host->winId());
+        if (h == nullptr) return;
+        ::SetWindowLongPtrW(h, GWLP_HWNDPARENT, 0);
+        const LONG_PTR ex = ::GetWindowLongPtrW(h, GWL_EXSTYLE);
+        const LONG_PTR wanted =
+            ex | static_cast<LONG_PTR>(WS_EX_APPWINDOW);
+        if (wanted != ex) {
+            ::SetWindowLongPtrW(h, GWL_EXSTYLE, wanted);
+        }
+        ::SetWindowPos(h, nullptr, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                           SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        qInfo().noquote() << "[taskbar] Qt 播放窗已加入任务栏 ex="
+                          << Qt::hex << wanted << Qt::dec;
+    };
+
+    const auto showWindows = [host, overlay, &windowsShown, forceForeground,
+                              ensureTaskbarEntry]() {
         if (windowsShown) return;
         windowsShown = true;
         host->show();
         overlay->show();
+        // 680：必须在 show() **之后**——窗口创建后 exstyle 才稳定，
+        // Qt 在 show 期间可能重置过一次。
+        ensureTaskbarEntry();
         overlay->requestActivate();
         forceForeground();
         overlay->raise();
@@ -619,10 +651,14 @@ int main(int argc, char* argv[]) {
                              mpv.setWindowVisible(
                                  cmd.value(QLatin1String("visible"))
                                      .toBool(true));
+                         } else if (type == QLatin1String("stop")) {
+                             // 680：删除「正在播放的资源」→ 卸载媒体
+                             //（只 pause 会让画面停在最后一帧）
+                             mpv.stopPlayback();
+                             loadedUrl.clear();
                          } else if (type == QLatin1String("startSystemMove")) {
                              // 679：无边框窗口拖动（顶栏拖拽区）
-                             mpv.startSystemMove();
-                         } else if (type ==
+                             mpv.startSystemMove();                         } else if (type ==
                                     QLatin1String("startSystemResize")) {
                              // 679：无边框窗口边缘拉伸（1=左 2=上 4=右 8=下）
                              mpv.startSystemResize(

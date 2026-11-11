@@ -71,12 +71,13 @@ void main() {
       expect(ohosView, contains(".fontSize(12)\n                .fontColor('#8AFFFFFF')"));
     });
 
-    test('季标题：左 24 内边距 + white54 16 图标 + 第N季 + (N集)', () {
-      expect(kotlinScreen, contains('setPadding(dp(24), dp(6), dp(12), dp(6))'));
+    test('季标题：玻璃条 + white54 16 图标 + 第N季 + (N集)', () {
+      // 680：玻璃化后缩进改为 10/8（对齐 Win 的季标题玻璃条）
+      expect(kotlinScreen, contains('setPadding(dp(10), dp(6), dp(8), dp(6))'));
       expect(kotlinScreen, contains('16f,\n                NPTheme.WHITE_54,'));
       expect(kotlinScreen, contains('text = "第\${season.seasonNumber}季"'));
       expect(kotlinScreen, contains('"(\${season.episodes.size}集)"'));
-      expect(ohosView, contains('padding({ left: 24, right: 12, top: 6, bottom: 6 })'));
+      expect(ohosView, contains('padding({ left: 10, right: 8, top: 6, bottom: 6 })'));
       expect(ohosView, contains('`第\${season.seasonNumber}季`'));
       expect(ohosView, contains('`(\${season.episodes.length}集)`'));
     });
@@ -99,9 +100,12 @@ void main() {
       expect(ohosView, contains('width: { left: 3 }, color: SEL_COLOR'));
     });
 
-    test('当前集底色 accent@30%', () {
-      expect(kotlinScreen, contains('setBackgroundColor(0x4D6366F1)'));
-      expect(ohosView, contains("'#4D6366F1'"));
+    test('当前集底色 accent@30%（680：改为玻璃卡 + 主色描边）', () {
+      // 680：整行玻璃卡（10 圆角），选中态 accent 底 + 2dp 主色描边
+      expect(kotlinScreen, contains('0x386366F1'));
+      expect(kotlinScreen, contains('setStroke(dp(if (ep.isPlaying) 2 else 1)'));
+      expect(ohosView, contains("'#386366F1'"));
+      expect(ohosView, contains('borderRadius(10)'));
     });
 
     test('缩略图圆角 4 + 无图时灰底 + movie 图标', () {

@@ -123,8 +123,10 @@ void main() {
   });
 
   group('③ 安卓观众隐藏控件（INVISIBLE 占位）', () {
-    test('分享按钮观众隐藏', () {
-      expect(android, contains('if (state.isRoom && !state.isHost) INVISIBLE'));
+    test('分享按钮观众隐藏（680：已移到面板头部，用 GONE）', () {
+      // 旧实现在顶栏用 INVISIBLE 占位；680 移到房间面板头部后，
+      // 观众直接 GONE（面板头部不需要占位，让角色徽章贴边）。
+      expect(android, contains('if (state.isRoom && state.isHost) VISIBLE else GONE'));
     });
 
     test('播放/上一集/下一集 观众隐藏', () {
@@ -203,8 +205,15 @@ void main() {
       expect(body, contains('if (!this.canControl)'));
     });
 
-    test('分享按钮观众隐藏（Visibility.Hidden 占位）', () {
-      expect(ohos, contains('this.state().isHost ? Visibility.Visible : Visibility.Hidden'));
+    test('分享按钮观众隐藏（680：已移到面板头部，if 门控）', () {
+      // 旧实现在顶栏用 Visibility.Hidden 占位；680 移到面板头部后
+      // 用 `if (this.roomIsHost)` 条件渲染。
+      final panel = ohos.substring(
+        ohos.indexOf('RoomPanel() {'),
+        ohos.indexOf('// ── 分组列表'),
+      );
+      expect(panel, contains('if (this.roomIsHost)'));
+      expect(panel, contains('ICON_SHARE'));
     });
 
     test('ProgressRow 声明 canControl 属性并接收（ArkTS 编译要求）', () {
@@ -225,8 +234,9 @@ void main() {
         ohos,
         isNot(contains("}, 1)\n            .visibility(")),
       );
-      // 分享按钮改用容器包一层。
-      expect(ohos, contains('.visibility(this.state().isHost ? Visibility.Visible : Visibility.Hidden)'));
+      // 680：分享按钮已移到面板头部，不再需要「容器包一层控制可见性」
+      // 的写法（改为 if 条件渲染），这里只保留「不得链式调 .visibility」
+      // 这条编译约束。
     });
 
     test('TransportGlyph 支持 visible 参数', () {

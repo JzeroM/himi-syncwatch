@@ -732,8 +732,9 @@ void main() {
 
   group('K 无边框与双向跟随', () {
     test('K1 Qt 窗无边框（去掉最小化/最大化/关闭三钮）', () {
-      expect(mainQml, contains('flags: Qt.FramelessWindowHint'));
-      expect(mainQml, isNot(contains('flags: Qt.Window\n')));
+      // 680：必须**保留 Qt.Window 类型位**——只写 FramelessWindowHint 会让
+      // 类型退化成 Qt::Widget → Windows 走 WS_POPUP → 不进任务栏。
+      expect(mainQml, contains('Qt.Window | Qt.FramelessWindowHint'));
     });
 
     test('K2 左上角返回按钮已移除', () {
@@ -939,6 +940,217 @@ void main() {
       expect(playerScreen,
           contains('Duration(milliseconds: 220)'));
       expect(playerScreen, contains('Curves.easeOutCubic'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // N. 680：跟随挂起 / 8 向拉伸 / 任务栏 / 三端分享统一
+  // ═══════════════════════════════════════════════════════════════
+
+  group('N 跟随挂起与窗口拉伸', () {
+    test('N1 拖动/拉伸时挂起跟随托管（否则被拽回原位）', () {
+      expect(mpvH, contains('followParentSuspended_'));
+      expect(mpvH, contains('suspendFollowForUserGesture'));
+      final move = _extract(mpvCpp, 'void MpvWindow::startSystemMove()');
+      expect(move, contains('suspendFollowForUserGesture()'));
+      final resize = _extract(mpvCpp, 'void MpvWindow::startSystemResize');
+      expect(resize, contains('suspendFollowForUserGesture()'));
+      // followParentOnce 必须检查挂起标志
+      final follow = _extract(mpvCpp, 'void MpvWindow::followParentOnce');
+      expect(follow, contains('if (followParentSuspended_) return'));
+    });
+
+    test('N2 停手 400ms 自动恢复并重新对齐', () {
+      final body = _extract(mpvCpp, 'void MpvWindow::suspendFollowForUserGesture');
+      expect(body, contains('setSingleShot(true)'));
+      expect(body, contains('start(400)'));
+      expect(body, contains('followParentSuspended_ = false'));
+      expect(body, contains('followParentOnce()'));
+    });
+
+    test('N3 拖动中几何变化续期（不会中途恢复）', () {
+      final count =
+          RegExp(r'suspendResumeTimer_->start\(400\)').allMatches(mpvCpp).length;
+      expect(count, greaterThanOrEqualTo(5),
+          reason: '4 个几何回调 + 1 个入口都要续期');
+    });
+
+    test('N4 8 向拉伸热区（WindowResizeEdges.qml）', () {
+      final edges = read('$dir/src/qml/WindowResizeEdges.qml');
+      // 8 个 MouseArea：4 边 + 4 角
+      expect(RegExp(r'MouseArea \{').allMatches(edges).length, 8);
+      // 位掩码 1/2/4/8 及组合
+      for (final m in ['1 | 2', '4 | 2', '1 | 8', '4 | 8']) {
+        expect(edges, contains('startSystemResize($m)'));
+      }
+      expect(edges, contains('startSystemResize(1)'));
+      expect(edges, contains('startSystemResize(4)'));
+      expect(edges, contains('startSystemResize(2)'));
+      expect(edges, contains('startSystemResize(8)'));
+      // 光标形态
+      expect(edges, contains('Qt.SizeHorCursor'));
+      expect(edges, contains('Qt.SizeVerCursor'));
+      expect(edges, contains('Qt.SizeFDiagCursor'));
+      expect(edges, contains('Qt.SizeBDiagCursor'));
+    });
+
+    test('N5 WindowResizeEdges 装配 + CMake 双处注册', () {
+      expect(overlayQml, contains('WindowResizeEdges {'));
+      final cmake = read('$dir/CMakeLists.txt');
+      final qmlFiles = cmake.substring(
+        cmake.indexOf('QML_FILES'),
+        cmake.indexOf('# ── EvolveUI 资产'),
+      );
+      expect(qmlFiles, contains('src/qml/WindowResizeEdges.qml'));
+      final alias = cmake.substring(
+        cmake.indexOf('foreach(_qml Main Overlay'),
+        cmake.indexOf('# EvolveUI vendor'),
+      );
+      expect(alias, contains('WindowResizeEdges'));
+    });
+  });
+
+  group('N6 任务栏与三端分享统一', () {
+    test('N6 两个窗口都进任务栏（Qt 保留 Qt.Window + WS_EX_APPWINDOW）', () {
+      // QML 层：类型位不能丢
+      expect(mainQml, contains('Qt.Window | Qt.FramelessWindowHint'));
+      // C++ 层兜底：清 owner + 强制 APPWINDOW + FRAMECHANGED
+      expect(mainCpp, contains('WS_EX_APPWINDOW'));
+      expect(mainCpp, contains('GWLP_HWNDPARENT, 0'));
+      expect(mainCpp, contains('SWP_FRAMECHANGED'));
+      expect(mainCpp, contains('ensureTaskbarEntry'));
+      // 必须在 showWindows 里、show() 之后调用
+      final show = _extract(mainCpp, 'const auto showWindows');
+      expect(show, contains('ensureTaskbarEntry()'));
+      expect(show.indexOf('host->show()'),
+          lessThan(show.indexOf('ensureTaskbarEntry()')));
+    });
+
+    test('N7 控件悬浮层仍是 Qt::Tool（不抢任务栏图标）', () {
+      expect(mainCpp, contains('Qt::Tool | Qt::FramelessWindowHint'));
+      expect(overlayQml, contains('Qt.Tool | Qt.FramelessWindowHint'));
+    });
+
+    test('N8 安卓分享移到房间面板头部（不在顶栏尾簇）', () {
+      final kt = read('android/app/src/main/kotlin/com/himi/syncwatch/'
+          'nativeplayer/NativePlayerScreenView.kt');
+      // 面板头部有 share
+      final header = kt.substring(
+        kt.indexOf('roomPanelHeader.addView(roomPanelRole'),
+        kt.indexOf('roomPanelHeader,'),
+      );
+      expect(header, contains('shareButton'));
+      // 顶栏尾簇不再加 share（去注释后判定——注释里提到旧写法是说明用）
+      final ktCode = kt
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//');
+          })
+          .join('\n');
+      expect(ktCode, isNot(contains('topTail.addView(shareButton')));
+      // 显隐：房间 + 房主
+      expect(kt, contains('if (state.isRoom && state.isHost) VISIBLE else GONE'));
+    });
+
+    test('N9 鸿蒙分享移到房间面板头部（顶栏已移除）', () {
+      final ets = read('plugins/himi_mpv_ohos/ohos/src/main/ets/components/'
+          'native/HimiNativePlayerView.ets');
+      // 面板头部有 share
+      final panel = ets.substring(
+        ets.indexOf('RoomPanel() {'),
+        ets.indexOf('// ── 分组列表'),
+      );
+      expect(panel, contains('ICON_SHARE'));
+      expect(panel, contains('shareRoom()'));
+      expect(panel, contains('if (this.roomIsHost)'));
+    });
+
+    test('N15 删除在播资源时 Qt 引擎也要卸载（真机回归「删了还在放」）', () {
+      final body = _extract(playerScreen, 'void _removeEpisode(');
+      // 两个引擎都要清：本页空闲引擎 + Qt 真实引擎
+      expect(body, contains('unloadMedia()'));
+      expect(body, contains('MpvSessionPlatform.activeQtAdapter'));
+      expect(body, contains('qt.unloadMedia()'));
+      // Qt 适配器必须有 unloadMedia
+      expect(adapterDart, contains('Future<void> unloadMedia()'));
+      expect(adapterDart, contains("'type': 'stop'"));
+      // Qt 侧实现：stopPlayback（不是只 pause）
+      expect(mpvH, contains('void stopPlayback()'));
+      expect(mpvCpp, contains('void MpvWindow::stopPlayback()'));
+      expect(mpvCpp, contains('mpv_command_string(mpv_, "stop")'));
+      expect(mainCpp, contains('mpv.stopPlayback()'));
+      // 删完后要重推状态（Qt 据此显示「请从资源面板选择」占位）
+      expect(body, contains('_syncNativePanelData()'));
+    });
+
+    test('N14 房间被解散时关闭 Qt 窗 + 回首页（观众端真机回归）', () {
+      // 房主解散 → 观众收到 actionRoomDestroyed → 弹提示 + 回首页。
+      // 但 Qt 播放窗是独立顶层窗口，不显式关闭就会一直挂在桌面上。
+      final body = _extract(playerScreen, 'void _showRoomDestroyedDialog()');
+      // 【关键】不能依赖 _roomQtActive（它要求 isAlive，进程刚断时会漏）
+      expect(body, isNot(contains('if (_roomQtActive)')));
+      expect(body, contains('closeQtPlayer()'));
+      // 回首页（popUntilFirst → popUntil(isFirst)）
+      expect(body, contains('popUntilFirst: true'));
+      // 解散中保持面板态（防页面闪跳）
+      expect(body, contains('_roomDestroying = true'));
+      expect(playerScreen, contains('bool _roomDestroying'));
+      final mode = _extract(playerScreen, 'bool get _roomPanelMode');
+      expect(mode, contains('_roomDestroying || _roomQtActive'));
+    });
+
+    test('N11 关窗分发：房间态只发请求、不关 Qt（真机回归「退出没生效」）', () {
+      // 【根因】window_manager 的 WM_CLOSE 是「先发 close 事件、再检查
+      // IsPreventClose()」——所以 onWindowClose 在拦截态也会触发。
+      // 旧实现无条件 closeQtPlayer() → 点 X 直接关掉 Qt 窗、房间悬空。
+      final mainSrc = read('lib/main.dart');
+      final listener = _extract(mainSrc, 'void onWindowClose()');
+      expect(listener, contains('RoomExitRequest.hasRoomListener'));
+      expect(listener, contains('RoomExitRequest.request()'));
+      // 房间分支必须在 closeQtPlayer 之前 return
+      final reqIdx = listener.indexOf('RoomExitRequest.request()');
+      final closeIdx = listener.indexOf('closeQtPlayer()');
+      expect(reqIdx, greaterThan(0));
+      expect(closeIdx, greaterThan(reqIdx));
+      expect(listener.indexOf('return;'), lessThan(closeIdx));
+    });
+
+    test('N12 房间监听者标记 attach/detach', () {
+      final req = read('lib/services/room/room_exit_request.dart');
+      expect(req, contains('static bool get hasRoomListener'));
+      expect(req, contains('static void attach()'));
+      expect(req, contains('static void detach()'));
+      // 播放页：进房注册、dispose 注销
+      expect(playerScreen, contains('RoomExitRequest.attach()'));
+      final dispose = _extract(playerScreen, 'void dispose()');
+      expect(dispose, contains('RoomExitRequest.detach()'));
+    });
+
+    test('N13 确认退出后先释放拦截再退页（否则主窗关不掉）', () {
+      final body =
+          _extract(playerScreen, 'Future<void> _handleRoomExitRequest');
+      final releaseIdx = body.indexOf('_releasePreventClose()');
+      final popIdx = body.indexOf('_safePopPlayerPage()');
+      expect(releaseIdx, greaterThan(0));
+      expect(popIdx, greaterThan(releaseIdx),
+          reason: '必须先 setPreventClose(false) 再退页');
+      expect(body, contains('RoomExitRequest.detach()'));
+    });
+
+    test('N10 安卓/鸿蒙面板玻璃化（65% 深色 + 描边）', () {
+      final kt = read('android/app/src/main/kotlin/com/himi/syncwatch/'
+          'nativeplayer/NativePlayerScreenView.kt');
+      expect(kt, contains('0xA61A1D23'));
+      expect(kt, contains('0x33FFFFFF'));
+      expect(kt, contains('cornerRadius = dp(16)'));
+      final ets = read('plugins/himi_mpv_ohos/ohos/src/main/ets/components/'
+          'native/HimiNativePlayerView.ets');
+      expect(ets, contains('ROOM_PANEL_GLASS_BG'));
+      expect(ets, contains("'#A61A1D23'"));
+      expect(ets, contains('ROOM_PANEL_GLASS_RIM'));
+      expect(ets, contains("'#33FFFFFF'"));
+      expect(ets, contains('ROOM_GROUP_GLASS_BG'));
     });
   });
 }

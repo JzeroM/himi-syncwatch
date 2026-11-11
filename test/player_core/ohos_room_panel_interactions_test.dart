@@ -124,7 +124,8 @@ void main() {
     test('_removeEpisode 置标记并推原生', () {
       final idx = screen.indexOf('void _removeEpisode(int index, {bool sendRtm = true}) {');
       expect(idx, greaterThan(0));
-      final body = screen.substring(idx, idx + 1500);
+      // 680：方法体变长（新增 Qt 引擎卸载），窗口放宽到 2200
+      final body = screen.substring(idx, idx + 2200);
       expect(body, contains('_resourceGroupsCleared = true;'));
       expect(body, contains('_syncNativePanelData();'));
     });
