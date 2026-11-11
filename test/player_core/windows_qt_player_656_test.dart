@@ -1419,4 +1419,80 @@ void main() {
       expect(screen, contains('MpvSessionPlatform.closeQtPlayer'));
     });
   });
+  group('㉖ 670：QML 加载真根因回归 + CI 冒烟 + 启动预热', () {
+    final mainCpp3 = read('$dir/src/main.cpp');
+    final stateH3 = read('$dir/src/player_state.h');
+    final overlayQml3 = read('$dir/src/qml/Overlay.qml');
+    final hostQml3 = read('$dir/src/qml/Main.qml');
+    final pipeDart3 = read('lib/services/player/qt_player_pipe.dart');
+    final sessionPlat = read('lib/services/player/mpv_session_platform.dart');
+    final mainDart = read('lib/main.dart');
+    final relWorkflow = read('.github/workflows/release.yml');
+    final qtWorkflow = read('.github/workflows/windows-qt-player.yml');
+
+    test('真根因回归：用 ApplicationWindow 的文件必须 import Controls.Basic', () {
+      // 670 真根因：Main.qml 缺 `import QtQuick.Controls.Basic` →
+      // 「ApplicationWindow 不是一种类型」→ 进程加载即退 → 用户看到的
+      // 全是回退窗（控件不可见/出窗慢的总根源）。
+      expect(hostQml3, contains('import QtQuick.Controls.Basic'));
+    });
+
+    test('QML 类型-导入一致性（逐文件表驱动）', () {
+      final rules = <String, String>{
+        'ApplicationWindow': 'import QtQuick.Controls.Basic',
+        'FileDialog': 'import QtQuick.Dialogs',
+        'RowLayout': 'import QtQuick.Layouts',
+        'ColumnLayout': 'import QtQuick.Layouts',
+      };
+      final qmlDir = Directory('$dir/src/qml');
+      for (final f in qmlDir.listSync().whereType<File>()) {
+        if (!f.path.endsWith('.qml')) continue;
+        final body = f.readAsStringSync();
+        rules.forEach((type, imp) {
+          if (body.contains(RegExp('\b$type\b'))) {
+            expect(body, contains(imp),
+                reason: '${f.path} 用了 $type 但缺 $imp');
+          }
+        });
+      }
+    });
+
+    test('CI 冒烟自检（--selftest：运行时 QML 加载错误 CI 直接红）', () {
+      expect(mainCpp3, contains('selftest'));
+      expect(mainCpp3, contains('[selftest] QML 加载通过'));
+      // 两个 workflow 都要跑（Qt 专用构建 + 发布构建）
+      expect(qtWorkflow, contains('--selftest'));
+      expect(relWorkflow, contains('--selftest'));
+    });
+
+    test('启动预热（全局单飞 + 隐藏待命 + 秒出窗）', () {
+      expect(sessionPlat, contains('ensureQtPlayer'));
+      expect(sessionPlat, contains('prewarmQtPlayer'));
+      expect(mainDart, contains('MpvSessionPlatform.prewarmQtPlayer()'));
+      expect(pipeDart3, contains("'--prewarm'"));
+      expect(mainCpp3, contains('prewarm'));
+      // 首条 load = 媒体就绪 → 弹窗（秒出窗的落点）
+      expect(mainCpp3, contains('showWindows()'));
+    });
+
+    test('预热防孤儿（管道断开未恢复即退出）', () {
+      expect(mainCpp3, contains('管道断开且未恢复，退出'));
+    });
+
+    test('标题栏诊断码（截图即诊断：GLASS/SAFE:alpha0）', () {
+      expect(stateH3, contains('windowDiag'));
+      expect(hostQml3, contains('playerState.windowDiag'));
+      expect(mainCpp3, contains('SAFE:alpha0'));
+    });
+
+    test('SAFE 深底降级（alpha 失效时保证控件可见）', () {
+      expect(overlayQml3, contains('property bool safeMode'));
+      expect(overlayQml3, contains('root.safeMode'));
+      expect(mainCpp3, contains('setProperty("safeMode", true)'));
+    });
+
+    test('加载期控件常驻（playerReady 前不自动隐藏）', () {
+      expect(overlayQml3, contains('playerState.playerReady'));
+    });
+  });
 }

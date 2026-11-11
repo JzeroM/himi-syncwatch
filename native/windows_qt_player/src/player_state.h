@@ -100,6 +100,10 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool controlsVisible READ controlsVisible
                    WRITE setControlsVisible NOTIFY controlsVisibleChanged)
 
+    // ── 670：窗口诊断码（标题栏显示，截图即诊断）──
+    // "GLASS" = 透明合成正常；"SAFE:alpha0" = 已深底降级；其余=异常。
+    Q_PROPERTY(QString windowDiag READ windowDiag NOTIFY windowDiagChanged)
+
 public:
     explicit PlayerState(QObject* parent = nullptr);
 
@@ -173,6 +177,9 @@ public:
     bool controlsVisible() const { return controlsVisible_; }
     void setControlsVisible(bool visible);
 
+    QString windowDiag() const { return windowDiag_; }
+    void setWindowDiag(const QString& diag);
+
     /// 选集列表（`episodes` 数组的轻量投影）。
     struct Episode {
         int index = 0;
@@ -209,6 +216,7 @@ public:
 signals:
     void changed();
     void controlsVisibleChanged();
+    void windowDiagChanged();
 
     /// 剧集列表变化（QML 的 ListView 需要单独通知才能刷新 model）。
     void episodesChanged();
@@ -231,6 +239,7 @@ private:
     bool showLoading_ = false;
     bool playerReady_ = false;
     bool controlsVisible_ = true;
+    QString windowDiag_;
 
     QString title_;
     QString mediaTitle_;

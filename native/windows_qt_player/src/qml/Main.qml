@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import HimiPlayer
 
 // 668：视频宿主窗口（主窗口）。
@@ -13,8 +14,10 @@ ApplicationWindow {
     height: 720
     minimumWidth: 640
     minimumHeight: 360
-    visible: true
-    title: playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player"
+    // 670：由 main.cpp 控制显示时机（--prewarm 隐藏待命，收到 load 才弹出）
+    visible: false
+    title: (playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player")
+           + (playerState.windowDiag !== "" ? " [" + playerState.windowDiag + "]" : "")
     color: "#000000"
     flags: Qt.Window
 

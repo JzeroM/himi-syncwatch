@@ -46,6 +46,10 @@ ApplicationWindow {
     property bool panelOpen: false
     property bool adjustOpen: false
 
+    // 670 A1：SAFE 深底降级（main.cpp 自检 alphaBuffer 失败时置 true）
+    // ——透明合成不可靠机器上保控件可见（0.35 深底，视频仍透出）。
+    property bool safeMode: false
+
     // 画面比例（本地循环：contain→cover→fill→none）
     readonly property var fitModes: ["contain", "cover", "fill", "none"]
     property int fitIndex: 0
@@ -60,7 +64,10 @@ ApplicationWindow {
     Timer {
         id: hideTimer
         interval: Theme.autoHideMs
-        running: !playerState.paused && playerState.controlsVisible
+        // 670 A3：媒体就绪前控件**常驻**（防加载窗口期自动隐藏，
+        // 用户正好没看见）；开播后才走 5 秒自动隐藏。
+        running: !playerState.paused && playerState.playerReady
+                 && playerState.controlsVisible
         onTriggered: playerState.controlsVisible = false
     }
 
@@ -93,10 +100,12 @@ ApplicationWindow {
 
     // ── 669 A3：alpha≈0 全窗底（1/255，肉眼不可见）──
     // 保证每个像素都参与命中测试，堵死「全透明像素点击穿透」。
+    // 670 A1：SAFE 降级时变深底（保证控件在任何合成环境下可见）。
     Rectangle {
         anchors.fill: parent
         z: -1000
-        color: Qt.rgba(0, 0, 0, 0.004)
+        color: root.safeMode ? Qt.rgba(0.05, 0.05, 0.08, 0.35)
+                             : Qt.rgba(0, 0, 0, 0.004)
     }
 
     // ── 手势层（669：共享组件 VideoGestures，与宿主双窗各挂一份）──

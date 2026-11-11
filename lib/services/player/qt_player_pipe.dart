@@ -45,10 +45,13 @@ class QtPlayerPipe {
   /// @param exePath   `himi_qt_player.exe` 的绝对路径
   /// @param hdr       是否请求 HDR 直出
   /// @param hlg       内容是否为 HLG
+  /// @param prewarm   隐藏待命模式（670：窗口收到 load 命令才显示，
+  ///                  管道断开自动退出防孤儿进程）
   static Future<QtPlayerPipe> launch({
     required String exePath,
     required bool hdr,
     required bool hlg,
+    bool prewarm = false,
   }) async {
     // 选一个空闲端口：绑 0 让系统分配，拿到端口后立即释放，再交给 Qt。
     // 有极小概率被抢占，但 Qt 侧 listen 失败会立即退出，上层重试即可。
@@ -64,6 +67,7 @@ class QtPlayerPipe {
         '--token', token,
         '--hdr', hdr ? '1' : '0',
         '--hlg', hlg ? '1' : '0',
+        if (prewarm) '--prewarm', '1',
       ],
       // 【必须用 detached，不能用 detachedWithStdio】
       //

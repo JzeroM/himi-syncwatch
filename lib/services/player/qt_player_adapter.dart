@@ -35,15 +35,18 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// @param exePath  `himi_qt_player.exe` 的绝对路径
   /// @param hdr      是否请求 HDR 直出
   /// @param hlg      内容是否为 HLG
+  /// @param prewarm  隐藏待命模式（670：窗口收到 load 命令才显示）
   static Future<QtPlayerAdapter> launch({
     required String exePath,
     required bool hdr,
     required bool hlg,
+    bool prewarm = false,
   }) async {
     final pipe = await QtPlayerPipe.launch(
       exePath: exePath,
       hdr: hdr,
       hlg: hlg,
+      prewarm: prewarm,
     );
     return QtPlayerAdapter._(pipe);
   }

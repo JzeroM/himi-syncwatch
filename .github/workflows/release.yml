@@ -685,6 +685,29 @@ jobs:
             Write-Host "OK: $q"
           }
 
+      # 670：QML 冒烟自检——抓「ApplicationWindow 不是一种类型」这类
+      # **运行时** QML 加载错误（CI 编译与字符串断言测试都拦不住，
+      # 670 真根因就是 Main.qml 缺 import 导致进程加载即退、整窗不可用）。
+      # --selftest：加载 Main + Overlay 两棵 QML 树，创建成功即退出 0。
+      # 注意 GUI 子系统 exe 用 Start-Process -Wait 才能取退出码。
+      - name: Qt 播放器 QML 冒烟自检
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = 'build/windows/x64/runner/Release/himi_qt_player'
+          $p = Start-Process -FilePath (Join-Path $dir 'himi_qt_player.exe') `
+                -ArgumentList '--selftest' -Wait -PassThru
+          $log = Join-Path $dir 'himi_qt_player.log'
+          if (Test-Path $log) {
+            Get-Content $log | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Host '（无日志文件）'
+          }
+          if ($p.ExitCode -ne 0) {
+            throw "QML 冒烟自检失败（退出码 $($p.ExitCode)）——QML 加载错误，装机后会启动即回退"
+          }
+          Write-Host 'QML 冒烟自检通过'
+
       - name: 编译 Inno Setup 安装包
         shell: pwsh
         run: |

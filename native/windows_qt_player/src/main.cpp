@@ -111,16 +111,24 @@ int main(int argc, char* argv[]) {
     parser.addOption({"token", "IPC 首帧认证 token", "token"});
     parser.addOption({"hdr", "是否请求 HDR 直出（1/0）", "flag", "1"});
     parser.addOption({"hlg", "内容是否为 HLG（1/0）", "flag", "0"});
+    // 【670】CI 冒烟自检：只加载 QML 验证类型/导入正确性即退出 0
+    //（抓「ApplicationWindow 不是一种类型」这类运行时加载错误）。
+    parser.addOption({"selftest", "QML 加载冒烟自检后退出", "flag", "0"});
+    // 【670】预热模式：窗口隐藏待命，收到首条 load 命令才弹出；
+    // 管道断开自动退出（防孤儿进程）。
+    parser.addOption({"prewarm", "隐藏待命模式（启动预热）", "flag", "0"});
     parser.process(app);
 
+    const bool selftest = parser.isSet("selftest");
+    const bool prewarm = parser.value("prewarm") == QLatin1String("1");
     const QString portText = parser.value("port");
-    if (portText.isEmpty()) {
+    if (!selftest && portText.isEmpty()) {
         qCritical("缺少 --port 参数");
         return -1;
     }
     bool portOk = false;
     const quint16 port = portText.toUShort(&portOk);
-    if (!portOk || port == 0) {
+    if (!selftest && (!portOk || port == 0)) {
         qCritical("--port 非法");
         return -1;
     }
@@ -133,7 +141,7 @@ int main(int argc, char* argv[]) {
 
     // ── IPC 服务端 ──
     PipeServer pipe;
-    if (!pipe.start(port, token)) {
+    if (!selftest && !pipe.start(port, token)) {
         qCritical("IPC 监听失败");
         return -2;
     }
@@ -263,20 +271,40 @@ int main(int argc, char* argv[]) {
     };
     syncOverlayGeometry();
 
-    // 【669 A4：自检日志】窗口/几何/alpha 落日志文件——复测异常时
-    // 一份 himi_qt_player.log 即可定位（透明合成失效 / 几何错位）。
+    // 【669 A4 / 670：自检日志 + 自动降级】窗口/几何/alpha 落日志文件；
+    // alphaBuffer 未生效 = 透明合成必失败（控件不可见）→ 自动切
+    // SAFE 深底模式（保证控件可见）+ 标题栏诊断码（截图即诊断）。
+    const int alphaBits = overlay->format().alphaBufferSize();
     qInfo().noquote() << "[overlay] 创建完成"
                       << "winId=" << Qt::hex << overlay->winId() << Qt::dec
                       << "geometry=" << overlay->geometry()
-                      << "alphaBuffer=" << overlay->format().alphaBufferSize()
+                      << "alphaBuffer=" << alphaBits
                       << "rhi=" << QSGRendererInterface::Direct3D11;
-    if (overlay->format().alphaBufferSize() <= 0) {
-        qWarning("[overlay] alphaBuffer 未生效——透明合成可能失败（控件不可见）");
+    if (alphaBits <= 0) {
+        qWarning("[overlay] alphaBuffer 未生效 → SAFE 深底降级（保证控件可见）");
+        overlay->setProperty("safeMode", true);
+        state.setWindowDiag(QStringLiteral("SAFE:alpha0"));
+    } else {
+        state.setWindowDiag(QStringLiteral("GLASS"));
+    }
+
+    // 【670：--selftest】Main + Overlay 两棵 QML 树都创建成功即通过。
+    if (selftest) {
+        qInfo("[selftest] QML 加载通过（Main + Overlay）");
+        return 0;
     }
 
     // 配置全部就绪后再显示（隐藏创建→配置→显示：防 flags 重建丢 alpha）。
-    overlay->show();
-    overlay->requestActivate();
+    // 【670】预热模式窗口隐藏待命，收到首条 load 命令再弹出（秒出窗）。
+    bool windowsShown = false;
+    const auto showWindows = [host, overlay, &windowsShown]() {
+        if (windowsShown) return;
+        windowsShown = true;
+        host->show();
+        overlay->show();
+        overlay->requestActivate();
+    };
+    if (!prewarm) showWindows();
 
     auto* syncTimer = new QTimer(&app);
     QObject::connect(syncTimer, &QTimer::timeout, &app,
@@ -309,12 +337,28 @@ int main(int argc, char* argv[]) {
                          // 会被当成「同一个 URL」跳过，导致续播位置丢失。
                      });
 
+    // 【670】预热模式：管道断开（Flutter 退出/崩溃）→ 宽限 2 秒未
+    // 恢复即退出，防孤儿进程驻留。
+    QObject::connect(&pipe, &PipeServer::clientChanged, &app,
+                     [&pipe, &app, prewarm](bool connected) {
+        if (connected || !prewarm) return;
+        QTimer::singleShot(2000, &app, [&pipe, &app]() {
+            if (!pipe.hasClient()) {
+                qInfo("[prewarm] 管道断开且未恢复，退出");
+                QCoreApplication::exit(0);
+            }
+        });
+    });
+
     // ── 控制指令：Flutter → mpv ──
     QObject::connect(&pipe, &PipeServer::commandReceived, &mpv,
                      [&](const QJsonObject& cmd) {
                          const QString type =
                              cmd.value(QLatin1String("type")).toString();
                          if (type == QLatin1String("load")) {
+                             // 【670】首条 load = 媒体就绪 → 预热窗口
+                             // 结束待命、弹出（起播窗口秒出的落点）。
+                             showWindows();
                              const QString url =
                                  cmd.value(QLatin1String("url")).toString();
                              const qint64 startMs = static_cast<qint64>(

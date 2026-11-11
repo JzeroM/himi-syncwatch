@@ -143,6 +143,24 @@ jobs:
             Write-Host "OK: $q"
           }
 
+      # 670：QML 冒烟自检——抓「ApplicationWindow 不是一种类型」这类
+      # **运行时** QML 加载错误（编译期/字符串断言测试都拦不住）。
+      # --selftest 加载 Main + Overlay 两棵 QML 树，创建成功即退出 0。
+      # GUI 子系统 exe 须 Start-Process -Wait 才能取退出码。
+      - name: QML 冒烟自检
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Start-Process -FilePath 'build/himi_qt_player.exe' `
+                -ArgumentList '--selftest' -Wait -PassThru
+          if (Test-Path 'build/himi_qt_player.log') {
+            Get-Content 'build/himi_qt_player.log' | ForEach-Object { Write-Host $_ }
+          }
+          if ($p.ExitCode -ne 0) {
+            throw "QML 冒烟自检失败（退出码 $($p.ExitCode)）——QML 加载错误，运行即回退"
+          }
+          Write-Host 'QML 冒烟自检通过'
+
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:

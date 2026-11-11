@@ -21,6 +21,7 @@ import 'package:himi_syncwatch/services/cache/himi_image_cache_manager.dart';
 import 'package:himi_syncwatch/services/fvp_options.dart';
 import 'package:himi_syncwatch/services/env_service.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/tv_detection_service.dart';
 import 'package:himi_syncwatch/services/update/update_package_cleaner.dart';
 import 'package:himi_windows_rtm/himi_windows_rtm.dart';
@@ -286,6 +287,13 @@ Future<void> _bootstrap() async {
     await LiquidGlassWidgets.initialize();
   } catch (e, st) {
     LogService().log('FATAL', '液态玻璃预热失败（继续启动）: $e\n$st');
+  }
+
+  // 670：Qt 播放器**启动即预热**（隐藏待命）——冷启动的数秒被完全
+  // 掩盖，起播窗口秒出。失败静默（起播时再试/回退 646）。
+  if (Platform.isWindows && settingsNotifier.snapshot.useQtPlayer) {
+    unawaited(MpvSessionPlatform.prewarmQtPlayer());
+    LogService().log('Diag', 'Qt 播放器预热已触发（隐藏待命）');
   }
 
   runApp(

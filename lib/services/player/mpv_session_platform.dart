@@ -1,4 +1,5 @@
-import 'dart:io' show Platform;
+import 'dart:async' show unawaited;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:himi_mpv_android/himi_mpv_android.dart';
@@ -96,6 +97,70 @@ class MpvSessionPlatform {
   /// 656：当前活跃的 Qt 适配器（同一时刻只允许一个播放窗口）。
   static QtPlayerAdapter? activeQtAdapter;
 
+  /// 670：Qt 进程拉起**全局单飞**（启动预热与起播共用一次）。
+  ///
+  /// 【为什么全局】670 起应用启动即预热（隐藏待命），起播时复用；
+  /// 单飞放播放页 State 里会与预热并发互杀（launchQtPlayer 先关旧窗）。
+  static Future<QtPlayerAdapter?>? _qtLaunchFuture;
+
+  /// 656/670：Qt 播放器 exe 的绝对路径（Windows）。
+  ///
+  /// 产物布局：`<主 exe 目录>\himi_qt_player\himi_qt_player.exe`
+  ///（CI 把 Qt 目录整体放进 Windows zip）。
+  static String? resolveQtPlayerExePath() {
+    if (!Platform.isWindows) return null;
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent;
+      final path =
+          '${exeDir.path}${Platform.pathSeparator}himi_qt_player'
+          '${Platform.pathSeparator}himi_qt_player.exe';
+      return File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 670：拉起 Qt 播放器进程（全局单飞）。
+  ///
+  /// [prewarm] 为 true 时进程**隐藏待命**（Qt 侧 `--prewarm`：初始化完
+  /// 不显示窗口，收到 load 命令才弹出）——应用启动即调用，冷启动的
+  /// 数秒被完全掩盖，起播窗口秒出。
+  static Future<QtPlayerAdapter?> ensureQtPlayer({bool prewarm = false}) {
+    return _qtLaunchFuture ??= _doLaunchQtPlayer(prewarm: prewarm)
+        .then((adapter) {
+      if (adapter == null) {
+        _qtLaunchFuture = null;  // 启动失败：清缓存，下次可重试
+      }
+      return adapter;
+    });
+  }
+
+  static Future<QtPlayerAdapter?> _doLaunchQtPlayer({required bool prewarm}) async {
+    final exePath = qtPlayerExePath ?? resolveQtPlayerExePath();
+    if (exePath == null) return null;
+    qtPlayerExePath = exePath;
+    try {
+      // 同一时刻只允许一个 Qt 播放窗口：先关旧的（launchQtPlayer 内）。
+      final adapter = await launchQtPlayer(exePath: exePath, prewarm: prewarm);
+      return adapter;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// 670：启动预热（`useQtPlayer` 开启时由应用启动引导调用）。
+  ///
+  /// 失败静默（起播时会再试/回退 646）；预热期进程意外退出则清理
+  /// 死适配器（防起播误复用）。
+  static Future<void> prewarmQtPlayer() async {
+    if (!Platform.isWindows) return;
+    final adapter = await ensureQtPlayer(prewarm: true);
+    if (adapter == null) return;
+    adapter.onProcessExited = () {
+      unawaited(closeQtPlayer());
+    };
+  }
+
   /// 原生 UI 宿主平台名（'ohos' / 'android' / 'windows'）；不支持为 null。
   ///
   /// 【653 真机回归：Flutter 窗口同时显示详情页与播放控件】
@@ -130,10 +195,12 @@ class MpvSessionPlatform {
   /// 656：拉起 Qt 播放器窗口（Windows）。
   ///
   /// 返回适配器；失败返回 null（上层应回退到 646 路径）。
+  /// [prewarm]：隐藏待命模式（670 预热，见 [ensureQtPlayer]）。
   static Future<QtPlayerAdapter?> launchQtPlayer({
     required String exePath,
-    required bool hdr,
-    required bool hlg,
+    bool hdr = false,
+    bool hlg = false,
+    bool prewarm = false,
   }) async {
     if (!Platform.isWindows) return null;
     try {
@@ -143,6 +210,7 @@ class MpvSessionPlatform {
         exePath: exePath,
         hdr: hdr,
         hlg: hlg,
+        prewarm: prewarm,
       );
       activeQtAdapter = adapter;
       return adapter;

@@ -48,6 +48,12 @@ void PlayerState::setControlsVisible(bool visible) {
     emit controlsVisibleChanged();
 }
 
+void PlayerState::setWindowDiag(const QString& diag) {
+    if (windowDiag_ == diag) return;
+    windowDiag_ = diag;
+    emit windowDiagChanged();
+}
+
 void PlayerState::applyJson(const QJsonObject& json) {
     if (json.isEmpty()) return;
 

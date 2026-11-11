@@ -3480,21 +3480,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.onNativeUiCommand = null;
   }
 
-  /// 656：Qt 播放器 exe 的绝对路径。
-  ///
-  /// 产物布局：`<主 exe 目录>\himi_qt_player\himi_qt_player.exe`
-  /// （CI 把 Qt 目录整体放进 Windows zip）。
-  String? _qtPlayerExePath() {
-    if (defaultTargetPlatform != TargetPlatform.windows) return null;
-    try {
-      final exeDir = File(Platform.resolvedExecutable).parent;
-      final path = '${exeDir.path}${Platform.pathSeparator}himi_qt_player'
-          '${Platform.pathSeparator}himi_qt_player.exe';
-      return File(path).existsSync() ? path : null;
-    } catch (_) {
-      return null;
-    }
-  }
+  /// 656：Qt 播放器 exe 的绝对路径（670 起解析逻辑共享到
+  /// [MpvSessionPlatform.resolveQtPlayerExePath]，预热/起播同一真相源）。
+  String? _qtPlayerExePath() => MpvSessionPlatform.resolveQtPlayerExePath();
 
   /// 669 B3：Qt 接管进行中——本页 UI 隐藏（起播不露 Flutter 播放页）。
   /// initState 按「Windows + 非房间 + useQtPlayer + exe 存在」置 true；
@@ -3505,39 +3493,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 页面退出/错误路径不得再关 Qt 窗。
   bool _qtHandedOver = false;
 
-  /// 669 B1：Qt 进程拉起**单飞**（预启动与 _startQtPlayer 共用一次），
-  /// 防两路并发拉起互杀（launchQtPlayer 内部会先关旧窗）。
-  Future<QtPlayerAdapter?>? _qtLaunchFuture;
-
-  Future<QtPlayerAdapter?> _qtLaunchSingleFlight() {
-    return _qtLaunchFuture ??= _doLaunchQtProcess().then((adapter) {
-      if (adapter == null) {
-        _qtLaunchFuture = null;  // 启动失败：清缓存，下次加载可重试
-      }
-      return adapter;
-    });
-  }
-
-  /// 669 B1：实际拉起 Qt 进程（窗口即刻弹出，窗内显示等待/加载态）。
-  Future<QtPlayerAdapter?> _doLaunchQtProcess() async {
-    final exePath =
-        MpvSessionPlatform.qtPlayerExePath ?? _qtPlayerExePath();
-    if (exePath == null) return null;
-    MpvSessionPlatform.qtPlayerExePath = exePath;
-    try {
-      final adapter = await MpvSessionPlatform.launchQtPlayer(
-        exePath: exePath,
-        // 669 B2：HDR 晚绑定——媒体信息解析完由 _startQtPlayer 先发
-        // setHdrMode 再 load，与启动参数等效（mpv 首帧前应用）。
-        hdr: false,
-        hlg: false,
-      );
-      return adapter;
-    } catch (e) {
-      LogService().log('Player', 'Qt 播放器拉起异常: $e');
-      return null;
-    }
-  }
+  /// 669 B1：Qt 进程拉起**单飞**（670 提升为 [MpvSessionPlatform.ensureQtPlayer]
+  /// 全局单飞：启动预热与起播共用一次，防并发互杀）。
+  Future<QtPlayerAdapter?> _qtLaunchSingleFlight() =>
+      MpvSessionPlatform.ensureQtPlayer();
 
   /// 669 B1：预启动引导（initState 触发）——失败即回退。
   Future<void> _ensureQtPlayerProcess() async {
