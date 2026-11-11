@@ -53,6 +53,8 @@ const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 
 /** 680：房间面板玻璃底（65% 深色磨砂，与 Win `playerPanelBase` 同值）。 */
 const ROOM_PANEL_GLASS_BG = '#A61A1D23';
+/** 680：房间面板**不透明**底（XComponent 之上必须用这个，见 RoomPanelSlot 注释）。 */
+const ROOM_PANEL_SOLID_BG = '#FF1A1D23';
 /** 680：玻璃定界描边（白 20%）。 */
 const ROOM_PANEL_GLASS_RIM = '#33FFFFFF';
 /** 680：分组标题玻璃条。 */
@@ -2100,9 +2102,13 @@ export struct HimiNativePlayerView {
       }
       .width(this.portrait ? '100%' : ROOM_PANEL_WIDTH)
       .height(this.portrait ? ROOM_PANEL_HEIGHT : '100%')
-      // 680：液态玻璃近似（对齐 Win 的 GlassContainer(popup:true)）——
-      // 65% 深色磨砂 + 圆角 16 + 白 20% 描边。
-      .backgroundColor(ROOM_PANEL_GLASS_BG)
+      // 680：房间面板底——**必须不透明**。
+      //
+      // 【与安卓同因】鸿蒙视频层是 `XComponent`（独立原生合成层），
+      // 半透明容器压在它上面会被合成器重复叠加 → 文字重影。
+      // 用不透明深色底 + 圆角 + 描边，内部小卡片保留轻微半透明
+      //（面积小、下方是同层不透明底，不会触发该问题）。
+      .backgroundColor(ROOM_PANEL_SOLID_BG)
       .borderRadius(16)
       .border({ width: 1, color: ROOM_PANEL_GLASS_RIM })
       .clip(true);

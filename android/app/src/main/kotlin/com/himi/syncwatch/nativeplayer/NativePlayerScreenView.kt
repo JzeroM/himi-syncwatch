@@ -1943,13 +1943,20 @@ class NativePlayerScreenView(
     private fun configureRoomPanel() {
         roomPanel.orientation = LinearLayout.VERTICAL
         roomPanel.visibility = GONE
-        // 680：液态玻璃近似（对齐 Win 的 GlassContainer(popup:true)）——
-        // 65% 深色磨砂 + 圆角 16 + 白 20% 描边。
-        // 【为什么不做真模糊】安卓原生层无 Flutter 的折射管线；用同值的
-        // 半透明深色 + 描边即可获得一致的「玻璃厚度」观感。
+        // 680：房间资源面板底——**必须不透明**。
+        //
+        // 【真机回归：面板文字出现两层重影】一度改成 65% 半透明
+        //（0xA61A1D23）想模仿 Win 的液态玻璃，但安卓的视频层是
+        // **SurfaceView**（独立硬件合成层）——半透明 View 压在它上面时，
+        // 合成器会把 View 层叠加两次（截图：`资源`/剧名/集名全部错位重影）。
+        //
+        // 结论：SurfaceView / XComponent 这类独立硬件层之上**不能放半透明
+        // 大面积容器**。这里用不透明深色（视觉仍是深色卡片 + 圆角 + 描边），
+        // 只让**内部小卡片**（分组/集行/播报板）保留轻微半透明——
+        // 它们面积小、且下方是同层的不透明面板底，不会触发该问题。
         roomPanel.background = GradientDrawable().apply {
             cornerRadius = dp(16).toFloat()
-            setColor(0xA61A1D23.toInt())
+            setColor(0xFF1A1D23.toInt())
             setStroke(dp(1), 0x33FFFFFF)
         }
         roomPanel.elevation = dp(8).toFloat()

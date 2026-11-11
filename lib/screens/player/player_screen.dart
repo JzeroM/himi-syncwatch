@@ -3895,14 +3895,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
-  /// 679：Qt 窗被用户拖动/缩放 → Flutter 面板窗跟随（贴其右侧、等高）。
+  /// 679/680：Qt 窗被用户拖动/缩放 → Flutter 面板窗跟随（贴其右侧、等高）。
   ///
-  /// 【规则】面板窗 = Qt 右边缘 → 屏幕右边缘，纵向与 Qt 完全等高。
-  /// 宽度不足 [RoomPanelLayout.minPanelWidth] 时不再挤压（保持当前宽度），
-  /// 避免把面板压成一条缝。
+  /// 【规则（双向跟随的一半）】
+  /// - 位置：面板窗左边缘 = Qt 窗右边缘
+  /// - 高度：与 Qt 窗**完全等高**（纵向对齐 top/height）
+  /// - 宽度：贴到屏幕右边缘；不足最小宽时保持当前宽度（不压成缝）
   ///
-  /// 【防回环】本方法只调 `setBounds`，不会回发 Qt 摆位命令；
-  /// Qt 侧对程序性 `setGeometry` 也有 `applyingProgrammaticGeometry_` 屏蔽。
+  /// 【680 真机回归：拖 Qt 窗后面板不跟随】
+  /// 旧实现只在「Qt 停手 400ms」时回传一次，且恢复回调错调
+  /// `followParentOnce()`（让 Qt 跟随 Flutter，方向相反 → 用户拖走后
+  /// 立刻被拽回）。现在：
+  /// 1. 拖动**过程中**几何每次变化都回传（Qt 侧已节流 80ms）
+  /// 2. 停手后补发一次最终矩形
+  /// 3. 本方法只改 Flutter 窗，不回发 Qt 摆位命令（无回环）
   Future<void> _followQtWindow(Map<String, Object?> rect) async {
     if (!mounted || _disposed) return;
     if (!_roomSplitRequested) return;
@@ -3913,16 +3919,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (x == null || y == null || w == null || h == null) return;
     if (w <= 0 || h <= 0) return;
     try {
-      // 屏幕右边缘：用 Flutter view 的逻辑宽（window_manager 同坐标系）。
+      // 屏幕右边缘（逻辑像素，与 window_manager 同坐标系）。
       final view = WidgetsBinding.instance.platformDispatcher.views.first;
       final dpr = view.devicePixelRatio;
       final screenW = view.physicalSize.width / (dpr > 0 ? dpr : 1.0);
       final panelLeft = x + w;
-      final panelW = screenW - panelLeft;
-      if (panelW < RoomPanelLayout.minPanelWidth) return;  // 太窄不压
+      var panelW = screenW - panelLeft;
+      if (panelW < RoomPanelLayout.minPanelWidth) {
+        // 空间不够：保持面板当前宽度，只跟随位置与高度（不压成缝）
+        final cur = await windowManager.getBounds();
+        panelW = cur.width;
+        if (panelLeft + panelW > screenW) {
+          panelW = (screenW - panelLeft).clamp(
+            RoomPanelLayout.minPanelWidth,
+            screenW,
+          );
+        }
+      }
+      // 【关键】先放开最大尺寸限制，否则 setBounds 会被 ptMaxTrackSize 截断
+      //（真机回归：拖动 Qt 窗时面板宽度卡在旧上限、看起来"没跟随"）。
+      await windowManager.setMaximumSize(Size(screenW, screenW));
       await windowManager.setBounds(
         Rect.fromLTWH(panelLeft, y, panelW, h),
       );
+      // 跟随完成后重新收紧上限（防止用户把面板拉得比可用空间还宽）
+      final maxW = screenW - RoomPanelLayout.minVideoWidth;
+      if (maxW > RoomPanelLayout.minPanelWidth) {
+        await windowManager.setMaximumSize(Size(maxW, screenW));
+      }
     } catch (e) {
       LogService().log('Room', '面板跟随 Qt 失败: $e');
     }
@@ -9090,7 +9114,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         MediaQuery.of(context).orientation == Orientation.portrait &&
             PlayerPlatform.isMobile;
 
-    final showPanel = widget.roomCode != null && _showPanel;
+    // 【680：安卓/鸿蒙房间资源面板只走原生层】
+    //
+    // 真机回归（安卓截图）：面板文字出现两层重影 —— Flutter 的
+    // `_buildResourcePanel()` 与原生 `roomPanel` **同时在渲染**，两层
+    // 错位叠加。
+    //
+    // 原因：`_buildVideoArea()` 里的 `nativeShortCircuit` 只让**视频区**
+    // 退场，本方法仍会渲染右侧 320 的 Flutter 面板。
+    //
+    // 规则：
+    // - 安卓/鸿蒙 + 房间 + 原生 UI 生效 → 面板完全交给原生，Flutter 不画
+    // - Windows（Qt 双窗）→ Flutter 面板窗是**唯一**面板，照常渲染
+    // - 单人播放 → `showPanel` 本就为 false
+    final roomNativePanel = widget.roomCode != null &&
+        (Platform.isAndroid
+            ? _nativeUiActive
+            : (MpvSessionPlatform.isOhos ? _roomUiShouldBeNative : false));
+    final showPanel =
+        widget.roomCode != null && _showPanel && !roomNativePanel;
 
     if (isPortrait && showPanel) {
       // 手机竖屏：视频在上，资源面板在下

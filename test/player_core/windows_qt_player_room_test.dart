@@ -960,12 +960,16 @@ void main() {
       expect(follow, contains('if (followParentSuspended_) return'));
     });
 
-    test('N2 停手 400ms 自动恢复并重新对齐', () {
+    test('N2 停手 400ms 后回传最终矩形（不是让 Qt 跟随 Flutter）', () {
       final body = _extract(mpvCpp, 'void MpvWindow::suspendFollowForUserGesture');
       expect(body, contains('setSingleShot(true)'));
       expect(body, contains('start(400)'));
       expect(body, contains('followParentSuspended_ = false'));
-      expect(body, contains('followParentOnce()'));
+      // 【680 真机回归】恢复回调曾错调 followParentOnce()（让 Qt 跟随
+      // Flutter，方向相反 → 用户拖走后立刻被拽回，"拖了没用"）。
+      // 正确做法：回传当前几何，让 Dart 把面板贴过来。
+      expect(body, isNot(contains('followParentOnce();')));
+      expect(body, contains('emit userWindowMoved('));
     });
 
     test('N3 拖动中几何变化续期（不会中途恢复）', () {
@@ -1082,6 +1086,24 @@ void main() {
       }
     });
 
+    test('N17 面板跟随 Qt：等高 + 位置贴右 + 放开最大尺寸再 setBounds', () {
+      final body = _extract(playerScreen, 'Future<void> _followQtWindow');
+      // 位置 = Qt 右边缘
+      expect(body, contains('final panelLeft = x + w'));
+      // 高度 = Qt 高度（等高）
+      expect(body, contains('Rect.fromLTWH(panelLeft, y, panelW, h)'));
+      // 最大尺寸必须先放开，否则 setBounds 被 ptMaxTrackSize 截断
+      // （用具体调用串定位，避免命中注释里的 setMaximumSize 字样）
+      final relaxIdx = body.indexOf('setMaximumSize(Size(screenW, screenW))');
+      final boundsIdx = body.indexOf('windowManager.setBounds(');
+      expect(relaxIdx, greaterThan(0));
+      expect(boundsIdx, greaterThan(0));
+      expect(relaxIdx, lessThan(boundsIdx),
+          reason: '必须先放开最大尺寸再 setBounds');
+      // 空间不足时保持当前宽度（不压成缝）
+      expect(body, contains('RoomPanelLayout.minPanelWidth'));
+    });
+
     test('N15 删除在播资源时 Qt 引擎也要卸载（真机回归「删了还在放」）', () {
       final body = _extract(playerScreen, 'void _removeEpisode(');
       // 两个引擎都要清：本页空闲引擎 + Qt 真实引擎
@@ -1154,18 +1176,35 @@ void main() {
       expect(body, contains('RoomExitRequest.detach()'));
     });
 
-    test('N10 安卓/鸿蒙面板玻璃化（65% 深色 + 描边）', () {
+    test('N18 安卓/鸿蒙房间资源面板只走原生层（防两层重影）', () {
+      // 真机回归（安卓截图）：Flutter `_buildResourcePanel()` 与原生
+      // `roomPanel` 同时渲染 → 文字两层错位重影。
+      final body = _extract(playerScreen, 'Widget _buildResponsiveLayout()');
+      expect(body, contains('roomNativePanel'));
+      expect(body, contains('Platform.isAndroid'));
+      expect(body, contains('_nativeUiActive'));
+      expect(body, contains('_roomUiShouldBeNative'));
+      // 面板显示条件必须排除原生接管的情况
+      expect(body, contains('!roomNativePanel'));
+    });
+
+    test('N10 安卓/鸿蒙面板：不透明底 + 描边（防 SurfaceView 重影）', () {
       final kt = read('android/app/src/main/kotlin/com/himi/syncwatch/'
           'nativeplayer/NativePlayerScreenView.kt');
-      expect(kt, contains('0xA61A1D23'));
+      // 【680 真机回归：面板文字两层重影】安卓视频层是 SurfaceView
+      // （独立硬件合成层），半透明大面积容器压在它上面会被重复合成。
+      // 面板底必须不透明（0xFF1A1D23），只保留描边/圆角/卡片化观感。
+      expect(kt, contains('setColor(0xFF1A1D23.toInt())'));
+      expect(kt, isNot(contains('setColor(0xA61A1D23.toInt())')));
       expect(kt, contains('0x33FFFFFF'));
       expect(kt, contains('cornerRadius = dp(16)'));
       final ets = read('plugins/himi_mpv_ohos/ohos/src/main/ets/components/'
           'native/HimiNativePlayerView.ets');
-      expect(ets, contains('ROOM_PANEL_GLASS_BG'));
-      expect(ets, contains("'#A61A1D23'"));
+      // 鸿蒙 XComponent 与 SurfaceView 同构 → 同样用不透明底
+      expect(ets, contains('ROOM_PANEL_SOLID_BG'));
+      expect(ets, contains("'#FF1A1D23'"));
+      expect(ets, contains('.backgroundColor(ROOM_PANEL_SOLID_BG)'));
       expect(ets, contains('ROOM_PANEL_GLASS_RIM'));
-      expect(ets, contains("'#33FFFFFF'"));
       expect(ets, contains('ROOM_GROUP_GLASS_BG'));
     });
   });

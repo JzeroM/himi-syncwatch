@@ -668,8 +668,18 @@ void MpvWindow::suspendFollowForUserGesture() {
         connect(suspendResumeTimer_, &QTimer::timeout, this, [this]() {
             followParentSuspended_ = false;
             qInfo() << "[follow] 用户操作结束 → 恢复跟随托管";
-            // 恢复后立即对齐一次（把面板窗拉到新位置旁边）
-            followParentOnce();
+            // 【680 真机回归：拖完 Qt 窗后 Flutter 面板没跟过来】
+            // 这里**不能**调 `followParentOnce()` —— 那是「Qt 跟随
+            // Flutter」，会把用户刚拖走的 Qt 窗拽回 Flutter 窗左侧
+            //（方向反了，观感就是「拖了没用」）。
+            //
+            // 正确做法：把**当前**几何回传一次，让 Dart 侧把 Flutter
+            // 面板窗贴到 Qt 的右侧并等高（双向跟随的另一半）。
+            if (host_ != nullptr) {
+                const QRect g = host_->geometry();
+                lastUserRect_ = g;
+                emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
+            }
         });
     }
     suspendResumeTimer_->start(400);
