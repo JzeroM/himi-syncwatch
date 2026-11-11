@@ -1,4 +1,8 @@
 #include <QCommandLineParser>
+#include <QNetworkAccessManager>
+#include <QNetworkDiskCache>
+#include <QQmlNetworkAccessManagerFactory>
+#include <QStandardPaths>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -23,6 +27,26 @@
 #include "player_state.h"
 
 namespace {
+
+/// 【673】封面网络磁盘缓存（对齐安卓 NativeLogoLoader 磁盘 LRU）：
+/// Emby 海报响应落盘 64MB LRU——重开面板/重启应用秒开，不再每次
+/// 全量重新下载（真机回归「选集面板封面加载太慢」）。
+class DiskCacheNamFactory : public QQmlNetworkAccessManagerFactory {
+public:
+    QNetworkAccessManager* create(QObject* parent) override {
+        auto* nam = new QNetworkAccessManager(parent);
+        auto* cache = new QNetworkDiskCache(nam);
+        const QString dir = QStandardPaths::writableLocation(
+                                QStandardPaths::CacheLocation) +
+                            QStringLiteral("/netcache");
+        QDir().mkpath(dir);
+        cache->setCacheDirectory(dir);
+        cache->setMaximumCacheSize(64 * 1024 * 1024);
+        nam->setCache(cache);
+        qInfo().noquote() << "[cache] 网络磁盘缓存:" << dir;
+        return nam;
+    }
+};
 
 /// 657.1：把 Qt 日志**同时**写到文件与控制台。
 ///
@@ -154,6 +178,9 @@ int main(int argc, char* argv[]) {
 
     // ── QML ──
     QQmlApplicationEngine engine;
+    // 【673】封面磁盘缓存必须在 load 前装上（Image 网络源走 NAM）
+    static DiskCacheNamFactory namFactory;
+    engine.setNetworkAccessManagerFactory(&namFactory);
     engine.rootContext()->setContextProperty("playerState", &state);
     engine.rootContext()->setContextProperty("pipeServer", &pipe);
     // 664：QML 直驱本地 mpv（控件本地化 + 视频挖孔）。

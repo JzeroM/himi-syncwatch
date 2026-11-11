@@ -267,6 +267,26 @@ ApplicationWindow {
         anchors.bottomMargin: 8
     }
 
+    // ── 673：选集封面预取（对齐安卓优先级预载的简化版）──
+    // 播放期把全部选集封面按**卡片同尺寸**（544×300 = 272×150 ×2）
+    // 预热进磁盘+内存缓存——首次开面板即秒开；Repeater 随 episodes
+    // 变化自动增删，隐藏不渲染只解码。
+    Item {
+        visible: false
+        width: 1
+        height: 1
+        Repeater {
+            model: playerState.episodes
+            delegate: Image {
+                required property var modelData
+                visible: false
+                source: modelData.poster || ""
+                sourceSize: Qt.size(544, 300)
+                asynchronous: true
+            }
+        }
+    }
+
     // ── 加载指示器 ──
     EUI.ELoader {
         id: loadingLoader

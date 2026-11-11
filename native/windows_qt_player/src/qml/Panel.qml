@@ -310,6 +310,11 @@ EUI.ECard {
                         source: modelData.poster || ""
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
+                        // 673：目标像素解码（对齐安卓 inSampleSize）——
+                        // 原图全尺寸解码慢且费内存；按显示像素缩放解码。
+                        sourceSize: Qt.size(
+                            Math.round(posterBox.width * 2),
+                            Math.round(posterBox.height * 2))
                     }
 
                     // 选中勾（照 Flutter：黑底圆 + accent 勾）

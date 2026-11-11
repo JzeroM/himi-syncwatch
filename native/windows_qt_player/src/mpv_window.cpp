@@ -252,13 +252,15 @@ int MpvWindow::activeTrackIndex(const QString& type) {
     int idx = -1;
     if (result.format == MPV_FORMAT_NODE_ARRAY && result.u.list != nullptr) {
         for (int i = 0; i < result.u.list->num; ++i) {
+            // mpv_node 联合体没有 map 成员——NODE_MAP 与 NODE_ARRAY 同用
+            // u.list（mpv_node_list，map 靠 keys 字段区分）。
             const mpv_node t = result.u.list->values[i];
-            if (t.format != MPV_FORMAT_NODE_MAP || t.u.map == nullptr) continue;
+            if (t.format != MPV_FORMAT_NODE_MAP || t.u.list == nullptr) continue;
             QString trackType;
             bool selected = false;
-            for (int j = 0; j < t.u.map->num; ++j) {
-                const char* k = t.u.map->keys[j];
-                const mpv_node v = t.u.map->values[j];
+            for (int j = 0; j < t.u.list->num; ++j) {
+                const char* k = t.u.list->keys[j];
+                const mpv_node v = t.u.list->values[j];
                 if (strcmp(k, "type") == 0 && v.format == MPV_FORMAT_STRING) {
                     trackType = QString::fromUtf8(v.u.string);
                 } else if (strcmp(k, "selected") == 0 &&

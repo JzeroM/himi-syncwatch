@@ -1343,6 +1343,14 @@ void main() {
       expect(mainCpp, isNot(contains('Qt.FramelessWindowHint')));
     });
 
+    test('mpv_node 无 map 成员（NODE_MAP 同用 u.list）', () {
+      // 673 CI：shinchiro client.h 的 mpv_node 联合体只有
+      // string/flag/int64/double_/list/ba——u.map 编译不过（C2039）
+      final mpvCpp6 = read('$dir/src/mpv_window.cpp');
+      expect(mpvCpp6, isNot(contains('t.u.map')));
+      expect(mpvCpp6, contains('t.u.list->keys'));
+    });
+
     test('WId 就是 quintptr（reinterpret_cast 同型转换编译不过）', () {
       // Qt 6 的 WId = quintptr，reinterpret_cast<quintptr>(winId()) 非法
       expect(mainCpp, isNot(contains('reinterpret_cast<quintptr>')));
@@ -1669,6 +1677,27 @@ void main() {
       expect(panel5, contains('height: 96'));
       expect(panel5, contains('width: 10'));
       expect(panel5, contains('vHandle'));
+    });
+  });
+  group('㉙ 673：封面加载提速（磁盘缓存/目标解码/预取）', () {
+    final mainCpp6 = read('$dir/src/main.cpp');
+    final panel6 = read('$dir/src/qml/Panel.qml');
+    final overlay6 = read('$dir/src/qml/Overlay.qml');
+
+    test('网络磁盘缓存（对齐安卓磁盘 LRU：重开面板秒开）', () {
+      expect(mainCpp6, contains('QQmlNetworkAccessManagerFactory'));
+      expect(mainCpp6, contains('QNetworkDiskCache'));
+      expect(mainCpp6, contains('setNetworkAccessManagerFactory'));
+      expect(mainCpp6, contains('64 * 1024 * 1024'));
+    });
+
+    test('卡片封面目标像素解码（sourceSize，对齐安卓 inSampleSize）', () {
+      expect(panel6, contains('sourceSize: Qt.size('));
+    });
+
+    test('播放期封面预取（同尺寸预热缓存，首开面板秒开）', () {
+      expect(overlay6, contains('Qt.size(544, 300)'));
+      expect(overlay6, contains('model: playerState.episodes'));
     });
   });
 }
