@@ -613,6 +613,13 @@ int main(int argc, char* argv[]) {
                              // 677：把播放窗拉回最前（Dart 取消退房时用）。
                              mpv.raiseToFront();
                          } else if (type ==
+                                    QLatin1String("setWindowVisible")) {
+                             // 678：房间弹窗期间让位（分享/搜索/确认框
+                             // 会被顶层 Qt 窗盖住）。
+                             mpv.setWindowVisible(
+                                 cmd.value(QLatin1String("visible"))
+                                     .toBool(true));
+                         } else if (type ==
                                     QLatin1String("setHostFullscreen")) {
                              // 677：全屏态可由 Dart 显式驱动（房间并排
                              // 与全屏互斥，摆位时先退全屏）。

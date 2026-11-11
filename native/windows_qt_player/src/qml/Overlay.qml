@@ -301,6 +301,27 @@ ApplicationWindow {
         anchors.bottomMargin: 8
     }
 
+    // ── 678：房间资源面板（Qt 播放窗内的弹出侧栏）──
+    //
+    // 对齐 Flutter 播放器房间模式的 320dp 资源面板：房间头部（资源 /
+    // 加资源 / 在线人数 / 角色徽章）+ 季-集折叠列表 + 播报板。
+    // 显隐由 `playerState.resourcePanelOpen` 驱动（Dart 侧
+    // `toggleResourcePanel` 命令切换），非房间模式恒不显示。
+    RoomPanel {
+        id: roomPanel
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: Theme.panelRight
+        anchors.topMargin: Theme.topBarHeight + 8
+        onEpisodeClicked: (index) => {
+            pipeServer.sendCommand({"type": "selectEpisode", "index": index})
+            root.patchState("currentEpisodeIndex", index)
+        }
+        onSearchClicked: {
+            pipeServer.sendCommand({"type": "openResourceSearch"})
+        }
+    }
+
     // ── 673：选集封面预取（对齐安卓优先级预载的简化版）──
     // 播放期把全部选集封面按**卡片同尺寸**（544×300 = 272×150 ×2）
     // 预热进磁盘+内存缓存——首次开面板即秒开；Repeater 随 episodes

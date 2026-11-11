@@ -16,6 +16,7 @@ import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/player/room_panel_layout.dart';
+import 'package:himi_syncwatch/services/platform/windows_window_style.dart';
 import 'package:himi_syncwatch/services/player/qt_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/qt_player_session.dart';
 import 'package:himi_mpv_android/himi_mpv_android.dart'
@@ -3509,6 +3510,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 677：是否已请求并排布局（收到 `splitLayout` 帧时才应用）。
   bool _roomSplitRequested = false;
 
+  /// 677：房间 Qt 适配器是否已接线（预启动与起播都会触发，防重复摆位）。
+  bool _roomQtWired = false;
+
   /// 669 B1：Qt 进程拉起**单飞**（670 提升为 [MpvSessionPlatform.ensureQtPlayer]
   /// 全局单飞：启动预热与起播共用一次，防并发互杀）。
   Future<QtPlayerAdapter?> _qtLaunchSingleFlight() =>
@@ -3529,6 +3533,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       unawaited(MpvSessionPlatform.closeQtPlayer());
       _abandonQtTakeover();
     };
+    // 677：**房间模式进房即接线并摆位**。
+    //
+    // 【真机回归】旧实现只在 `_startQtPlayer`（有媒体起播）里接线，
+    // 进房间还没选片时两窗根本没摆好——Qt 以默认 1280×720 出现在左上，
+    // Flutter 面板窗仍是原尺寸（截图：两窗错位/堆叠）。
+    // 现在预启动成功后立刻摆位，进房第一帧就是「左视频 + 右面板」。
+    if (widget.roomCode != null && mounted && !_disposed) {
+      _wireRoomQtAdapter(adapter);
+      setState(() {});  // 让 _roomPanelMode 立即生效
+    }
     LogService().log('Player', 'Qt 播放器已预启动（窗口直接弹出，加载在窗内）');
   }
 
@@ -3670,6 +3684,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///   2. 播放控制**意图**转成房间命令（房主广播 / 观众丢弃）
   ///   3. 权限 + 摆位 + 跟随注入
   void _wireRoomQtAdapter(QtPlayerAdapter adapter) {
+    // 677：预启动与起播都会调用（进房未选片时也要先摆好），幂等。
+    if (_roomQtWired) return;
+    _roomQtWired = true;
     adapter.onNativeUiCommand = _handleNativeUiCommand;
     // 677：观众权限注入（适配器侧最后一道防线）
     adapter.canControlPlayback = _canControlPlayback;
@@ -3771,7 +3788,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // （`WM_GETMINMAXINFO.ptMaxTrackSize`），Qt 永远有位置。
         await windowManager.setMaximumSize(Size(maxW, maxH));
       }
+      // 677：主窗最小尺寸——面板不能拖到 Qt 侧宽度不足（会堆叠）。
+      // 320 + 480 = 800 是并排的最小总宽。
+      await windowManager.setMinimumSize(
+        const Size(RoomPanelLayout.minPanelWidth, RoomPanelLayout.minPanelHeight),
+      );
       await windowManager.setBounds(panelRect);
+      // 677：房间模式去掉最大化/最小化按钮（最大化会挤掉 Qt 窗，
+      // 最小化会让用户以为房间没了）。关闭 + 拖边缩放保留。
+      await WindowsWindowStyle.setRoomChrome(true);
       qt.setWindowRect(
         x: (video['x'] as num).round(),
         y: (video['y'] as num).round(),
@@ -3788,13 +3813,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 677：退出房间并排（恢复主窗尺寸/位置 + 关闭跟随）。
   Future<void> _exitRoomSplitLayout() async {
     _roomSplitRequested = false;
+    _roomQtWired = false;
     final qt = MpvSessionPlatform.activeQtAdapter;
     qt?.setFollowParent(false);
+    // 677：恢复标题栏按钮（退房后面板窗回归普通应用窗口）
+    unawaited(WindowsWindowStyle.setRoomChrome(false));
     final restore = _roomRestoreBounds;
     _roomRestoreBounds = null;
     try {
-      // 放开最大尺寸限制（给一个足够大的值）
+      // 放开最大/最小尺寸限制（退房后回归普通应用窗口）
       await windowManager.setMaximumSize(const Size(16384, 16384));
+      await windowManager.setMinimumSize(Size.zero);
       if (restore != null) {
         // 桌面断点保护：恢复值过窄会触发手机布局（658 同款坑）
         final w = restore.width < kShellDesktopBreakpoint + 100
@@ -8259,10 +8288,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_shareDialogOpen || roomCode == null) return;
     _shareDialogOpen = true;
     // 604：先隐藏原生窗口，否则分享面板被它完全盖住。
+    // 678：Qt 房间模式下「原生窗口」是独立的 Qt 播放窗——把它暂时
+    // 置底/失焦，否则 Flutter 弹窗会被它盖住（真机：点分享没反应）。
     final suspended = await _suspendNativeUiForDialog();
+    final qtSuspended = await _suspendQtForDialog();
     if (!mounted) {
       _shareDialogOpen = false;
       await _resumeNativeUiAfterDialog(suspended);
+      await _resumeQtAfterDialog(qtSuspended);
       return;
     }
     try {
@@ -8278,6 +8311,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     } finally {
       _shareDialogOpen = false;
       await _resumeNativeUiAfterDialog(suspended);
+      await _resumeQtAfterDialog(qtSuspended);
+    }
+  }
+
+  /// 678：房间弹窗期间把 Qt 播放窗让位。
+  ///
+  /// Qt 播放窗是**顶层窗口**，z-order 高于 Flutter 主窗 —— 不处理的话
+  /// 分享/搜索/确认框全被它盖住（真机「点分享没反应」）。
+  /// 用全屏时的「最小化到任务栏」不可取（视频会黑），改为 `hide` +
+  /// 弹窗关闭后 `show` + 重新置前。
+  Future<bool> _suspendQtForDialog() async {
+    if (widget.roomCode == null) return false;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive) return false;
+    try {
+      qt.setWindowVisible(false);
+      return true;
+    } catch (e) {
+      LogService().log('Room', 'Qt 让位失败: $e');
+      return false;
+    }
+  }
+
+  /// 678：弹窗关闭后恢复 Qt 播放窗。
+  Future<void> _resumeQtAfterDialog(bool suspended) async {
+    if (!suspended) return;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive) return;
+    try {
+      qt.setWindowVisible(true);
+      qt.focus();
+    } catch (e) {
+      LogService().log('Room', 'Qt 恢复失败: $e');
     }
   }
 
@@ -11513,6 +11579,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                       style: const TextStyle(color: Colors.white, fontSize: 11),
                     ),
                   ),
+                // 678：分享房间（**仅房主**，对齐 Flutter 顶栏 `showShare`
+                // 与安卓/鸿蒙「观众隐藏分享」语义）。
+                if (_roomData != null && _isHost) ...[
+                  const SizedBox(width: 6),
+                  TvFocusable(
+                    onTap: _showShareRoomDialog,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.share, color: Colors.white70, size: 18),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

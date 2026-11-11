@@ -106,6 +106,12 @@ public:
     /// 677：把本窗口拉到最前（Dart 取消退房/点面板时用）。
     Q_INVOKABLE void raiseToFront();
 
+    /// 678：临时显示/隐藏宿主窗（房间弹窗期间让位给 Flutter 主窗）。
+    ///
+    /// 【为什么不用最小化】最小化后 mpv 会停渲染，恢复时要重新起播
+    ///（黑屏一瞬）；`hide`/`show` 保住解码状态，弹窗关掉即恢复画面。
+    Q_INVOKABLE void setWindowVisible(bool visible);
+
     /// 677：触发 Escape 语义（main.cpp 的事件过滤器调用）。
     ///
     /// 信号不能从类外 emit（虽然 Qt 的 `signals` 是 public，但语义上

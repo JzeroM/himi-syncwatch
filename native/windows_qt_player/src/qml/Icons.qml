@@ -60,4 +60,6 @@ QtObject {
     readonly property string people: "\uf0c0"             // fa-user-group
     readonly property string replay10: "\uf0e2"           // fa-rotate-left
     readonly property string forward10: "\uf01e"          // fa-rotate-right
+    readonly property string search: "\uf002"             // fa-magnifying-glass
+    readonly property string campaign: "\uf0a1"           // fa-bullhorn
 }

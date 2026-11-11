@@ -205,6 +205,15 @@ class QtPlayerAdapter implements PlayerAdapter {
     _pipe.sendCommandRaw({'type': 'setFollowParent', 'enabled': enabled});
   }
 
+  /// 678：临时显示/隐藏 Qt 播放窗（房间弹窗期间让位）。
+  ///
+  /// 【为什么不用最小化】最小化后 mpv 会停渲染，恢复时要重新起播（黑屏
+  /// 一瞬）；直接 `hide`/`show` 保住解码状态，弹窗关掉即恢复画面。
+  void setWindowVisible(bool visible) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'setWindowVisible', 'visible': visible});
+  }
+
   /// 677：请求 Qt 按**它自己的 QScreen** 计算并排矩形。
   ///
   /// 【为什么让 Qt 算】`window_manager` 不暴露屏幕工作区（多屏 + DPI

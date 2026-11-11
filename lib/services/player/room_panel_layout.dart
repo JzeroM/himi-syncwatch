@@ -32,6 +32,16 @@ class RoomPanelLayout {
   /// （底栏进度条 + 音量胶囊 + 右组图标）。
   static const double minVideoWidth = 480;
 
+  /// 房间面板窗最小宽度（逻辑像素）——与 Qt 侧 `kMinPanelWidth` 必须一致。
+  ///
+  /// 【为什么需要】不限制时用户能把面板拖到极窄，Qt 侧可用宽不足
+  /// `minVideoWidth` → 要么堆叠要么不跟随（真机截图：面板压在视频上）。
+  /// 320 + 480 = 800 是并排的最小总宽。
+  static const double minPanelWidth = 320;
+
+  /// 房间面板窗最小高度（逻辑像素）——低于此值播报板 + 资源列表都放不下。
+  static const double minPanelHeight = 500;
+
   /// 计算房间并排布局。
   ///
   /// [workArea] 屏幕可用区域（已排除任务栏），逻辑像素。
@@ -46,12 +56,12 @@ class RoomPanelLayout {
     if (workArea.width <= 0 || workArea.height <= 0) return null;
 
     // 总宽不超屏：视频区 + 面板宽必须塞得进工作区。
-    // 只有**放不下**时才压缩面板（不低于 300）；放得下就用标准宽度。
+    // 只有**放不下**时才压缩面板（不低于 minPanelWidth）；放得下就用标准宽度。
     var panel = panelWidth;
     if (panel + minVideoWidth > workArea.width) {
       panel = workArea.width - minVideoWidth;
     }
-    if (panel < 300) return null;
+    if (panel < minPanelWidth) return null;
 
     final videoWidth = workArea.width - panel;
     if (videoWidth < minVideoWidth) return null;

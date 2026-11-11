@@ -87,6 +87,11 @@ QtObject {
     readonly property real panelOptionSize: 14
     readonly property real panelCheckSlot: 18
 
+    // ── 678：房间资源面板（对齐 Flutter 房间模式 320dp 侧栏）──
+    readonly property real roomPanelWidth: 320
+    readonly property real roomPanelMaxHeight: 560
+    readonly property real bottomBarHeight: 96
+
     // ── 动效 ──
     readonly property int controlsFadeMs: 200
     readonly property int autoHideMs: 5000

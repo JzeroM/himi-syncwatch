@@ -39,6 +39,21 @@ namespace {
 
 constexpr wchar_t kVideoClass[] = L"HIMI_QT_PLAYER_VIDEO";
 
+/// 677：房间并排的最小尺寸（逻辑像素）。
+///
+/// 【为什么有最小宽】视频区低于 480 时底栏会挤爆（进度条 + 音量胶囊 +
+/// 右组图标），控件重叠不可用。低于此值时**保持上一有效矩形不动**
+/// （不再强行撑大——撑大会越过 Flutter 窗左缘造成两窗堆叠）。
+constexpr int kMinWidth = 480;
+
+/// 高度下限：低于此值顶栏 + 底栏就占满了，视频区不可见。
+constexpr int kMinHeight = 360;
+
+/// 677：房间面板窗的最小宽度（逻辑像素）——与 Dart 侧
+/// `RoomPanelLayout.minPanelWidth` 必须一致（`setMinimumSize` 用它）。
+/// 低于此值「季-集」两级缩进 + 播报板就挤不下了。
+constexpr int kMinPanelWidth = 320;
+
 /// 从 mpv 的 `video-out-params` 节点里取字符串字段。
 QString nodeString(const mpv_node& node, const char* key) {
     if (node.format != MPV_FORMAT_NODE_MAP) return QString();
@@ -500,12 +515,13 @@ void MpvWindow::requestSplitLayout(int panelWidth, int minVideoWidth) {
     if (minVideoWidth <= 0) minVideoWidth = 480;
 
     int panel = panelWidth;
-    // 总宽不超屏：放不下就压缩面板（下限 300），仍放不下则放弃并排。
+    // 总宽不超屏：放不下就压缩面板（下限 320 = Dart 侧 setMinimumSize），
+    // 仍放不下则放弃并排。
     if (panel + minVideoWidth > work.width()) {
         panel = work.width() - minVideoWidth;
     }
     const int videoW = work.width() - panel;
-    if (panel < 300 || videoW < minVideoWidth) {
+    if (panel < kMinPanelWidth || videoW < minVideoWidth) {
         qWarning().noquote() << "[split] 工作区放不下双窗:" << work;
         emit splitLayoutReady(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false);
         return;
@@ -529,6 +545,17 @@ void MpvWindow::raiseToFront() {
                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     ::SetForegroundWindow(h);
     host_->requestActivate();
+}
+
+void MpvWindow::setWindowVisible(bool visible) {
+    if (host_ == nullptr) return;
+    // 【678】只 hide/show 宿主窗：mpv 子窗口随父窗显隐，解码状态不中断
+    //（最小化会触发 mpv 停渲染，恢复时黑屏一瞬）。
+    host_->setVisible(visible);
+    if (visible) {
+        host_->requestActivate();
+        raiseToFront();
+    }
 }
 
 /// 677：定位 Flutter 主窗。
@@ -619,18 +646,30 @@ void MpvWindow::followParentOnce() {
         qRound(parentPhysical.height() / dpr));
     const QRect work = screen->availableGeometry();
 
-    // 本窗 = 工作区左边 → Flutter 窗左边缘，纵向取工作区高度。
+    // ── 677：高度**跟随 Flutter 窗**（不再固定工作区全高）──
+    //
+    // 【真机回归】旧实现纵向恒取 `work.top()/work.height()`，而 Flutter
+    // 面板窗是自身高度 → 用户缩放面板高度时两窗下缘不齐（截图：Qt 比
+    // 面板矮一截 / 高出一截）。现在取 Flutter 窗的 top/bottom，再夹紧到
+    // 工作区内（面板贴边时不会越出任务栏）。
+    const int top = qMax(parentLogical.top(), work.top());
+    const int bottom = qMin(parentLogical.bottom(), work.bottom());
+    const int h = bottom - top;
+    if (h < kMinHeight) return;  // 太矮：保持上一有效矩形（不闪不叠）
+
+    // ── 677：宽度**不撑大**（撑大会越过 Flutter 窗左缘 → 两窗堆叠）──
+    //
+    // 【真机回归】旧实现把 w 强行撑到最小宽：用户把面板窗左缘拖到 335
+    // 时，w=335 < 480 被撑到 480，而面板从 335 开始 → **重叠 145px**
+    //（截图：面板压在视频上）。
+    // 现在：不足最小宽就**保持上一有效矩形不动**，等用户拖回来。
     const int left = work.left();
     const int right = qMin(parentLogical.left(), work.right());
-    int w = right - left;
-    // 总宽不超屏：Flutter 最大化时 remaining 会很小 → 保底宽度，
-    // 不压到 Flutter 窗上（用户要求「两窗总长总宽不超屏」）。
-    constexpr int kMinWidth = 480;
-    if (w < kMinWidth) w = kMinWidth;
-    if (left + w > work.right()) w = work.right() - left;
+    const int w = right - left;
+    if (w < kMinWidth) return;
     if (w <= 0) return;
 
-    const QRect next(left, work.top(), w, work.height());
+    const QRect next(left, top, w, h);
     if (next == lastFollowRect_) return;  // 变化才动（零抖动）
     lastFollowRect_ = next;
     splitRect_ = next;

@@ -3,6 +3,7 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/player/room_panel_layout.dart';
+import 'package:himi_syncwatch/services/platform/windows_window_style.dart';
 
 /// 677：Windows Qt 播放器**房间模式**。
 ///
@@ -548,6 +549,200 @@ void main() {
       );
       // 800 - 480 = 320 < 380 → 取 380
       expect(size.width, RoomPanelLayout.panelWidth);
+    });
+  });
+  // ═══════════════════════════════════════════════════════════════
+  // I. 678：进房即摆位 / 高度跟随 / 不堆叠 / 标题栏
+  // ═══════════════════════════════════════════════════════════════
+
+  group('I 进房即摆位与缩放约束', () {
+    test('I1 预启动成功即接线摆位（未选片也要摆好）', () {
+      // 真机回归：只在 _startQtPlayer（有媒体起播）里接线 → 进房间未选片
+      // 时两窗根本没摆好（Qt 默认 1280×720 出现在左上）
+      final body = _extract(playerScreen, 'Future<void> _ensureQtPlayerProcess(');
+      expect(body, contains('widget.roomCode != null'));
+      expect(body, contains('_wireRoomQtAdapter(adapter)'));
+      expect(body, contains('setState('));
+    });
+
+    test('I2 接线幂等（预启动 + 起播不重复摆位）', () {
+      expect(playerScreen, contains('bool _roomQtWired'));
+      final body = _extract(playerScreen, 'void _wireRoomQtAdapter');
+      expect(body, contains('if (_roomQtWired) return'));
+      expect(body, contains('_roomQtWired = true'));
+    });
+
+    test('I3 Qt 高度跟随 Flutter 窗（不再固定工作区全高）', () {
+      final body = _extract(mpvCpp, 'void MpvWindow::followParentOnce');
+      // 纵向取 Flutter 窗 top/bottom 并夹紧到工作区
+      expect(body, contains('parentLogical.top()'));
+      expect(body, contains('parentLogical.bottom()'));
+      expect(body, contains('qMax(parentLogical.top(), work.top())'));
+      expect(body, contains('qMin(parentLogical.bottom(), work.bottom())'));
+      // 不能再用固定 work.top()/work.height() 作为窗口纵向
+      expect(body, isNot(contains('const QRect next(left, work.top()')));
+    });
+
+    test('I4 宽度不足时**保持上一有效矩形**（不撑大 → 不堆叠）', () {
+      final body = _extract(mpvCpp, 'void MpvWindow::followParentOnce');
+      // 真机回归：旧实现会把 w 强行撑到最小宽，越过 Flutter 窗左缘
+      // → 面板压在视频上（截图）。现在改为不足即 return（保持不动）。
+      expect(body, contains('if (w < kMinWidth) return'));
+      // 不得出现「赋值式撑大」（旧写法的特征）
+      expect(
+        body,
+        isNot(contains(RegExp(r'if \(w < kMinWidth\)\s*w\s*='))),
+        reason: '撑大 w 会越过 Flutter 窗左缘造成两窗堆叠',
+      );
+      expect(mpvCpp, contains('constexpr int kMinWidth = 480'));
+    });
+
+    test('I5 高度不足时同样保持不动（不闪不叠）', () {
+      final body = _extract(mpvCpp, 'void MpvWindow::followParentOnce');
+      expect(body, contains('if (h < kMinHeight) return'));
+      expect(body, contains('kMinHeight'));
+    });
+
+    test('I6 面板窗最小尺寸注入（320×500）', () {
+      final body = _extract(playerScreen, 'Future<void> _applyRoomSplitLayout');
+      expect(body, contains('setMinimumSize'));
+      expect(body, contains('RoomPanelLayout.minPanelWidth'));
+      expect(body, contains('RoomPanelLayout.minPanelHeight'));
+      // 常量值必须与 Qt 侧一致
+      expect(RoomPanelLayout.minPanelWidth, 320);
+      expect(RoomPanelLayout.minPanelHeight, 500);
+      // Qt 侧 kMinPanelWidth 与 Dart 对齐
+      expect(mpvCpp, contains('kMinPanelWidth = 320'));
+    });
+
+    test('I7 退房放开最小/最大尺寸限制', () {
+      final body = _extract(playerScreen, 'Future<void> _exitRoomSplitLayout');
+      expect(body, contains('setMaximumSize'));
+      expect(body, contains('setMinimumSize'));
+      expect(body, contains('_roomQtWired = false'));
+    });
+
+    test('I8 房间模式去掉最大化/最小化按钮', () {
+      final body = _extract(playerScreen, 'Future<void> _applyRoomSplitLayout');
+      expect(body, contains('WindowsWindowStyle.setRoomChrome(true)'));
+      final exit = _extract(playerScreen, 'Future<void> _exitRoomSplitLayout');
+      expect(exit, contains('WindowsWindowStyle.setRoomChrome(false)'));
+    });
+
+    test('I9 标题栏样式位运算正确（去/恢复 MAXIMIZEBOX+MINIMIZEBOX）', () {
+      // WS_MAXIMIZEBOX = 0x10000, WS_MINIMIZEBOX = 0x20000
+      const withBoxes = 0x00CF0000;  // 含两个按钮
+      final stripped = WindowsWindowStyle.stripMaxMinBoxes(withBoxes);
+      expect(stripped & 0x00010000, 0, reason: 'WS_MAXIMIZEBOX 未清除');
+      expect(stripped & 0x00020000, 0, reason: 'WS_MINIMIZEBOX 未清除');
+      // 其它位不动（WS_THICKFRAME 拖边缩放必须保留）
+      expect(stripped & 0x00040000, isNot(0), reason: 'WS_THICKFRAME 被误删');
+      // 恢复
+      final restored = WindowsWindowStyle.restoreMaxMinBoxes(stripped);
+      expect(restored, withBoxes);
+      expect(WindowsWindowStyle.hasMaxMinBoxes(withBoxes), isTrue);
+      expect(WindowsWindowStyle.hasMaxMinBoxes(stripped), isFalse);
+    });
+
+    test('I10 标题栏调整发 SWP_FRAMECHANGED（否则按钮不刷新）', () {
+      final src = read('lib/services/platform/windows_window_style.dart');
+      expect(src, contains('SWP_FRAMECHANGED'));
+      expect(src, contains('SetWindowPos'));
+      expect(src, contains('FLUTTER_RUNNER_WIN32_WINDOW'));
+      // 保留关闭按钮：不得碰 WS_SYSMENU
+      expect(src, isNot(contains('WS_SYSMENU')));
+    });
+
+    test('I11 找不到主窗时静默跳过（不影响房间功能）', () {
+      final src = read('lib/services/platform/windows_window_style.dart');
+      expect(src, contains('未找到主窗口'));
+      expect(src, contains('catch (e)'));
+    });
+  });
+  // ═══════════════════════════════════════════════════════════════
+  // J. 678：房间分享控件 / Qt 播放窗内资源面板
+  // ═══════════════════════════════════════════════════════════════
+
+  group('J 房间分享与 Qt 资源面板', () {
+    test('J1 资源面板头部含分享按钮（仅房主）', () {
+      final body = _extract(playerScreen, 'Widget _buildResourcePanel()');
+      expect(body, contains('Icons.share'));
+      expect(body, contains('_showShareRoomDialog'));
+      // 观众隐藏（对齐 Flutter 顶栏 showShare + 安卓/鸿蒙同款）
+      expect(body, contains('_roomData != null && _isHost'));
+    });
+
+    test('J2 分享弹窗期间 Qt 播放窗让位（否则弹窗被顶层窗盖住）', () {
+      final body = _extract(playerScreen, 'Future<void> _showShareRoomDialog()');
+      expect(body, contains('_suspendQtForDialog'));
+      expect(body, contains('_resumeQtAfterDialog'));
+      final suspend = _extract(playerScreen, 'Future<bool> _suspendQtForDialog()');
+      expect(suspend, contains('setWindowVisible(false)'));
+      final resume = _extract(playerScreen, 'Future<void> _resumeQtAfterDialog');
+      expect(resume, contains('setWindowVisible(true)'));
+      expect(resume, contains('focus()'));
+    });
+
+    test('J3 Qt 适配器与 C++ 支持 setWindowVisible 命令', () {
+      expect(adapterDart, contains('void setWindowVisible(bool visible)'));
+      expect(adapterDart, contains("'type': 'setWindowVisible'"));
+      expect(mpvH, contains('Q_INVOKABLE void setWindowVisible(bool visible)'));
+      expect(mpvCpp, contains('void MpvWindow::setWindowVisible'));
+      expect(mainCpp, contains('setWindowVisible'));
+    });
+
+    test('J4 Qt PlayerState 补房间面板字段', () {
+      for (final f in [
+        'Q_PROPERTY(QString roomCode',
+        'Q_PROPERTY(QString audienceName',
+        'Q_PROPERTY(QVariantList resourceGroups',
+        'Q_PROPERTY(QVariantList broadcasts',
+        'Q_PROPERTY(bool resourcePanelOpen',
+      ]) {
+        expect(stateH, contains(f), reason: 'PlayerState 缺 $f');
+      }
+      // 解析
+      expect(stateCpp, contains('setResourceGroups'));
+      expect(stateCpp, contains('setBroadcasts'));
+      expect(stateCpp, contains('readBool(json, "resourcePanelOpen"'));
+    });
+
+    test('J5 Qt 房间面板 QML 存在并接入 Overlay', () {
+      final roomPanel = read('$dir/src/qml/RoomPanel.qml');
+      expect(roomPanel, contains('playerState.resourceGroups'));
+      expect(roomPanel, contains('playerState.broadcasts'));
+      expect(roomPanel, contains('playerState.onlineUserCount'));
+      expect(roomPanel, contains('playerState.isHost'));
+      // 观众只读
+      expect(roomPanel, contains('if (!playerState.canControl) return'));
+      // 命令参数与 Dart NativePlayerCommand 一致
+      expect(roomPanel, contains('"type": "toggleResourceGroup", "index"'));
+      expect(roomPanel, contains('"groupIndex"'));
+      expect(roomPanel, contains('"seasonIndex"'));
+      // 加资源命令在 Overlay 装配处（RoomPanel 只发信号）
+      expect(overlayQml, contains('"type": "openResourceSearch"'));
+      // Overlay 装配
+      expect(overlayQml, contains('RoomPanel {'));
+      // CMake 注册
+      expect(read('$dir/CMakeLists.txt'), contains('RoomPanel'));
+    });
+
+    test('J6 底栏房间面板开关（仅房间模式）', () {
+      expect(bottomBar, contains('playerState.resourcePanelOpen'));
+      expect(bottomBar, contains('"type": "toggleResourcePanel"'));
+      // 该按钮必须由 isRoom 门控
+      final idx = bottomBar.indexOf('"type": "toggleResourcePanel"');
+      expect(idx, greaterThan(0));
+      final before = bottomBar.substring(0, idx);
+      final lastVisible = before.lastIndexOf('visible: playerState.isRoom');
+      expect(lastVisible, greaterThan(0));
+    });
+
+    test('J7 面板显隐由 Dart 的 resourcePanelOpen 驱动', () {
+      final roomPanel = read('$dir/src/qml/RoomPanel.qml');
+      expect(roomPanel, contains('property bool open: playerState.isRoom'));
+      expect(roomPanel, contains('playerState.resourcePanelOpen'));
+      expect(roomPanel, contains('visible: open'));
     });
   });
 }

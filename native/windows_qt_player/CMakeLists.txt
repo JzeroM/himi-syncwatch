@@ -55,7 +55,7 @@ qt_add_executable(himi_qt_player
 #   解析也依赖它），所以显式设置 RESOURCE_PREFIX 保持标准。
 foreach(_qml Main Overlay PlayerShortcuts VideoGestures TopBar BottomBar
              ControlButton Panel Theme Icons PlayerSlider EpisodeLogo
-             DisplayAdjustPanel)
+             DisplayAdjustPanel RoomPanel)
     set_source_files_properties("src/qml/${_qml}.qml" PROPERTIES
         QT_RESOURCE_ALIAS "${_qml}.qml")
 endforeach()
