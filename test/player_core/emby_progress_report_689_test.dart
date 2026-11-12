@@ -99,7 +99,9 @@ void main() {
       final tookIdx = body.indexOf('if (tookOver)');
       expect(tookIdx, greaterThan(0));
       // 接管分支内必须有 _reportStart()
-      final tookBlock = body.substring(tookIdx, tookIdx + 800);
+      // 690：接管分支补了「解除片段抑制」等逻辑，窗口扩大到 2000
+      final tookBlock =
+          body.substring(tookIdx, (tookIdx + 2000).clamp(0, body.length));
       expect(tookBlock, contains('_reportStart()'));
       expect(tookBlock, contains('return true;'));
       // 顺序：先启动上报，再 return

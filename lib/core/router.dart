@@ -123,15 +123,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     ),
                   ],
                 ),
+                // 690：缓存管理提升为独立的「数据」分类
+                GoRoute(
+                  path: 'data',
+                  pageBuilder: (context, state) =>
+                      _settingsFadePage(const CacheSettingsScreen()),
+                ),
                 GoRoute(
                   path: 'general',
                   pageBuilder: (context, state) =>
                       _settingsFadePage(const GeneralSettingsScreen()),
                   routes: [
+                    // 690：旧路径重定向（防旧深链失效）
                     GoRoute(
                       path: 'cache',
-                      pageBuilder: (context, state) =>
-                          _settingsFadePage(const CacheSettingsScreen()),
+                      redirect: (_, __) => '/settings/data',
                     ),
                     GoRoute(
                       path: 'trakt',

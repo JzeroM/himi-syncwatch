@@ -81,6 +81,13 @@ class _HoverScrollRowState extends State<HoverScrollRow> {
     if (!_controller.hasClients) return;
     // 只在用户主动滚动时激活（程序性 jumpTo 不触发）
     if (!_controller.position.isScrollingNotifier.value) return;
+    // 690：**本栏正在被程序性回正**时忽略。
+    //
+    // `animateTo` 会创建 `DrivenScrollActivity`，它同样把
+    // `isScrollingNotifier` 置 true——不加这道判断，回正动画会被误判成
+    // 「用户滚动这一栏」，于是它反向激活自己、去回正用户正在滑的那一栏
+    // → 真机现象「前一条还没回正到位，当前栏滑不动」。
+    if (_coordinator?.isRestoring(_controller) ?? false) return;
     _coordinator?.activate(_controller, reduced: Motion.reduced(context));
   }
 

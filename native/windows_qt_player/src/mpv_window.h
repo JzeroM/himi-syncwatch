@@ -44,7 +44,18 @@ public:
     bool attach(QWindow* host, bool hdr, bool hlg);
 
     /// 加载媒体。`headers` 用于 Emby 鉴权（拼进 `http-header-fields`）。
-    void load(const QString& url, const QMap<QString, QString>& headers = {});
+    ///
+    /// 690：**`startMs` 必须通过 `loadfile` 的 `start` 选项传入**。
+    ///
+    /// 【真机回归：有进度点击续播后从头播】旧实现是 `mpv.load()` 之后
+    /// 立刻 `mpv.seekTo(startMs)`——但 `loadfile` 是**异步**的（只入队），
+    /// 此时 mpv 还没有媒体，`time-pos` 写入被直接忽略 → 从头播。
+    ///
+    /// 正确做法与鸿蒙一致（`options.set('start', ...)`）：把起点交给
+    /// `loadfile` 的参数，mpv 内部在文件就绪后精确跳转，零竞态。
+    void load(const QString& url,
+              const QMap<QString, QString>& headers = {},
+              int startMs = 0);
 
     /// 680：卸载当前媒体（删除「正在播放的资源」时调用）。
     ///
@@ -304,6 +315,12 @@ private:
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
     bool paused_ = true;
+
+    /// 690：待应用的续播起点（`FILE_LOADED` 时兜底 seek 用）。
+    ///
+    /// 【为什么需要兜底】`loadfile` 的 `start` 选项在较新 mpv 才支持；
+    /// 万一当前构建不认，文件就绪后补一次 seek，保证不会从头播。
+    qint64 pendingStartMs_ = 0;
 
     /// 682：当前是否已加载媒体（`stop` 后为 false，`load` 后为 true）。
     ///

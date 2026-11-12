@@ -39,6 +39,34 @@ class SegmentSkipController {
     }
   }
 
+  /// 690：**切集/换源后重置基线**——片尾一律视为已处理。
+  ///
+  /// 【为什么需要】`reset()` 把 `_lastPositionMs` 清成 null，而
+  /// `evaluate` 的 `outroInProgress` 分支只要「当前位置在片尾区间内」就
+  /// 命中（不要求跨过起点）——切集后若落点恰好在片尾附近，会**立刻**冒出
+  /// 「跳过片尾」（真机反馈：安卓/鸿蒙不会，切集后不该出现片尾提示）。
+  ///
+  /// 与 [onSeek] 的区别：那里只标记「落点所在」的片段；这里把**所有片尾
+  /// 段**都标记为已处理，因为切集后用户本来就不在片尾（是新一集的片尾）。
+  void beginEpisode({
+    required int positionMs,
+    required List<MediaSegment> segments,
+  }) {
+    _lastPositionMs = positionMs;
+    for (final segment in segments) {
+      // 690：**只标记片尾**。
+      //
+      // 【为什么不能连片头一起按 contains 标记】片头起点通常是 0，
+      // 切集/首播的 startMs 也是 0 → `contains(0)` 恒真 → 片头被误标
+      // 为「已处理」→ 跳过片头提示永不出现（真机回归）。
+      //
+      // 片头靠 3 秒门禁（`introGateMs`）自然延后，不需要在这里压制。
+      if (segment.type == MediaSegmentType.outro) {
+        _handled.add(segment.key);
+      }
+    }
+  }
+
   /// 返回本次需要展示“跳过”提示的片段；null = 不触发。
   MediaSegment? evaluate({
     required int positionMs,

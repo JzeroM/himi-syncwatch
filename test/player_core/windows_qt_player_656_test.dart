@@ -1087,7 +1087,8 @@ void main() {
 
     test('headers 透传 mpv（Emby 流鉴权全靠 X-Emby-Token，丢则 401 黑屏）', () {
       expect(mainCpp, contains('"headers"'));
-      expect(mainCpp, contains('mpv.load(url, headers)'));
+      // 690：load 多了 startMs 参数（续播起点走 loadfile 的 start 选项）
+      expect(mainCpp, contains('mpv.load(url, headers,'));
       expect(mpvCpp, contains('http-header-fields'));
     });
 
@@ -1232,8 +1233,10 @@ void main() {
     test('跳过片头/片尾胶囊（片段字段 + skipSegmentClicked）', () {
       expect(stateH, contains('Q_PROPERTY(qint64 segmentIntroEndMs'));
       expect(stateH, contains('Q_PROPERTY(qint64 segmentOutroStartMs'));
-      expect(bottomBar, contains('跳过片头'));
-      expect(bottomBar, contains('skipSegmentClicked'));
+      // 690：胶囊从 BottomBar 移到 Overlay（独立于控件显隐）
+      final overlayQml = read('$dir/src/qml/Overlay.qml');
+      expect(overlayQml, contains('跳过片头'));
+      expect(overlayQml, contains('skipSegment'));
       expect(mainQml, contains('skipSegmentLocal'));
     });
 
@@ -1678,10 +1681,13 @@ void main() {
       expect(gestures5, contains('wheelHandler'));
     });
 
-    test('D1 跳过胶囊 skipPrompt 驱动 + 放音量右侧', () {
-      expect(bottom5, contains('playerState.skipPrompt === "intro"'));
-      expect(bottom5, contains('id: skipCapsule'));
+    test('D1 跳过胶囊 skipPrompt 驱动（690：独立于控件显隐）', () {
+      // 【结论反转】672 时胶囊在底栏音量右侧，跟随 controlsVisible 一起
+      // 隐藏；690 移到 Overlay 独立层，用自己的 8 秒倒计时。
+      expect(overlay5, contains('playerState.skipPrompt === "intro"'));
+      expect(overlay5, contains('id: skipCapsule'));
       expect(overlay5, contains('"type": "skipSegment"'));
+      expect(bottom5, isNot(contains('id: skipCapsule')));
     });
 
     test('D2 右键画面任意位置标记（范围 ≤10% / ≥70%）', () {

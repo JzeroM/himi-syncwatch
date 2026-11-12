@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/pressable_scale.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_option_dialog.dart';
@@ -262,5 +263,194 @@ class SettingsSubPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 690：设置**分组玻璃卡片**——一组设置项包在一张玻璃卡片里。
+///
+/// ## 为什么需要
+///
+/// 旧实现是「`ListTile` + `Divider`」平铺长列表（外观页 669 行、缓存页
+/// 546 行），整页零玻璃、滚动到底很长、找不到「我在哪一组」。
+///
+/// 现在按语义切成 3~5 组，每组一张玻璃卡片：
+/// - 组标题：12px 大写字母间距，半透明白
+/// - 卡片：`GlassContainer` 圆角 16
+/// - 组内行之间：极淡细线（比 `Divider` 淡）
+/// - 组间间距 20
+///
+/// ## TV 焦点
+///
+/// 组标题 [ExcludeFocus]（不可聚焦），卡片本体也不聚焦——只有组内的行
+/// 参与焦点遍历。[FocusTraversalGroup] 保证上下键在组内移动、到边界时
+/// 跳到相邻组。
+class SettingsGroupCard extends StatelessWidget {
+  const SettingsGroupCard({
+    super.key,
+    this.title,
+    required this.children,
+    this.padding = const EdgeInsets.symmetric(horizontal: 20),
+  });
+
+  /// 组标题（为空则不显示）。
+  final String? title;
+
+  /// 组内行（通常是 `ListTile` / `SwitchListTile` / 自定义行）。
+  final List<Widget> children;
+
+  /// 组标题的左右内边距。
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null)
+            ExcludeFocus(
+              child: Padding(
+                padding: padding.copyWith(bottom: 8),
+                child: Text(
+                  title!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white60,
+                  ),
+                ),
+              ),
+            ),
+          FocusTraversalGroup(
+            child: GlassContainer(
+              borderRadius: BorderRadius.circular(16),
+              showShadow: false,
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              // 690：`ListTile` 的墨水效果画在最近的 `Material` 祖先上，
+              // 而 `GlassContainer` 用 `DecoratedBox` 提供背景——不套一层
+              // 透明 `Material` 时 Flutter 会断言「墨水效果不可见」。
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                children: [
+                  for (var i = 0; i < children.length; i++) ...[
+                    children[i],
+                    // 组内细线（最后一项之后不加）
+                    if (i < children.length - 1)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 16, right: 16),
+                        child: Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: Color(0x0FFFFFFF),
+                        ),
+                      ),
+                  ],
+                ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 690：设置主页的**分类卡片**（玻璃 + 图标 + 标题 + 副标题）。
+///
+/// 用于「外观 / 播放器 / 通用 / 数据 / 实验性 / 关于」六个入口。
+class SettingsCategoryCard extends StatelessWidget {
+  const SettingsCategoryCard({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.tvMode,
+    this.autofocus = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool tvMode;
+
+  /// 690：TV 模式下是否自动落焦（首张卡片用）。
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final card = GlassContainer(
+      borderRadius: BorderRadius.circular(18),
+      showShadow: false,
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          // 图标：圆形主色渐变底（与侧边栏品牌区同款语言）
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accent.withValues(alpha: 0.35),
+                  accent.withValues(alpha: 0.12),
+                ],
+              ),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.40),
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, size: 18, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Colors.white60),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, size: 18, color: Colors.white38),
+        ],
+      ),
+    );
+
+    // TV：整卡可聚焦（焦点环 + 轻微放大）；非 TV：按压缩放反馈。
+    if (tvMode) {
+      return TvFocusable(
+        onTap: onTap,
+        scale: 1.03,
+        autofocus: autofocus,
+        child: card,
+      );
+    }
+    return PressableScale(onTap: onTap, child: card);
   }
 }

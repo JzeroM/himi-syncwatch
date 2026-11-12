@@ -63,50 +63,58 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
       pageKey: const ValueKey('aboutSettingsPage'),
       title: '关于',
       children: [
-        ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: const Text('HIMI 私密同步观影'),
-          subtitle: Text(_version.isEmpty ? '版本读取中…' : '版本 $_version'),
+        // 690：分组玻璃卡片——版本 / 更新
+        SettingsGroupCard(
+          title: '版本',
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('HIMI 私密同步观影'),
+              subtitle:
+                  Text(_version.isEmpty ? '版本读取中…' : '版本 $_version'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: const Text('上次检查'),
+              subtitle: Text(_lastCheckText(settings.lastUpdateCheckAt)),
+            ),
+          ],
         ),
-        const Divider(height: 1),
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: _check,
-          child: ListTile(
-            leading: const Icon(Icons.system_update_alt),
-            title: const Text('检查更新'),
-            subtitle: Text(_checking
-                ? '正在检查…'
-                : '当前 ${_version.isEmpty ? '未知' : 'v$_version'}'),
-            trailing: _checking
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.chevron_right, size: 18),
-            onTap: _check,
-          ),
+        SettingsGroupCard(
+          title: '更新',
+          children: [
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: _check,
+              child: ListTile(
+                leading: const Icon(Icons.system_update_alt),
+                title: const Text('检查更新'),
+                subtitle: Text(_checking
+                    ? '正在检查…'
+                    : '当前 ${_version.isEmpty ? '未知' : 'v$_version'}'),
+                trailing: _checking
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right, size: 18),
+                onTap: _check,
+              ),
+            ),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => notifier.update(
+                  updatePromptEnabled: !settings.updatePromptEnabled),
+              child: SwitchListTile(
+                title: const Text('新版本提醒'),
+                subtitle: const Text('启动时自动检查，发现新版本时提示（可在提示里选「永不提醒」关闭）'),
+                value: settings.updatePromptEnabled,
+                onChanged: (v) => notifier.update(updatePromptEnabled: v),
+              ),
+            ),
+          ],
         ),
-        const Divider(height: 1),
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () =>
-              notifier.update(updatePromptEnabled: !settings.updatePromptEnabled),
-          child: SwitchListTile(
-            title: const Text('新版本提醒'),
-            subtitle: const Text('启动时自动检查，发现新版本时提示（可在提示里选「永不提醒」关闭）'),
-            value: settings.updatePromptEnabled,
-            onChanged: (v) => notifier.update(updatePromptEnabled: v),
-          ),
-        ),
-        const Divider(height: 1),
-        ListTile(
-          leading: const Icon(Icons.schedule),
-          title: const Text('上次检查'),
-          subtitle: Text(_lastCheckText(settings.lastUpdateCheckAt)),
-        ),
-        const Divider(height: 1),
       ],
     );
   }

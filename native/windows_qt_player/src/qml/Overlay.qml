@@ -318,6 +318,55 @@ ApplicationWindow {
         }
     }
 
+    // ── 690：跳过片头/片尾**独立胶囊** ──
+    //
+    // 【为什么从 BottomBar 移出来】旧实现放在底栏里，跟随
+    // `playerState.controlsVisible` 一起显隐——用户 5 秒不动，控件自动
+    // 隐藏时跳过提示也跟着消失（真机反馈「跳过片头片尾不跟随其他控件
+    // 一起隐藏，有自己的隐藏倒计时」）。
+    //
+    // 现在独立成层：
+    //   - 显隐只看 `playerState.skipPrompt`（Dart 侧 8 秒倒计时驱动）
+    //   - 不参与 controlsVisible 淡出
+    //   - 位置贴底栏上方（避开进度条），水平居中
+    Rectangle {
+        id: skipCapsule
+        visible: playerState.skipPrompt === "intro"
+                 || playerState.skipPrompt === "outro"
+        anchors.horizontalCenter: parent.horizontalCenter
+        // 贴底栏上沿 + 16（底栏隐藏时胶囊仍停在原位，不跳动）
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.bottomBarHeight + 16
+        width: skipLabel.implicitWidth + 32
+        height: 34
+        radius: 17
+        color: Qt.rgba(1, 1, 1, 0.16)
+        border.color: theme.focusColor
+        border.width: 1.2
+
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+        opacity: visible ? 1 : 0
+
+        Text {
+            id: skipLabel
+            anchors.centerIn: parent
+            text: playerState.skipPrompt === "intro" ? "跳过片头" : "跳过片尾"
+            color: Theme.white
+            font.pixelSize: Theme.panelOptionSize
+            font.weight: 600
+        }
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                // 677：房间观众不得跳片头/片尾
+                if (!playerState.canControl) return
+                pipeServer.sendCommand({"type": "skipSegment"})
+            }
+        }
+    }
+
     // ── 左下角剧集 Logo（直接叠视频，无黑底）──
     EpisodeLogo {
         id: episodeLogo

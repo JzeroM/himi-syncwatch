@@ -234,42 +234,6 @@ Rectangle {
                 }
             }
 
-            // 【672 D1】跳过片头/片尾**文字胶囊**（skipPrompt 驱动，与安卓/
-            // 鸿蒙同字段；放音量控件右边保持间距——两侧各 10，隐藏不占位）
-            Item {
-                Layout.preferredWidth: 10
-                visible: skipCapsule.visible
-            }
-            Rectangle {
-                id: skipCapsule
-                visible: playerState.skipPrompt === "intro"
-                         || playerState.skipPrompt === "outro"
-                Layout.preferredHeight: 32
-                Layout.preferredWidth: skipLabel.implicitWidth + 28
-                radius: 16
-                color: Qt.rgba(1, 1, 1, 0.14)
-                border.color: theme.borderColor
-                border.width: 1
-
-                Text {
-                    id: skipLabel
-                    anchors.centerIn: parent
-                    text: playerState.skipPrompt === "intro"
-                          ? "跳过片头" : "跳过片尾"
-                    color: theme.textColor
-                    font.pixelSize: Theme.captionSize
-                    font.weight: 600
-                }
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.skipSegmentClicked()
-                }
-            }
-
-            Item { Layout.preferredWidth: 10 }
-
             // 【671 B1】亮度玻璃胶囊（同音量；数值不带 %）
             Rectangle {
                 id: briCapsule

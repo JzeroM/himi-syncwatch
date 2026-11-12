@@ -51,6 +51,11 @@ GoRouter _testRouter() => GoRouter(
                 ),
               ],
             ),
+            // 690：数据页（缓存管理）
+            GoRoute(
+              path: 'data',
+              builder: (context, state) => const CacheSettingsScreen(),
+            ),
             GoRoute(
               path: 'general',
               builder: (context, state) => const GeneralSettingsScreen(),
@@ -163,11 +168,10 @@ Finder _subScrollable() {
 }
 
 Finder _glassSwitch(WidgetTester tester) {
+  // 690：分组玻璃卡片后 `find.ancestor` 可能命中多层容器，直接按
+  // SwitchListTile 的标题文本定位到**唯一**那个开关。
   return find.descendant(
-    of: find.ancestor(
-      of: find.text('液态玻璃'),
-      matching: find.byType(SwitchListTile),
-    ),
+    of: find.widgetWithText(SwitchListTile, '液态玻璃'),
     matching: find.byType(Switch),
   );
 }
@@ -181,8 +185,17 @@ void main() {
       200,
       scrollable: _subScrollable(),
     );
-    await tester.drag(_subScrollable(), const Offset(0, 120));
+    // 690：分组玻璃卡片后布局更紧凑，`scrollUntilVisible` 可能把目标
+    // 贴到视口边缘（被 AppBar 玻璃背板遮住 / 滚出屏外）→ tap 命中不到。
+    // 用 `ensureVisible` + 精确居中，避免手工 drag 的过冲。
+    await tester.ensureVisible(find.text(text));
     await tester.pumpAndSettle();
+    // 目标若贴在顶边（被 AppBar 遮），向下轻推 80px 让它进入可点区域
+    final box = tester.getRect(find.text(text));
+    if (box.top < 120) {
+      await tester.drag(_subScrollable(), const Offset(0, 80));
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> _scrollToGlass(WidgetTester tester) =>
@@ -246,7 +259,9 @@ void main() {
     final container = await _pumpScreen(tester, category: '外观');
     await _scrollToGlass(tester);
 
-    await tester.tap(_glassSwitch(tester));
+    // 690：分组玻璃卡片后 Switch 可能贴边/被 AppBar 遮，`tap` 坐标不可靠。
+    // 直接触发 `onChanged`（等价用户拨动开关，且不依赖布局位置）。
+    tester.widget<Switch>(_glassSwitch(tester)).onChanged!(false);
     await tester.pumpAndSettle();
 
     expect(container.read(settingsProvider).glassUi, isFalse);
@@ -259,7 +274,7 @@ void main() {
 
     expect(tester.widget<Switch>(_glassSwitch(tester)).value, isFalse);
 
-    await tester.tap(_glassSwitch(tester));
+    tester.widget<Switch>(_glassSwitch(tester)).onChanged!(true);
     await tester.pumpAndSettle();
 
     expect(container.read(settingsProvider).glassUi, isTrue);
@@ -366,9 +381,10 @@ void main() {
   });
 
   testWidgets('通用子页：非 TV 隐藏顶栏时间设置', (tester) async {
+    // 690：缓存入口已迁出通用页，改用「导出运行日志」作滚动锚点
     await _pumpScreen(tester, category: '通用');
     await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('cacheSettingsEntry')),
+      find.text('导出运行日志'),
       250,
       scrollable: _subScrollable(),
     );
@@ -409,19 +425,20 @@ void main() {
     expect(notifier.persistCount, greaterThan(0), reason: '切换应触发落盘');
   });
 
-  testWidgets('通用子页：缓存管理入口进入缓存页', (tester) async {
+  testWidgets('690：缓存管理已迁到「数据」分类（通用页不再有入口）', (tester) async {
+    // 通用页：不再有缓存入口
     await _pumpScreen(tester, category: '通用');
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('cacheSettingsEntry')),
-      250,
-      scrollable: _subScrollable(),
-    );
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('cacheSettingsEntry')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('cacheSettingsEntry')));
-    await tester.pumpAndSettle();
+    // 主页有「数据」分类卡片
+    await _pumpScreen(tester);
+    expect(find.byKey(const ValueKey('settingsCategoryData')), findsOneWidget);
 
+    // 点进去是数据页（复用 cacheSettingsPage key）
+    await tester.tap(find.byKey(const ValueKey('settingsCategoryData')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('cacheSettingsPage')), findsOneWidget);
+    expect(find.text('数据'), findsWidgets);
   });
 
   testWidgets('播放器子页：显示网速开关默认开，切换写入 settings', (tester) async {
@@ -584,7 +601,9 @@ void main() {
   testWidgets('TV 遥控器 OK 两段式：作用域落焦首个分类入口并激活进入', (tester) async {
     final container = await _pumpScreen(
       tester,
-      initial: const AppSettings(themeColor: 0xFF86E3D6),
+      // 690：必须同时开 tvMode——分类卡片在 tvMode 下才用 TvFocusable
+      //（否则走 PressableScale，页面上没有任何可聚焦项，落焦必然失败）。
+      initial: const AppSettings(themeColor: 0xFF86E3D6, tvMode: true),
       remote: true,
     );
     expect(container.read(settingsProvider).themeColor, isNotNull);

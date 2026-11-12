@@ -24,79 +24,92 @@ class AppearanceSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('appearanceSettingsPage'),
       title: '外观',
       children: [
-        const _AppIconSection(),
-        const Divider(height: 1),
-        const _ThemeColorSection(),
-        const Divider(height: 1),
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () => ref
-              .read(settingsProvider.notifier)
-              .update(glassUi: !settings.glassUi),
-          child: SwitchListTile(
-            title: const Text('液态玻璃'),
-            subtitle: const Text('液态折射与动态高光；关闭后顶栏保留轻量磨砂，其余面板降级为纯色以提升流畅度'),
-            value: settings.glassUi,
-            onChanged: (v) =>
-                ref.read(settingsProvider.notifier).update(glassUi: v),
-          ),
+        // 690：分组玻璃卡片——图标 / 主题 / 布局 / 视频
+        SettingsGroupCard(
+          title: '图标与主题',
+          children: [
+            const _AppIconSection(),
+            const _ThemeColorSection(),
+          ],
         ),
-        const _GlassTuningSection(),
-        const Divider(height: 1),
-        if (!settings.tvMode) ...[
-          settingsTvWrapRow(
-            tvMode: settings.tvMode,
-            onTap: () => ref
-                .read(settingsProvider.notifier)
-                .update(homeCarousel: !settings.homeCarousel),
-            child: SwitchListTile(
-              key: const ValueKey('homeCarouselToggle'),
-              title: const Text('首页轮播'),
-              subtitle: const Text('首页顶部随机海报轮播，每 5 秒切换（非 TV 模式）'),
-              value: settings.homeCarousel,
-              onChanged: (v) =>
-                  ref.read(settingsProvider.notifier).update(homeCarousel: v),
+        SettingsGroupCard(
+          title: '玻璃效果',
+          children: [
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => ref
+                  .read(settingsProvider.notifier)
+                  .update(glassUi: !settings.glassUi),
+              child: SwitchListTile(
+                title: const Text('液态玻璃'),
+                subtitle: const Text('液态折射与动态高光；关闭后顶栏保留轻量磨砂，其余面板降级为纯色以提升流畅度'),
+                value: settings.glassUi,
+                onChanged: (v) =>
+                    ref.read(settingsProvider.notifier).update(glassUi: v),
+              ),
             ),
-          ),
-          const Divider(height: 1),
-        ],
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () => context.push('/settings/general/tmdb'),
-          child: ListTile(
-            key: const ValueKey('tmdbSettingsEntry'),
-            leading: const Icon(Icons.local_movies_outlined),
-            title: const Text('TMDB 聚合'),
-            subtitle: const Text('跨服务器发现电影/剧集，配置 API Key 与观看区域'),
-            trailing: const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: Colors.white54,
-            ),
-            onTap: () => context.push('/settings/general/tmdb'),
-          ),
+            const _GlassTuningSection(),
+          ],
         ),
-        const Divider(height: 1),
-        const _CategoryColumnsSection(),
-        const Divider(height: 1),
-        // 视频版本偏好：多版本资源的排序与默认选用优先级（底部弹层重排）
-        settingsTvWrapRow(
-          tvMode: settings.tvMode,
-          onTap: () => showVersionPreferenceSheet(context, ref),
-          child: ListTile(
-            key: const ValueKey('versionPreferenceEntry'),
-            leading: const Icon(Icons.sort),
-            title: const Text('视频版本偏好'),
-            subtitle: const Text('多版本资源的排序与默认选用优先级'),
-            trailing: const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: Colors.white54,
+        SettingsGroupCard(
+          title: '布局',
+          children: [
+            if (!settings.tvMode)
+              settingsTvWrapRow(
+                tvMode: settings.tvMode,
+                onTap: () => ref
+                    .read(settingsProvider.notifier)
+                    .update(homeCarousel: !settings.homeCarousel),
+                child: SwitchListTile(
+                  key: const ValueKey('homeCarouselToggle'),
+                  title: const Text('首页轮播'),
+                  subtitle: const Text('首页顶部随机海报轮播，每 5 秒切换（非 TV 模式）'),
+                  value: settings.homeCarousel,
+                  onChanged: (v) => ref
+                      .read(settingsProvider.notifier)
+                      .update(homeCarousel: v),
+                ),
+              ),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => context.push('/settings/general/tmdb'),
+              child: ListTile(
+                key: const ValueKey('tmdbSettingsEntry'),
+                leading: const Icon(Icons.local_movies_outlined),
+                title: const Text('TMDB 聚合'),
+                subtitle: const Text('跨服务器发现电影/剧集，配置 API Key 与观看区域'),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: () => context.push('/settings/general/tmdb'),
+              ),
             ),
-            onTap: () => showVersionPreferenceSheet(context, ref),
-          ),
+            const _CategoryColumnsSection(),
+          ],
         ),
-        const Divider(height: 1),
+        SettingsGroupCard(
+          title: '视频',
+          children: [
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => showVersionPreferenceSheet(context, ref),
+              child: ListTile(
+                key: const ValueKey('versionPreferenceEntry'),
+                leading: const Icon(Icons.sort),
+                title: const Text('视频版本偏好'),
+                subtitle: const Text('多版本资源的排序与默认选用优先级'),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: () => showVersionPreferenceSheet(context, ref),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -47,6 +48,8 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 690：TV 多引擎用分段胶囊（遥控器友好），非 TV 保留 TabBar。
+    final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     return SettingsPageBackground(
       child: Scaffold(
         key: const ValueKey('engineConfigPage'),
@@ -58,9 +61,9 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
           elevation: 0,
           flexibleSpace: const GlassBackdrop(),
           leading: const TvBackButton(),
-          // 681：单引擎平台（安卓手机/鸿蒙/Windows/iOS）不渲染 TabBar
-          // ——只有一个 tab 时它纯属占位，还挤压内容高度。
-          bottom: _engines.length <= 1
+          // 681：单引擎平台不渲染 TabBar（只有一个 tab 时纯占位）。
+          // 690：**TV 多引擎用分段胶囊**（遥控器左右键切换），不用 TabBar。
+          bottom: _engines.length <= 1 || tvMode
               ? null
               : TabBar(
                   controller: _tab,
@@ -68,12 +71,46 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
                   tabs: [for (final e in _engines) Tab(text: e.label)],
                 ),
         ),
-        body: TabBarView(
-          controller: _tab,
-          children: [
-            for (final e in _engines) _EngineTabBody(engine: e),
-          ],
-        ),
+        body: tvMode && _engines.length > 1
+            // 690：TV 分段胶囊——左右键切换引擎，OK 确认，焦点环跟随。
+            ? Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: GlassConfig.topInsetOf(context) +
+                          kTextTabBarHeight + 8,
+                      left: 16,
+                      right: 16,
+                    ),
+                    child: _EngineSegmentedSelector(
+                      engines: _engines,
+                      current: _tab.index,
+                      onChanged: (i) => _tab.animateTo(i),
+                    ),
+                  ),
+                  // 690：用 IndexedStack 保活各引擎页——`AnimatedBuilder`
+                  // 直接重建 `_EngineTabBody` 会让 TvFocusable 状态重置
+                  //（焦点环残留多个、开关状态丢失）。
+                  Expanded(
+                    child: AnimatedBuilder(
+                      animation: _tab,
+                      builder: (context, _) => IndexedStack(
+                        index: _tab.index,
+                        children: [
+                          for (final e in _engines)
+                            _EngineTabBody(engine: e),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : TabBarView(
+                controller: _tab,
+                children: [
+                  for (final e in _engines) _EngineTabBody(engine: e),
+                ],
+              ),
       ),
     );
   }
@@ -388,5 +425,101 @@ class _EngineTabBody extends ConsumerWidget {
       ),
       const Divider(height: 1),
     ];
+  }
+}
+
+/// 690：三引擎**分段胶囊选择器**（TV 遥控器专用）。
+///
+/// ## 为什么不用 TabBar
+///
+/// Material `TabBar` 在 TV 上有三个问题：
+/// - 焦点环不明显（遥控器看不出当前停在哪）
+/// - 左右键切换不直观（TabBar 需要先聚焦再按键）
+/// - 三引擎时文字挤成一排
+///
+/// ## 现在
+///
+/// 一个玻璃胶囊里并排三段，当前段主色填充：
+/// - **左右键**在引擎间切换（`onKeyEvent` 拦截，不依赖焦点遍历）
+/// - **OK 键**确认（等价于已切换）
+/// - 焦点态：主色描边 + 轻微放大
+/// - 切换时 `_tab.animateTo(i)` 同步内容区
+class _EngineSegmentedSelector extends StatelessWidget {
+  const _EngineSegmentedSelector({
+    required this.engines,
+    required this.current,
+    required this.onChanged,
+  });
+
+  final List<PlayerEngine> engines;
+  final int current;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return GlassContainer(
+      borderRadius: BorderRadius.circular(14),
+      showShadow: false,
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          for (var i = 0; i < engines.length; i++)
+            Expanded(
+              // 690：**不用 TvFocusable**——它会给每段加焦点环，
+              // 与内容区的行焦点环叠加（同屏多个描边）。
+              // 分段切换靠外层 `Focus` 的 onKeyEvent 拦截，视觉上只有
+              // 当前段的「主色填充」表示选中。
+              child: Focus(
+                canRequestFocus: false,
+                onKeyEvent: (node, event) {
+                  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                    return KeyEventResult.ignored;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                    if (i > 0) onChanged(i - 1);
+                    return KeyEventResult.handled;
+                  }
+                  if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                    if (i < engines.length - 1) onChanged(i + 1);
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: GestureDetector(
+                  onTap: () => onChanged(i),
+                  child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: i == current
+                        ? accent.withValues(alpha: 0.28)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: i == current
+                          ? accent.withValues(alpha: 0.60)
+                          : Colors.transparent,
+                      width: 1.2,
+                    ),
+                  ),
+                    child: Text(
+                      engines[i].label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight:
+                            i == current ? FontWeight.w600 : FontWeight.normal,
+                        color: i == current ? Colors.white : Colors.white60,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

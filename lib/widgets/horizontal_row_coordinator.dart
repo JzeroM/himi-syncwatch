@@ -28,6 +28,14 @@ class HorizontalRowCoordinator {
   /// 当前「活跃」的栏（最近被用户滚动的那一栏）。
   ScrollController? _active;
 
+  /// 690：**正在被程序性回正**的栏。
+  ///
+  /// 【为什么必须区分】`animateTo` 会创建 `DrivenScrollActivity`，此时该
+  /// controller 的 `isScrollingNotifier` 也变成 `true`——如果不加区分，
+  /// 回正动画会被误判成「用户滚动这一栏」，于是它又去激活自己、反过来
+  /// 打断用户正在滚的那一栏 → 真机现象「前一条还没回正到位，当前栏滑不动」。
+  final Set<ScrollController> _restoring = <ScrollController>{};
+
   /// 回正动画时长（与页面展开动画一致）。
   static const Duration restoreDuration = Duration(milliseconds: 260);
 
@@ -49,6 +57,10 @@ class HorizontalRowCoordinator {
   /// 某栏开始滚动 → 其余栏平滑回正。
   ///
   /// [reduced] 为 true 时直接跳回（无过渡动画）。
+  /// 该栏是否正在被程序性回正（供 [HoverScrollRow] 过滤自身滚动事件）。
+  bool isRestoring(ScrollController controller) =>
+      _restoring.contains(controller);
+
   void activate(ScrollController controller, {bool reduced = false}) {
     if (identical(_active, controller)) return;
     _active = controller;
@@ -58,13 +70,18 @@ class HorizontalRowCoordinator {
       if (other.offset <= 0.5) continue;  // 已在开头，不用动
       if (reduced) {
         other.jumpTo(0);
-      } else {
-        other.animateTo(
-          0,
-          duration: restoreDuration,
-          curve: Curves.easeOutCubic,
-        );
+        continue;
       }
+      // 690：回正期间标记该栏，避免它的 `isScrollingNotifier` 变化
+      // 被误判成「用户滚动」而反向打断当前栏。
+      _restoring.add(other);
+      other
+          .animateTo(
+            0,
+            duration: restoreDuration,
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() => _restoring.remove(other));
     }
   }
 
@@ -73,6 +90,7 @@ class HorizontalRowCoordinator {
   void clear() {
     _controllers.clear();
     _active = null;
+    _restoring.clear();
   }
 }
 

@@ -5034,6 +5034,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           // 上报链路内部读 `_reportEngine`（已改为 Qt 真实引擎），
           // 所以这里只要启动即可，位置/暂停态都取 Qt 的值。
           unawaited(_reportStart());
+          // 690：**必须解除片段提示抑制**。
+          //
+          // `_beginSkipPromptSuppression()` 在 `_loadStream` 开头调用，而
+          // 解除只在下面内置播放器的起播分支——Qt 接管提前 return 会让
+          // 抑制**永久生效** → 跳过片头/片尾胶囊从不显示（真机反馈）。
+          //
+          // 同时 `_skipController.reset()` 已在抑制时清空基线，这里用
+          // `beginEpisode` 重新起算：**所有片尾段标记为已处理**，避免
+          // 切集后立刻冒出「跳过片尾」（真机反馈，对齐安卓/鸿蒙行为）。
+          _skipPromptSuppressed = false;
+          _skipController.beginEpisode(
+            positionMs: startMs,
+            segments: _skipSegments,
+          );
           return true;
         }
       }
@@ -5069,6 +5083,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (mounted) {
         _player.state = AdapterPlaybackState.playing;
         _skipPromptSuppressed = false;
+        // 690：与 Qt 接管分支一致——切集后所有片尾段标记为已处理，
+        // 避免落点靠近片尾时立刻冒出「跳过片尾」。
+        _skipController.beginEpisode(
+          positionMs: startMs,
+          segments: _skipSegments,
+        );
         _syncPlayState();
         // 起播成功重新起算自动隐藏：慢流首开可能远超 5s，进入页时的
         // 计时器已到点（当时 state!=playing 被跳过），不重开则控件常驻。
@@ -5561,7 +5581,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (PlayerScreen.shouldAutoNextEpisode(
         positionMs: pos,
         durationMs: _duration.inMilliseconds,
-        playing: _player.state == AdapterPlaybackState.playing,
+        // 689：读真实引擎（Windows Qt 接管时 `_player` 恒 stopped）。
+        playing: _reportEngine.state == AdapterPlaybackState.playing,
         engineEmitsEnd: _currentEngine == PlayerEngine.mdk ||
             _currentEngine == PlayerEngine.mpv,
         seekCooldownActive: seekAt != null &&
@@ -7680,7 +7701,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         !PlayerScreen.shouldKeepSkipPrompt(_skipPromptSegment, positionMs)) {
       _dismissSkipPrompt();
     }
-    final playing = _player.state == AdapterPlaybackState.playing;
+    // 689：**必须读真实引擎**。
+    //
+    // 旧写法 `_player.state == playing` 在 Windows Qt 接管时恒为 false
+    //（`_player` 是从未起播的空闲引擎）→ 在这里就 `return` 了，根本走不到
+    // 下面的 `evaluate` → 真机「Qt 播放器跳过片头片尾控件从不显示」。
+    final playing = _reportEngine.state == AdapterPlaybackState.playing;
     if (!playing) {
       _skipPromptPlaybackWatch.stop();
       return;

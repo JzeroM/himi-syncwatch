@@ -135,7 +135,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
 
     return SettingsSubPage(
       pageKey: const ValueKey('cacheSettingsPage'),
-      title: '缓存管理',
+      title: '数据',
       children: [
         if (snapshot == null && _scanning)
           const Padding(
@@ -151,18 +151,21 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             clearing: _clearingAll,
             onClearAll: _clearing == null && !_clearingAll ? _clearAll : null,
           ),
-          const Divider(height: 1),
-          for (final category in CacheCategory.values) ...[
-            _CacheRow(
-              category: category,
-              stat: snapshot.statOf(category),
-              tvMode: tvMode,
-              busy: _clearing != null || _clearingAll,
-              clearing: _clearing == category,
-              onTap: () => _clear(category),
-            ),
-            const Divider(height: 1),
-          ],
+          // 690：缓存项改为分组玻璃卡片
+          SettingsGroupCard(
+            title: '可清理项',
+            children: [
+              for (final category in CacheCategory.values)
+                _CacheRow(
+                  category: category,
+                  stat: snapshot.statOf(category),
+                  tvMode: tvMode,
+                  busy: _clearing != null || _clearingAll,
+                  clearing: _clearing == category,
+                  onTap: () => _clear(category),
+                ),
+            ],
+          ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
             child: Text(

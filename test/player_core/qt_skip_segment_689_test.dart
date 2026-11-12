@@ -109,14 +109,20 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('C Qt 侧胶囊 UI', () {
-    test('C1 BottomBar 有跳过胶囊（skipPrompt 驱动）', () {
+    test('C1 跳过胶囊在 Overlay（690：独立于控件显隐）', () {
+      // 【结论反转】689 时胶囊在 BottomBar 里，会跟随 controlsVisible
+      // 一起隐藏；690 移到 Overlay 独立层，用自己的倒计时。
+      final overlay =
+          read('native/windows_qt_player/src/qml/Overlay.qml');
+      expect(overlay, contains('id: skipCapsule'));
+      expect(overlay, contains('playerState.skipPrompt === "intro"'));
+      expect(overlay, contains('playerState.skipPrompt === "outro"'));
+      expect(overlay, contains('跳过片头'));
+      expect(overlay, contains('跳过片尾'));
+      // BottomBar 里不再有胶囊
       final bottomBar =
           read('native/windows_qt_player/src/qml/BottomBar.qml');
-      expect(bottomBar, contains('id: skipCapsule'));
-      expect(bottomBar, contains('playerState.skipPrompt === "intro"'));
-      expect(bottomBar, contains('playerState.skipPrompt === "outro"'));
-      expect(bottomBar, contains('跳过片头'));
-      expect(bottomBar, contains('跳过片尾'));
+      expect(bottomBar, isNot(contains('id: skipCapsule')));
     });
 
     test('C2 点击回传 skipSegment 命令', () {
@@ -211,6 +217,87 @@ void main() {
       expect(start, greaterThan(0));
       final block = playerScreen.substring(start, start + 300);
       expect(block, contains('_syncNativePanelData()'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // F. 690：第一道 playing 门禁也必须读真实引擎
+  // ═══════════════════════════════════════════════════════════════
+
+  group('F 门禁顺序（关键漏点）', () {
+    test('F1 `_evaluateSkipPrompt` 的 playing 门禁读 _reportEngine', () {
+      // 【真机回归】689 只改了 `evaluate` 的 playing 参数，但函数开头
+      // 还有一道更早的门禁：
+      //   final playing = _player.state == playing;
+      //   if (!playing) { ...; return; }        ← 在这里就返回了
+      // `_player` 在 Windows Qt 接管时恒 stopped → 永远走不到 evaluate
+      // → 跳过片头片尾胶囊从不显示。
+      final start = playerScreen.indexOf('void _evaluateSkipPrompt(');
+      expect(start, greaterThan(0));
+      final block = playerScreen.substring(start, start + 1200);
+      final code = codeOnly(block);
+      expect(code, contains('_reportEngine.state == AdapterPlaybackState.playing'));
+      expect(code, isNot(contains('_player.state == AdapterPlaybackState.playing')));
+    });
+
+    test('F2 自动连播判断也读真实引擎', () {
+      final start = playerScreen.indexOf('PlayerScreen.shouldAutoNextEpisode(');
+      expect(start, greaterThan(0));
+      final block = playerScreen.substring(start, start + 400);
+      expect(codeOnly(block),
+          contains('_reportEngine.state == AdapterPlaybackState.playing'));
+    });
+
+    test('F3 定时器位置读取已是真实引擎（689 已修，防回退）', () {
+      final start = playerScreen.indexOf('_evaluateSkipPrompt(pos);');
+      final before = playerScreen.substring(start - 600, start);
+      expect(codeOnly(before), contains('_reportEngine.position'));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // G. 690：切集抑制解除 + 片尾不误弹
+  // ═══════════════════════════════════════════════════════════════
+
+  group('G 切集行为对齐安卓/鸿蒙', () {
+    test('G1 Qt 接管分支解除抑制（否则胶囊永不显示）', () {
+      final start = playerScreen.indexOf('if (tookOver)');
+      expect(start, greaterThan(0));
+      final block = playerScreen.substring(start, start + 1400);
+      expect(block, contains('_skipPromptSuppressed = false'));
+    });
+
+    test('G2 Qt 接管分支用 beginEpisode（片尾标记已处理）', () {
+      final start = playerScreen.indexOf('if (tookOver)');
+      final block = playerScreen.substring(start, start + 1400);
+      expect(block, contains('_skipController.beginEpisode('));
+    });
+
+    test('G3 内置播放器路径同样调用 beginEpisode', () {
+      final count =
+          RegExp(r'_skipController\.beginEpisode\(').allMatches(playerScreen).length;
+      expect(count, greaterThanOrEqualTo(2),
+          reason: 'Qt 接管 + 内置播放器两条路径都要处理');
+    });
+
+    test('G4 beginEpisode 把所有片尾段标记为已处理', () {
+      final src = File('lib/services/segment_skip_controller.dart')
+          .readAsStringSync();
+      final start = src.indexOf('void beginEpisode(');
+      expect(start, greaterThan(0));
+      final block = src.substring(start, start + 500);
+      expect(block, contains('MediaSegmentType.outro'));
+      expect(block, contains('_handled.add(segment.key)'));
+      // 690：**片头不标记**——片头起点通常是 0，startMs 也是 0，
+      // `contains(0)` 恒真会让片头提示永不出现（真机回归）。
+      expect(block, isNot(contains('segment.contains(positionMs)')));
+    });
+
+    test('G5 片头提示仍受 3 秒门禁（切集起播后才出现）', () {
+      final src = File('lib/services/segment_skip_controller.dart')
+          .readAsStringSync();
+      expect(src, contains('introGateMs = 3000'));
+      expect(src, contains('positionMs < introGateMs'));
     });
   });
 }

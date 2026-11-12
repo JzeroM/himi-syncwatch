@@ -529,9 +529,16 @@ int main(int argc, char* argv[]) {
                                  // 但 startMs 仍需应用——续播位置可能变。
                                  if (url != loadedUrl) {
                                      loadedUrl = url;
-                                     mpv.load(url, headers);
+                                     // 690：起点交给 `loadfile` 的 start
+                                     // 选项（load 后立刻 seek 会因媒体未就绪
+                                     // 被丢弃 → 续播从头播）。
+                                     mpv.load(url, headers,
+                                              static_cast<int>(startMs));
+                                 } else if (startMs > 0) {
+                                     // 同一 URL：媒体已在，直接 seek 安全
+                                     //（仅位置变化，无需重新 load）。
+                                     mpv.seekTo(startMs);
                                  }
-                                 if (startMs > 0) mpv.seekTo(startMs);
                              }
                              // 672：mpv 自选默认轨 → 回填面板默认勾
                              //（延迟等 track-list 就绪）
