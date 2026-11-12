@@ -860,6 +860,14 @@ export struct HimiNativePlayerView {
    * - 视频比区域"更宽" → 以区域宽为准（上下留黑边）；
    * - 否则以区域高为准（左右留黑边）。
    */
+  /**
+   * 视频按比例适配可用区域的**显示宽**（vp）。-1 = 未就绪。
+   *
+   * 【681 真机回归：屏幕比例缩放控件无效】旧实现恒按 contain 算，
+   * 完全**不读** `this.videoFit` —— `@State videoFit` 变了（图标跟着变），
+   * 但 XComponent 的尺寸永远按 contain → 画面纹丝不动。
+   * 现在按 `videoFit` 四档分别计算。
+   */
   private videoFitW(): number {
     const vw: number = HimiMpvNativeHost.getInstance().state.videoWidth;
     const vh: number = HimiMpvNativeHost.getInstance().state.videoHeight;
@@ -870,10 +878,19 @@ export struct HimiNativePlayerView {
     }
     const videoAspect = vw / vh;
     const areaAspect = aw / ah;
-    return videoAspect > areaAspect ? aw : ah * videoAspect;
+    switch (this.videoFit) {
+      case 'cover':   // 铺满并裁剪：取能**覆盖**区域的尺寸
+        return videoAspect > areaAspect ? ah * videoAspect : aw;
+      case 'fill':    // 拉伸铺满：不保持比例
+        return aw;
+      case 'none':    // 原始像素尺寸
+        return vw;
+      default:        // contain
+        return videoAspect > areaAspect ? aw : ah * videoAspect;
+    }
   }
 
-  /** 625：视频按比例适配可用区域的**显示高**（vp）。-1 = 未就绪。 */
+  /** 625/681：视频按比例适配可用区域的**显示高**（vp）。-1 = 未就绪。 */
   private videoFitH(): number {
     const vw: number = HimiMpvNativeHost.getInstance().state.videoWidth;
     const vh: number = HimiMpvNativeHost.getInstance().state.videoHeight;
@@ -884,7 +901,16 @@ export struct HimiNativePlayerView {
     }
     const videoAspect = vw / vh;
     const areaAspect = aw / ah;
-    return videoAspect > areaAspect ? aw / videoAspect : ah;
+    switch (this.videoFit) {
+      case 'cover':
+        return videoAspect > areaAspect ? ah : aw / videoAspect;
+      case 'fill':
+        return ah;
+      case 'none':
+        return vh;
+      default:
+        return videoAspect > areaAspect ? aw / videoAspect : ah;
+    }
   }
 
   /**
@@ -980,33 +1006,73 @@ export struct HimiNativePlayerView {
    * 窗口已覆盖（setWindowBrightness 后 brightness>=0）优先用窗口值。
    */
   private initBrightness(): void {
-    try {
-      const win = window.findWindow('himi_native_player');
-      const wVal = win.getWindowProperties().brightness;
-      if (wVal !== undefined && wVal >= 0) {
-        this.brightness01 = wVal;
-        return;
+    // 681：窗口亮度优先（`getLastWindow` 不依赖窗口名）
+    this.ensureHostWindow().then((win: window.Window | null) => {
+      if (win !== null) {
+        try {
+          const wVal: number = win.getWindowProperties().brightness;
+          if (wVal !== undefined && wVal >= 0) {
+            this.brightness01 = wVal;
+            return;
+          }
+        } catch (e) {
+          hilog.warn(DOMAIN, TAG, '窗口亮度读取失败: %{public}s', String(e));
+        }
       }
-    } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'findWindow 亮度读取失败: %{public}s', String(e));
+      // 回退系统亮度
+      try {
+        const raw = settings.getValueSync(getContext(this),
+          settings.display.SCREEN_BRIGHTNESS_STATUS, '204');
+        this.brightness01 = Math.max(0, Math.min(1, Number.parseFloat(raw) / 255));
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, '系统亮度读取失败（兜底 0.8）: %{public}s', String(e));
+        this.brightness01 = 0.8;
+      }
+      hilog.info(DOMAIN, TAG, '亮度初值 %{public}s', `${this.brightness01}`);
+    });
+  }
+
+  /**
+   * 缓存当前窗口实例（681：替代 `findWindow('himi_native_player')`）。
+   *
+   * 【真机回归：鸿蒙手势亮度调节无效】旧实现用
+   * `window.findWindow('himi_native_player')` 按**窗口名**查找——该名字
+   * 在窗口创建处未必设置 → 抛异常 → 被 `catch` 静默吞掉（只 warn），
+   * 用户拖动手势时百分比变了但屏幕亮度纹丝不动。
+   *
+   * `getLastWindow(getContext(this))` 拿的是本组件所在窗口，不依赖名字。
+   */
+  private hostWindow: window.Window | null = null;
+
+  private async ensureHostWindow(): Promise<window.Window | null> {
+    if (this.hostWindow !== null) {
+      return this.hostWindow;
     }
     try {
-      const raw = settings.getValueSync(getContext(this),
-        settings.display.SCREEN_BRIGHTNESS_STATUS, '204');
-      this.brightness01 = Math.max(0, Math.min(1, Number.parseFloat(raw) / 255));
+      this.hostWindow = await window.getLastWindow(getContext(this));
+      return this.hostWindow;
     } catch (e) {
-      hilog.warn(DOMAIN, TAG, '系统亮度读取失败（兜底 0.8）: %{public}s', String(e));
-      this.brightness01 = 0.8;
+      hilog.error(DOMAIN, TAG, 'getLastWindow 失败: %{public}s', String(e));
+      return null;
     }
-    hilog.info(DOMAIN, TAG, '亮度初值 %{public}s', `${this.brightness01}`);
   }
 
   /** 亮度写入窗口（同安卓 `window.attributes.screenBrightness` 语义）。 */
-  private applyWindowBrightness(): void {
+  private async applyWindowBrightness(): Promise<void> {
+    const win: window.Window | null = await this.ensureHostWindow();
+    if (win === null) {
+      // 681：不再静默——回滚本地值，让指示器反映真实状态
+      this.brightness01 = this.dragBaseBrightness;
+      this.verticalBarPercent = Math.round(this.brightness01 * 100);
+      return;
+    }
     try {
-      window.findWindow('himi_native_player').setWindowBrightness(this.brightness01);
+      await win.setWindowBrightness(this.brightness01);
     } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'setWindowBrightness 失败: %{public}s', String(e));
+      hilog.error(DOMAIN, TAG, 'setWindowBrightness 失败: %{public}s', String(e));
+      // 681：失败回滚，避免「指示器变了但屏幕没变」
+      this.brightness01 = this.dragBaseBrightness;
+      this.verticalBarPercent = Math.round(this.brightness01 * 100);
     }
   }
 
@@ -1073,7 +1139,10 @@ export struct HimiNativePlayerView {
         this.verticalBarPercent = Math.round(this.brightness01 * 100);
         this.verticalBarOnLeft = true;
         // 亮度真正写窗口亮度（旧实现只改本地显示，拖了没效果）。
-        this.applyWindowBrightness();
+        // 681：异步写入（拖动中不阻塞手势）
+        this.applyWindowBrightness().catch((e: Error) => {
+          hilog.error(DOMAIN, TAG, '亮度应用异常: %{public}s', String(e));
+        });
       } else {
         this.volume01 = Math.max(0, Math.min(1, this.dragBaseVolume + delta01));
         this.verticalBarPercent = Math.round(this.volume01 * 100);
@@ -1939,6 +2008,9 @@ export struct HimiNativePlayerView {
     // 故展开用 'auto' + layoutWeight、收起用 '100%' + layoutWeight 0）。
     // 625：对齐改 **Center**——XComponent 按视频比例收窄后，黑边要在
     // 上下/左右**对称**分布（旧 Top 会把画面顶到上方）。
+    //
+    // 681：`none`（原始尺寸）档会让 XComponent 超出视频区，必须放开裁剪，
+    // 否则「原始」看起来和「自适应」一样（超出部分被裁掉）。
     Stack({ alignContent: Alignment.Center }) {
       // ── 视频层 ──
       XComponent({
@@ -2063,6 +2135,8 @@ export struct HimiNativePlayerView {
     //
     // 面板收起时 Flex 只有视频一个子节点 → layoutWeight(1) 自然铺满。
     .layoutWeight(1)
+    // 681：`none`（原始尺寸）档 XComponent 会超出视频区，必须放开裁剪。
+    .clip(false)
     // 625：实测 Flex 分配给视频子节点的尺寸，供 videoFitW/H 算 letterbox。
     // 挂在**视频子节点**上（不是根 Stack），拿到的是视频区而非全屏。
     .onAreaChange((_old: Area, area: Area): void => {
@@ -2532,7 +2606,13 @@ export struct HimiNativePlayerView {
       const h = area.height as number;
       this.areaWidth = w;
       this.areaHeight = h;
+      const wasPortrait = this.portrait;
       this.portrait = h > w && w > 0;
+      // 681：转屏后重调「隐藏系统栏」——部分 HarmonyOS 设备转屏会把
+      // 状态栏恢复（尤其竖屏），必须重新隐藏一次。
+      if (wasPortrait !== this.portrait) {
+        HimiMpvNativeHost.getInstance().refreshSystemBarsHidden();
+      }
       // 600：控件层分栏收窄（见 updateControlsSplit 注释）。
       this.updateControlsSplit();
     });

@@ -1497,16 +1497,19 @@ void main() {
       expect(kotlinScreen, contains('当前位置已到结尾，无法标记'));
     });
 
-    test('Android 引擎矩阵移除 mediaKit 选项（原生 MPV 不受影响）', () {
-      final androidCase = RegExp(
-        r'case TargetPlatform\.android:\s*return const <PlayerEngine>\[([^\]]*)\];',
-      ).firstMatch(engineFile);
-      expect(androidCase, isNotNull);
-      final list = androidCase!.group(1)!;
-      expect(list, contains('PlayerEngine.mdk'));
-      expect(list, contains('PlayerEngine.erika'));
-      expect(list, contains('PlayerEngine.mpv'));
-      expect(list, isNot(contains('mediaKit')),
+    test('681：Android 手机仅 MPV，TV 保留三引擎（无 mediaKit）', () {
+      // 681 后安卓分支是三元表达式（tvMode 分流），不再是一条 return。
+      final androidIdx = engineFile.indexOf('case TargetPlatform.android:');
+      expect(androidIdx, greaterThan(-1));
+      final androidBlock =
+          engineFile.substring(androidIdx, androidIdx + 700);
+      // TV 分支保留三引擎
+      expect(androidBlock, contains('PlayerEngine.mdk'));
+      expect(androidBlock, contains('PlayerEngine.erika'));
+      expect(androidBlock, contains('PlayerEngine.mpv'));
+      // 手机分支只有 MPV
+      expect(androidBlock, contains('const <PlayerEngine>[PlayerEngine.mpv]'));
+      expect(androidBlock, isNot(contains('mediaKit')),
           reason: 'libmpv 引擎选项已移除（与原生 MPV 共用 libmpv，仅去掉纹理路径选项）');
     });
   });

@@ -155,15 +155,15 @@ void main() {
   });
 
   group('⑤ TV 引擎控件移到弹幕开关后', () {
-    test('顶栏 TV 模式隐藏引擎按钮', () {
-      expect(screen,
-          contains('showKernelButton: !settings.tvMode && !_switchingKernel'));
+    test('681：顶栏单引擎/ TV 模式均隐藏引擎按钮', () {
+      expect(screen, contains('showKernelButton: !settings.tvMode'));
+      expect(screen, contains('isSingleEngine(tvMode: settings.tvMode)'));
     });
 
-    test('底栏弹幕开关后插入引擎按钮', () {
-      expect(screen, contains('if (tvMode && !_switchingKernel)'));
-      final idx = screen.indexOf('if (tvMode && !_switchingKernel)');
-      final body = screen.substring(idx, idx + 400);
+    test('681：底栏引擎按钮仅多引擎 TV 显示', () {
+      expect(screen, contains('isSingleEngine(tvMode: true)'));
+      final idx = screen.indexOf('isSingleEngine(tvMode: true)');
+      final body = screen.substring(idx, idx + 500);
       expect(body, contains('_kernelButtonFocusNode'));
       expect(body, contains('_toggleKernelMenu'));
     });

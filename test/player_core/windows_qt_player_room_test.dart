@@ -1101,6 +1101,21 @@ void main() {
       expect(playerScreen, isNot(contains('qt.setFollowParent(true)')));
     });
 
+    test('O8 进房摆位时记录 Qt 宽度（否则拖面板时 Qt 不动）', () {
+      // 真机回归：刚进房拖面板，Qt 窗纹丝不动、两窗堆叠。
+      // 根因 `_lastQtWidth` 只在 onWindowMoved（用户拖 Qt 窗）时更新，
+      // 进房首次摆位后它仍是 0 → `_pushPanelRectToQt` 里 `qtW <= 0`
+      // 直接 return。
+      final body = _extract(playerScreen, 'Future<void> _applyRoomSplitLayout');
+      expect(body, contains('_lastQtWidth'));
+      final vwIdx = body.indexOf('_lastQtWidth = vw');
+      expect(vwIdx, greaterThan(0),
+          reason: '进房摆位必须记录 Qt 宽度');
+      // 必须在 setWindowRect 之前记录
+      final rectIdx = body.indexOf('qt.setWindowRect(');
+      expect(vwIdx, lessThan(rectIdx));
+    });
+
     test('O2 面板窗 move/resize 监听（拖面板 → 驱动 Qt 跟随）', () {
       expect(playerScreen, contains('_RoomSplitWindowListener'));
       expect(playerScreen, contains('windowManager.addListener'));

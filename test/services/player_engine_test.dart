@@ -10,36 +10,36 @@ void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
   group('PlayerEngineFactory.supportedEngines（平台矩阵）', () {
-    test('Android：MDK + Erika + MPV（libmpv 引擎选项已移除）', () {
+    test('681：Android 手机仅 MPV，TV 三引擎', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      // 手机：仅 MPV
       expect(
         PlayerEngineFactory.supportedEngines(),
+        <PlayerEngine>[PlayerEngine.mpv],
+      );
+      // TV：MDK + Erika + MPV
+      expect(
+        PlayerEngineFactory.supportedEngines(tvMode: true),
         <PlayerEngine>[
           PlayerEngine.mdk,
           PlayerEngine.erika,
           PlayerEngine.mpv,
         ],
       );
-      // mediaKit（libmpv 纹理路径）不再暴露：与原生 MPV 共用同一份 libmpv，
-      // 引擎选项移除不影响原生 MPV。
+      // mediaKit（libmpv 纹理路径）不再暴露
       expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
+        PlayerEngineFactory.supportedEngines(tvMode: true)
+            .contains(PlayerEngine.mediaKit),
         isFalse,
       );
     });
 
-    test('Windows：MDK + MPV + Erika，media_kit 已移除（646.1）', () {
+    test('681：Windows 仅 MPV', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(
         PlayerEngineFactory.supportedEngines(),
-        <PlayerEngine>[
-          PlayerEngine.mdk,
-          PlayerEngine.mpv,
-          PlayerEngine.erika,
-        ],
+        <PlayerEngine>[PlayerEngine.mpv],
       );
-      // 646.1：MPV 加回——走原生顶层窗口（WS_POPUP）+ vo=gpu-next
-      // HDR 直出；media_kit 移除（Flutter 纹理路径必崩 0x1551f）。
       expect(
         PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
         isFalse,
@@ -85,13 +85,22 @@ void main() {
         PlayerEngine.erika,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      // mediaKit 引擎选项已移除：落盘值回退平台默认（MPV）。
+      // 681：安卓手机只 MPV → 所有非 MPV 存档都回退 MPV
       expect(
         PlayerEngineFactory.resolveSelectedEngine('media_kit'),
         PlayerEngine.mpv,
       );
       expect(
+        PlayerEngineFactory.resolveSelectedEngine('mdk'),
+        PlayerEngine.mpv,
+      );
+      expect(
         PlayerEngineFactory.resolveSelectedEngine('bogus'),
+        PlayerEngine.mpv,
+      );
+      // TV 下 mdk 保持
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('mdk', tvMode: true),
         PlayerEngine.mdk,
       );
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
@@ -109,20 +118,30 @@ void main() {
   });
 
   group('PlayerEngineFactory.isSupported', () {
-    test('Android 支持 MPV 不支持 MediaKit；Windows 支持 MediaKit 不支持 MPV', () {
+    test('681：各平台 isSupported 按收敛后的矩阵', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
+      // 手机：仅 MPV
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isFalse);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
+      // TV：三引擎
+      expect(
+          PlayerEngineFactory.isSupported(PlayerEngine.mdk, tvMode: true),
+          isTrue);
+      expect(
+          PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: true),
+          isTrue);
+      // iOS：仅 Erika
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
+      // Windows：仅 MPV
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isTrue);
-      // 646.1：Windows——MPV 可用（原生 HDR 直出）、media_kit 移除、MDK 保留。
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isTrue);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
+      expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isFalse);
     });
   });
 

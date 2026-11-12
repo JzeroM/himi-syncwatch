@@ -26,22 +26,19 @@ void main() {
   });
 
   group('646.1 Windows 引擎矩阵', () {
-    test('Windows 支持 MDK + MPV + Erika，media_kit 已移除', () {
+    test('681：Windows 仅 MPV（MDK/Erika 已收敛）', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
       expect(
         PlayerEngineFactory.supportedEngines(),
-        <PlayerEngine>[
-          PlayerEngine.mdk,
-          PlayerEngine.mpv,
-          PlayerEngine.erika,
-        ],
+        <PlayerEngine>[PlayerEngine.mpv],
       );
       expect(
         PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
         isFalse,
       );
+      expect(PlayerEngineFactory.isSingleEngine(), isTrue);
     });
 
     test('Windows 默认引擎为 MPV（原生 HDR 直出路径）', () {
@@ -63,7 +60,7 @@ void main() {
       );
     });
 
-    test('旧存档 mpv / mdk / erika 在 Windows 均保持', () {
+    test('681：旧存档 mdk / erika 在 Windows 回退到 MPV', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
@@ -71,38 +68,57 @@ void main() {
         PlayerEngineFactory.resolveSelectedEngine('mpv'),
         PlayerEngine.mpv,
       );
+      // 收敛后 MDK/Erika 不再可用 → 回退 MPV
       expect(
         PlayerEngineFactory.resolveSelectedEngine('mdk'),
-        PlayerEngine.mdk,
+        PlayerEngine.mpv,
       );
       expect(
         PlayerEngineFactory.resolveSelectedEngine('erika'),
-        PlayerEngine.erika,
+        PlayerEngine.mpv,
       );
     });
 
-    test('设置页 tab 由 supportedEngines 生成 → Windows 会显示 MPV', () {
+    test('681：设置页 tab 只有 MPV 一个', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
       final ids =
           PlayerEngineFactory.supportedEngines().map((e) => e.id).toList();
-      expect(ids, <String>['mdk', 'mpv', 'erika']);
-      expect(ids, contains('mpv'), reason: '设置页引擎 tab 必须有 MPV');
+      expect(ids, <String>['mpv']);
+      expect(PlayerEngineFactory.isSingleEngine(), isTrue,
+          reason: '单引擎 → 设置页不渲染 TabBar');
     });
   });
 
   group('646.1 其他平台不受影响', () {
-    test('Android 仍默认 MPV 且含三种引擎', () {
+    test('681：Android 手机仅 MPV，TV 保留三引擎', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
+      // 手机：仅 MPV
       expect(PlayerEngineFactory.supportedEngines(), <PlayerEngine>[
+        PlayerEngine.mpv,
+      ]);
+      expect(PlayerEngineFactory.isSingleEngine(tvMode: false), isTrue);
+      // TV：三引擎保留
+      expect(PlayerEngineFactory.supportedEngines(tvMode: true), <PlayerEngine>[
         PlayerEngine.mdk,
         PlayerEngine.erika,
         PlayerEngine.mpv,
       ]);
+      expect(PlayerEngineFactory.isSingleEngine(tvMode: true), isFalse);
+      // 手机老存档 mdk → 回退 mpv
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('mdk'),
+        PlayerEngine.mpv,
+      );
+      // TV 老存档 mdk → 保持
+      expect(
+        PlayerEngineFactory.resolveSelectedEngine('mdk', tvMode: true),
+        PlayerEngine.mdk,
+      );
     });
 
     test('鸿蒙仍仅 MPV', () {
@@ -128,15 +144,16 @@ void main() {
   });
 
   group('646.1 源码守卫', () {
-    test('player_engine.dart 的 Windows 分支含 MPV 且不含 mediaKit', () {
+    test('681：Windows 分支只有 MPV', () {
       final src = File('lib/services/player/player_engine.dart').readAsStringSync();
       final winStart = src.indexOf('case TargetPlatform.windows:');
       expect(winStart, greaterThan(-1));
       final winEnd = src.indexOf('default:', winStart);
       final winBlock = src.substring(winStart, winEnd);
       expect(winBlock, contains('PlayerEngine.mpv'));
-      expect(winBlock, contains('PlayerEngine.mdk'));
-      expect(winBlock, contains('PlayerEngine.erika'));
+      // 681：MDK / Erika 已从 Windows 移除
+      expect(winBlock, isNot(contains('PlayerEngine.mdk')));
+      expect(winBlock, isNot(contains('PlayerEngine.erika')));
       expect(winBlock, isNot(contains('PlayerEngine.mediaKit')));
     });
   });

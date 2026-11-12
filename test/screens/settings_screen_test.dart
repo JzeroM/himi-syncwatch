@@ -120,14 +120,20 @@ Future<ProviderContainer> _pumpScreen(
 }
 
 /// 挂载设置主页并导航到 MDK 引擎设置子页（解码/音视频输出等已移入）。
+/// 打开「播放器配置」子页。
+///
+/// 【681】引擎收敛后，**MDK 子页只存在于安卓 TV**（手机只 MPV、
+/// 鸿蒙/Windows 只 MPV、iOS 只 Erika）。因此默认按 TV 模式打开，
+/// 保证 MDK 专属选项（音频后端 / 段缓存 / 网络流缓冲）可测。
 Future<ProviderContainer> _pumpMdkSettings(
   WidgetTester tester, {
   AppSettings initial = const AppSettings(),
   bool remote = false,
+  bool tvMode = true,
 }) async {
   final container = await _pumpScreen(
     tester,
-    initial: initial,
+    initial: initial.copyWith(tvMode: tvMode),
     remote: remote,
     category: '播放器',
   );
@@ -137,13 +143,23 @@ Future<ProviderContainer> _pumpMdkSettings(
 }
 
 /// 分类子页的滚动容器（设置主页 ListView 仍在树上，需精确定位子页列表）。
-/// 引擎配置页为 tabbed 布局（MDK 为默认 tab），其余子页用 settingsSubPageList。
+///
+/// 【681】引擎收敛后各平台可用引擎不同：
+/// - 安卓手机 / 鸿蒙 / Windows → 只有 MPV（`engineTab_mpv`）
+/// - 安卓 TV → MDK / Erika / MPV
+/// - iOS → 只有 Erika（`engineTab_erika`）
+/// 因此不能再写死 `engineTab_mdk`，要按平台取第一个存在的 tab。
 Finder _subScrollable() {
-  final engineTab = find.byKey(const ValueKey('engineTab_mdk'));
-  final scope = engineTab.evaluate().isNotEmpty
-      ? engineTab
-      : find.byKey(const ValueKey('settingsSubPageList'));
-  return find.descendant(of: scope, matching: find.byType(Scrollable));
+  for (final id in ['mdk', 'mpv', 'erika']) {
+    final tab = find.byKey(ValueKey('engineTab_$id'));
+    if (tab.evaluate().isNotEmpty) {
+      return find.descendant(of: tab, matching: find.byType(Scrollable));
+    }
+  }
+  return find.descendant(
+    of: find.byKey(const ValueKey('settingsSubPageList')),
+    matching: find.byType(Scrollable),
+  );
 }
 
 Finder _glassSwitch(WidgetTester tester) {
@@ -701,39 +717,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).mdkDemuxCacheRanges, 8);
 
-    final row = find.ancestor(
-      of: find.text('段缓存'),
-      matching: find.byType(ListTile),
-    );
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(DropdownButton<String>)),
-    );
+    // 681：MDK 子页只在安卓 TV 存在 → tvMode=true → 控件是 TvFocusable
+    // 而非 DropdownButton。直接点「8 段」当前值弹出选项。
+    await tester.tap(find.text('段缓存'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('关闭').last);
     await tester.pumpAndSettle();
     expect(container.read(settingsProvider).mdkDemuxCacheRanges, 0);
   });
 
-  testWidgets('Windows 平台 MDK 引擎子页隐藏音频后端设置项', (tester) async {
+  testWidgets('681：Windows 平台只有 MPV 一个引擎（无 MDK 子页）', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
-      await _pumpMdkSettings(tester);
+      await _pumpMdkSettings(tester, tvMode: false);
 
+      // 681：Windows 收敛为仅 MPV → 没有 MDK 子页
+      expect(find.byKey(const ValueKey('engineTab_mpv')), findsOneWidget);
+      expect(find.byKey(const ValueKey('engineTab_mdk')), findsNothing);
+      // MDK 专属选项不存在
       expect(find.text('音频后端'), findsNothing);
-      // 相邻设置项仍正常展示（分隔线未错乱）
-      expect(find.text('立体声降混'), findsOneWidget);
+      expect(find.text('立体声降混'), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
   });
 
-  testWidgets('iOS 平台按矩阵只显示 Erika 内核', (tester) async {
+  testWidgets('681：iOS 平台只有 Erika 一个引擎', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
-      await _pumpMdkSettings(tester);
+      await _pumpMdkSettings(tester, tvMode: false);
 
-      expect(find.text('MDK'), findsNothing);
-      expect(find.text('Erika'), findsOneWidget);
+      // 681：单引擎 → 不渲染 TabBar，靠 ListView 的 key 判定
+      expect(find.byKey(const ValueKey('engineTab_erika')), findsOneWidget);
+      expect(find.byKey(const ValueKey('engineTab_mdk')), findsNothing);
+      expect(find.byKey(const ValueKey('engineTab_mpv')), findsNothing);
+      // MDK 专属选项不存在
       expect(find.text('音频后端'), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
@@ -874,7 +892,8 @@ void main() {
   // ---- TV 模式 × 解码方式/音频后端（DropdownButton 遥控不可选 → 弹窗） ----
 
   testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
-    await _pumpMdkSettings(tester);
+    // 681：非 TV 语义 → 显式 tvMode:false（默认值已改为 true 以覆盖 MDK）
+    await _pumpMdkSettings(tester, tvMode: false);
     expect(find.text('解码方式'), findsOneWidget);
     final decodeDropdown = find.descendant(
       of: find.ancestor(
@@ -906,30 +925,20 @@ void main() {
     expect(container.read(settingsProvider).videoOutput, 'texture');
   });
 
-  testWidgets('非 TV：视频输出下拉切换写入 surfaceView', (tester) async {
-    final container = await _pumpMdkSettings(tester);
+  testWidgets('681：非 TV 安卓手机只有 MPV 页（视频路径而非视频输出）', (tester) async {
+    final container = await _pumpMdkSettings(tester, tvMode: false);
     await tester.scrollUntilVisible(
-      find.text('视频输出'),
+      find.text('视频路径'),
       250,
       scrollable: _subScrollable(),
     );
     await tester.pumpAndSettle();
 
-    final dd = find.byType(DropdownButton<String>).last;
-    await tester.drag(_subScrollable(), const Offset(0, 120));
-    await tester.pumpAndSettle();
-    await tester.tap(dd);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('SurfaceView'));
-    await tester.pumpAndSettle();
-
-    expect(container.read(settingsProvider).videoOutput, 'surfaceView');
-    expect(
-      find.text('独立显示层，绕过 Flutter 合成，TV 全分辨率输出（TV 默认）'),
-      findsOneWidget,
-      reason: '行尾描述随档位更新',
-    );
+    // 681：手机只有 MPV → 有「视频路径」，没有 MDK 专属的「视频输出」
+    expect(find.text('视频路径'), findsOneWidget);
+    expect(find.text('视频输出'), findsNothing);
+    expect(find.byType(DropdownButton<String>), findsWidgets);
+    expect(container.read(settingsProvider).videoOutput, 'texture');
   });
 
   testWidgets('TV：视频输出行点开居中弹层，选择纹理+直通写入', (tester) async {

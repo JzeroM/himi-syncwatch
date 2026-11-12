@@ -108,12 +108,16 @@ void main() {
       expect(ohosLib, contains("invokeMethod<void>('resumeNativeUi')"));
     });
 
-    test('安卓用 hide/show，不 dismiss', () {
+    test('681：安卓用 alpha=0 隐藏（不销毁 surface），不 dismiss', () {
       final idx = androidHost.indexOf('fun suspend() {');
       expect(idx, greaterThan(0));
-      final body = androidHost.substring(idx, idx + 900);
-      expect(body, contains('ctrl.hide()'));
-      expect(body, contains('surf.hide()'));
+      final body = androidHost.substring(idx, idx + 1600);
+      // 681 真机回归：hide() 会销毁 SurfaceView 的 surface → resume 后
+      // mpv 重配 vo → 视频从头播放。改用 alpha=0 + NOT_TOUCHABLE。
+      expect(body, isNot(contains('surf.hide()')));
+      expect(body, isNot(contains('ctrl.hide()')));
+      expect(body, contains('alpha = 0f'));
+      expect(body, contains('FLAG_NOT_TOUCHABLE'));
       expect(body, isNot(contains('dismiss()')));
     });
 

@@ -32,7 +32,10 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
   @override
   void initState() {
     super.initState();
-    _engines = PlayerEngineFactory.supportedEngines();
+    // 681：单引擎平台（安卓手机/鸿蒙/Windows/iOS）只出一个 tab
+    _engines = PlayerEngineFactory.supportedEngines(
+      tvMode: ref.read(settingsProvider).tvMode,
+    );
     _tab = TabController(length: _engines.length, vsync: this);
   }
 
@@ -55,11 +58,15 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
           elevation: 0,
           flexibleSpace: const GlassBackdrop(),
           leading: const TvBackButton(),
-          bottom: TabBar(
-            controller: _tab,
-            isScrollable: _engines.length > 2,
-            tabs: [for (final e in _engines) Tab(text: e.label)],
-          ),
+          // 681：单引擎平台（安卓手机/鸿蒙/Windows/iOS）不渲染 TabBar
+          // ——只有一个 tab 时它纯属占位，还挤压内容高度。
+          bottom: _engines.length <= 1
+              ? null
+              : TabBar(
+                  controller: _tab,
+                  isScrollable: _engines.length > 2,
+                  tabs: [for (final e in _engines) Tab(text: e.label)],
+                ),
         ),
         body: TabBarView(
           controller: _tab,

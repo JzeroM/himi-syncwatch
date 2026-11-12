@@ -578,6 +578,46 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     });
   }
 
+  /**
+   * 隐藏系统栏（状态栏 + 导航条）。
+   *
+   * 【681 真机回归：鸿蒙竖屏播放时出现手机状态栏】
+   * 旧实现只调 `setWindowSystemBarEnable([])` —— 该 API 在**竖屏**下
+   * 部分 HarmonyOS 版本会被系统忽略（横屏生效、竖屏不生效），于是
+   * 状态栏重新出现。
+   *
+   * 现在用**双 API 兜底**：
+   *   ① `setWindowSystemBarEnable([])`（整体开关，横屏可靠）
+   *   ② `setSpecificSystemBarEnabled('status', false)` +
+   *      `setSpecificSystemBarEnabled('navigationIndicator', false)`
+   *      （逐项开关，竖屏可靠）
+   * 两者都失败才降级（记 error，不阻塞窗口）。
+   */
+  private async hideSystemBars(win: window.Window): Promise<void> {
+    let anyOk = false;
+    try {
+      await win.setWindowSystemBarEnable([]);
+      anyOk = true;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'setWindowSystemBarEnable 失败: %{public}s', String(e));
+    }
+    try {
+      await win.setSpecificSystemBarEnabled('status', false);
+      anyOk = true;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '隐藏状态栏失败: %{public}s', String(e));
+    }
+    try {
+      await win.setSpecificSystemBarEnabled('navigationIndicator', false);
+      anyOk = true;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, '隐藏导航条失败: %{public}s', String(e));
+    }
+    if (!anyOk) {
+      hilog.error(DOMAIN, TAG, '系统栏隐藏全部失败（竖屏可能露状态栏）');
+    }
+  }
+
   private async openNativeUiAsync(ability: UIAbility): Promise<void> {
     const stage: window.WindowStage =
       FlutterManager.getInstance().getWindowStage(ability);
@@ -593,11 +633,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       } catch (e) {
         hilog.warn(DOMAIN, TAG, 'setWindowLayoutFullScreen 失败: %{public}s', String(e));
       }
-      try {
-        await win.setWindowSystemBarEnable([]);
-      } catch (e) {
-        hilog.warn(DOMAIN, TAG, 'setWindowSystemBarEnable 失败: %{public}s', String(e));
-      }
+      // 681：双 API 隐藏系统栏（竖屏也要生效）
+      await this.hideSystemBars(win);
       try {
         win.setWindowBackgroundColor('#000000');
       } catch (e) {
@@ -605,6 +642,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       }
       await win.showWindow();
       this.subWindow = win;
+      // 681：把窗口注册到 Host，供转屏后重新隐藏系统栏
+      HimiMpvNativeHost.getInstance().registerNativeWindow(win);
       // 全屏布局后读刘海/手势条避让区，喂给控件层（顶/底栏避让）。
       this.feedSafeArea(win);
     } catch (e) {
@@ -648,6 +687,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     host.setControlsVisible(true);
     const win = this.subWindow;
     this.subWindow = null;
+    // 681：清空 Host 里的窗口引用（防悬空）
+    HimiMpvNativeHost.getInstance().registerNativeWindow(null);
     if (win === null) {
       result.success(null);
       return;

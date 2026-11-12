@@ -13,12 +13,16 @@ class PlayerKernelPanel extends StatelessWidget {
     required this.onSelect,
     required this.onClose,
     this.focusNode,
+    this.tvMode = false,
   });
 
   final PlayerEngine current;
   final ValueChanged<PlayerEngine> onSelect;
   final VoidCallback onClose;
   final FocusNode? focusNode;
+
+  /// 681：安卓 TV 保留三引擎、手机只 MPV —— 面板列表跟随该开关。
+  final bool tvMode;
 
   static String descriptionOf(PlayerEngine engine) => switch (engine) {
         PlayerEngine.mdk => 'MDK / FVP，兼容性与 HDR 直通',
@@ -29,7 +33,7 @@ class PlayerKernelPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final engines = PlayerEngineFactory.supportedEngines();
+    final engines = PlayerEngineFactory.supportedEngines(tvMode: tvMode);
     final selectedIndex = engines.indexOf(current);
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 4),

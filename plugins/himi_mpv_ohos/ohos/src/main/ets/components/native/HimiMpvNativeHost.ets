@@ -636,6 +636,40 @@ export class HimiMpvNativeHost {
     this.notify();
   }
 
+  /**
+   * 681：持有原生子窗口引用，供转屏后重新隐藏系统栏。
+   *
+   * 【为什么放 Host】`HimiNativePlayerView` 拿不到插件实例（插件不是
+   * 单例），而 Host 是单例。插件在 `openNativeUi` 时把窗口注册进来，
+   * View 在方向变化时调 [refreshSystemBarsHidden]。
+   */
+  private nativeWindow: window.Window | null = null;
+
+  registerNativeWindow(win: window.Window | null): void {
+    this.nativeWindow = win;
+  }
+
+  /**
+   * 681：重新隐藏系统栏（转屏 / 竖屏进入房间后调用）。
+   *
+   * 部分 HarmonyOS 设备转屏会把状态栏恢复（尤其竖屏），必须重调。
+   * 双 API 兜底（与插件侧 `hideSystemBars` 同逻辑）。
+   */
+  refreshSystemBarsHidden(): void {
+    const win = this.nativeWindow;
+    if (win === null) return;
+    win.setWindowSystemBarEnable([]).catch((e: Object): void => {
+      hilog.warn(DOMAIN, TAG, '转屏后隐藏系统栏失败: %{public}s', String(e));
+    });
+    win.setSpecificSystemBarEnabled('status', false).catch((e: Object): void => {
+      hilog.warn(DOMAIN, TAG, '转屏后隐藏状态栏失败: %{public}s', String(e));
+    });
+    win.setSpecificSystemBarEnabled('navigationIndicator', false)
+      .catch((e: Object): void => {
+        hilog.warn(DOMAIN, TAG, '转屏后隐藏导航条失败: %{public}s', String(e));
+      });
+  }
+
   /** 当前打开的二级面板（null = 无）。见 [NativePlayerPanelType]。 */
   activePanel: string | null = null;
 

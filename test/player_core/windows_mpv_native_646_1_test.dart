@@ -24,15 +24,14 @@ void main() {
   });
 
   group('① Windows 引擎矩阵（646.1）', () {
-    test('列表 = MDK + MPV + Erika，无 media_kit', () {
+    test('681：列表只有 MPV（MDK/Erika 已收敛）', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
 
-      expect(PlayerEngineFactory.supportedEngines(), <PlayerEngine>[
-        PlayerEngine.mdk,
-        PlayerEngine.mpv,
-        PlayerEngine.erika,
-      ]);
+      expect(
+        PlayerEngineFactory.supportedEngines(),
+        <PlayerEngine>[PlayerEngine.mpv],
+      );
     });
 
     test('默认引擎 = MPV', () {

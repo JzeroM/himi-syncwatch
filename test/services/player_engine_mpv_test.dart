@@ -22,25 +22,33 @@ void main() {
     );
   });
 
-  test('Android / Windows 默认 MPV；Windows 移除 media_kit（646.1）', () {
+  test('681：Android 手机/Windows 均只 MPV', () {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    // 681：安卓手机收敛为仅 MPV（TV 才保留三引擎）
     expect(
-      PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mpv),
-      isTrue,
+      PlayerEngineFactory.supportedEngines(),
+      <PlayerEngine>[PlayerEngine.mpv],
     );
-    // 2026-10 起 Android 默认内核改为 MPV（原 MDK 保留为可选内核）。
     expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
+    // TV 保留三引擎
+    expect(
+      PlayerEngineFactory.supportedEngines(tvMode: true),
+      containsAll(<PlayerEngine>[
+        PlayerEngine.mdk,
+        PlayerEngine.erika,
+        PlayerEngine.mpv,
+      ]),
+    );
 
-    // 646.1：Windows 加回 MPV 并设为默认——原生顶层窗口（WS_POPUP）+
-    // vo=gpu-next 实现 HDR 直出；media_kit 移除（Flutter 纹理必崩 0x1551f）。
+    // 681：Windows 收敛为仅 MPV（Qt 独立窗口 + HDR 直出）
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     final winEngines = PlayerEngineFactory.supportedEngines();
-    expect(winEngines, contains(PlayerEngine.mpv));
-    expect(winEngines, contains(PlayerEngine.mdk));
-    expect(winEngines, contains(PlayerEngine.erika));
+    expect(winEngines, <PlayerEngine>[PlayerEngine.mpv]);
     expect(winEngines, isNot(contains(PlayerEngine.mediaKit)));
+    expect(winEngines, isNot(contains(PlayerEngine.mdk)));
+    expect(winEngines, isNot(contains(PlayerEngine.erika)));
     expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
     // 旧存档选过 media_kit → 已移除，回退到平台默认（MPV）。
     expect(

@@ -207,6 +207,47 @@ ApplicationWindow {
         }
     }
 
+    // ── 681：未播放占位（三端统一）──
+    //
+    // 【真机回归：房间内未播放时三端表现不一致】安卓/鸿蒙都有
+    // 「▶ + 请从资源面板选择要播放的内容」，Windows 只是一片黑。
+    //
+    // 对齐基准（安卓 `NativePlayerScreenView` / 鸿蒙 `HimiNativePlayerView`）：
+    // - 图标 `play_circle` 64，白 24%（`#3DFFFFFF`）
+    // - 文字「请从资源面板选择要播放的内容」14，白 38%（`#62FFFFFF`）
+    // - 间距 16，黑底居中
+    //
+    // 【层级】放在顶栏/底栏**之下**（z 低于控件），只在无内容时显示；
+    // `enabled: false` 保证不抢手势（点屏仍可唤出控件）。
+    Rectangle {
+        id: placeholder
+        anchors.fill: parent
+        // 681：无内容时显示。`playerReady` 由 Dart 侧 `_prepared && !_disposed`
+        // 决定（删空资源 / 尚未起播时为 false）。
+        visible: !playerState.playerReady
+        color: "#000000"
+        z: -1
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 16
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: Icons.playCircle
+                font.family: iconFont.name
+                font.pixelSize: 64
+                color: Theme.white24
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "请从资源面板选择要播放的内容"
+                color: Theme.white38
+                font.pixelSize: 14
+            }
+        }
+    }
+
     // ── 顶栏（渐变玻璃条：透明→黑 85%，视频透过来）──
     TopBar {
         id: topBar

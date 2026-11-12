@@ -58,7 +58,8 @@ void main() {
 
     test('宿主 surface 窗按方向收窄', () {
       expect(kotlinHost, contains('val portrait = screenH > screenW'));
-      expect(kotlinHost, contains('targetH = (screenH - inset).coerceAtLeast(1)'));
+      // 681：+1px 让面板覆盖，消除视频与面板之间的缝隙漏底光
+      expect(kotlinHost, contains('targetH = (screenH - inset + 1).coerceAtLeast(1)'));
       expect(kotlinHost, contains('win.setLayout(targetW, targetH)'));
     });
 

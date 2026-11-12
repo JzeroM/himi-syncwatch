@@ -440,11 +440,14 @@ class AndroidNativePlayerHost(
         val gravity: Int
         if (portrait) {
             targetW = screenW
-            targetH = (screenH - inset).coerceAtLeast(1)
+            // 681：高度 +1px 让面板边缘覆盖，消除「视频与面板之间漏底光」
+            // （inset 由 Flutter 侧按 dp 算、面板按 dp(320) 定位，两条
+            // 独立取整路径必然差 1~2px，多盖 1px 即无缝）。
+            targetH = (screenH - inset + 1).coerceAtLeast(1)
             // 视频贴左上，面板在其下。
             gravity = android.view.Gravity.START or android.view.Gravity.TOP
         } else {
-            targetW = (screenW - inset).coerceAtLeast(1)
+            targetW = (screenW - inset + 1).coerceAtLeast(1)
             targetH = screenH
             gravity = android.view.Gravity.START or android.view.Gravity.TOP
         }
@@ -525,16 +528,43 @@ class AndroidNativePlayerHost(
      * 旧实现用 `close()` + 重开（`reopenNativeUi()`），要重建窗口并重新
      * 绑定 surface，有「两个 SurfaceView 抢绑定」的风险（v1.5.4 黑屏根因）。
      */
+    /**
+     * 隐藏双窗（弹窗/搜索页期间让位）。
+     *
+     * 【681 真机回归：分享弹窗关闭后视频从头播放】旧实现用
+     * `Dialog.hide()` —— Android 在窗口不可见时会**回收 SurfaceView 的
+     * surface**，`show()` 时重建 → mpv 检测到 surface 变化 → 重配 vo →
+     * 从头播放。
+     *
+     * 现在改为 **alpha=0 + FLAG_NOT_TOUCHABLE**：窗口仍"显示"（surface
+     * 全程存活，mpv 不重配），但完全透明且不接收触摸。与鸿蒙
+     * （`visibility` 控制，XComponent 不销毁）、Windows（Qt 独立进程）
+     * 的语义对齐。
+     */
     fun suspend() {
-        val ctrl = controlsDialog ?: return
-        try {
-            ctrl.hide()
-        } catch (_: Throwable) {
-        }
         val surf = surfaceDialog
         if (surf != null) {
             try {
-                surf.hide()
+                val w = surf.window
+                if (w != null) {
+                    w.attributes = w.attributes.apply {
+                        alpha = 0f
+                        addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+        val ctrl = controlsDialog
+        if (ctrl != null) {
+            try {
+                val w = ctrl.window
+                if (w != null) {
+                    w.attributes = w.attributes.apply {
+                        alpha = 0f
+                        addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    }
+                }
             } catch (_: Throwable) {
             }
         }
@@ -545,17 +575,35 @@ class AndroidNativePlayerHost(
         val surf = surfaceDialog
         if (surf != null) {
             try {
-                if (!surf.isShowing) surf.show()
+                val w = surf.window
+                if (w != null) {
+                    w.attributes = w.attributes.apply {
+                        alpha = 1f
+                        clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    }
+                }
+                // show()/属性变更可能重置布局，重申分栏（681）
+                if (lastVideoInsetPx > 0) applyVideoInsetRight(lastVideoInsetPx)
             } catch (_: Throwable) {
             }
         }
-        // 控件窗后 show → z-order 保持在 surface 窗之上。
+        // 控件窗后恢复 → z-order 保持在 surface 窗之上。
         val ctrl = controlsDialog
         if (ctrl != null) {
             try {
-                if (!ctrl.isShowing) ctrl.show()
+                val w = ctrl.window
+                if (w != null) {
+                    w.attributes = w.attributes.apply {
+                        alpha = 1f
+                        clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    }
+                }
+                // 属性变更可能丢掉全屏/沉浸标志，重申一次
+                applyFullscreen(ctrl)
             } catch (_: Throwable) {
             }
+        }
+    }
             // 重新应用全屏布局与视频区收窄（show() 可能把尺寸重置回全屏）。
             try {
                 applyFullscreen(ctrl)

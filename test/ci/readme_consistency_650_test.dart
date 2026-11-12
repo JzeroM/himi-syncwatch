@@ -21,13 +21,15 @@ void main() {
   });
 
   group('① 引擎数量与列表', () {
-    test('README 写「四播放引擎」', () {
-      expect(readme, contains('四播放引擎'));
-      expect(readme, isNot(contains('三播放引擎')));
+    test('681：README 按平台描述引擎矩阵（不再写死数量）', () {
+      // 681 收敛后各平台引擎数不同（安卓手机 1 / TV 3 / 其它 1），
+      // 写死「四播放引擎」已不成立。
+      expect(readme, isNot(contains('四播放引擎')));
+      expect(readme, contains('## 播放引擎'));
     });
 
     test('特性表列出 MPV', () {
-      expect(readme, contains('**MPV**'));
+      expect(readme, contains('MPV'));
       expect(readme, contains('原生 Surface'));
     });
   });
@@ -43,7 +45,7 @@ void main() {
       expect(winBlock, contains('return PlayerEngine.mpv'));
     });
 
-    test('README：Windows 默认 MPV', () {
+    test('README：Windows 播放内核为 MPV', () {
       expect(readme, contains('Windows x64 | 10+ | MPV'));
     });
 
@@ -56,12 +58,12 @@ void main() {
       expect(andBlock, contains('return PlayerEngine.mpv'));
     });
 
-    test('README：Android 默认 MPV', () {
+    test('README：Android 播放内核为 MPV', () {
       expect(readme, contains('Android | 8.0（API 26） | MPV'));
     });
 
-    test('README：TV 模式支持 MPV', () {
-      expect(readme, contains('支持 MPV / MDK / Erika'));
+    test('681：README：Android TV 保留三引擎', () {
+      expect(readme, contains('MDK / Erika / MPV'));
     });
   });
 
@@ -82,7 +84,8 @@ void main() {
     });
 
     test('技术栈包含 MPV 行', () {
-      expect(readme, contains('播放引擎（Android/Windows/鸿蒙，默认）'));
+      expect(readme, contains('播放引擎（主力）'));
+      expect(readme, contains('MPV（原生 Surface'));
     });
 
     test('不再声称鸿蒙「房间同步、扫码、选图、动态图标暂不可用」', () {

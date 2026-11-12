@@ -61,56 +61,45 @@ class PlayerEngineFactory {
 
   /// 当前平台支持的引擎列表。
   ///
-  /// 对齐 NipaPlay 平台矩阵（HIMI 现有平台）：
-  /// - Android / Android TV：MDK、Erika、MPV（mediaKit/libmpv 引擎选项已移除：
-  ///   它只是 media_kit 的纹理路径，与原生 MPV 共用同一份 libmpv.so 与驱动，
-  ///   去掉选项不影响原生 MPV 的编译与运行）
-  /// - iOS：Erika
-  /// - **Windows：MDK、media_kit、Erika（media_kit 为默认，MPV 已移除）**
+  /// 【681：全平台引擎收敛】用户明确要求：
+  /// - **安卓手机**：只保留 MPV（移除引擎切换控件）
+  /// - **安卓 TV**：保留 MDK / Erika / MPV 三引擎（底栏仍可切换）
+  /// - **鸿蒙**：只 MPV
+  /// - **Windows**：只 MPV（646 起走 Qt 独立窗口 + vo=gpu-next HDR 直出）
+  /// - **iOS**：只 Erika
   ///
-  /// 【641 真机回归：Windows 移除 MPV】
-  /// Windows 上 MPV 两条渲染路径都不可用：
-  /// - texture：从播放页返回时崩在 `flutter_windows.dll`
-  ///   （0xc0000005，`ValueListenableBuilder` 与 textureId notifier 的
-  ///   生命周期竞态）；
-  /// - surface：原生子 HWND 被 Flutter 不透明窗口遮挡 → 灰屏（有声音无画面）。
-  /// 故 Windows 改用 media_kit（走 Flutter 纹理，长期验证稳定），
-  /// MDK 保留为备选。旧存档选过 mpv 的由 [resolveSelectedEngine]
-  /// 自动回退到新的平台默认。
-  static List<PlayerEngine> supportedEngines() {
+  /// [tvMode] 决定安卓是否保留三引擎——TV 遥控场景用户仍需要按机型
+  /// 挑内核（不同盒子硬解能力差异大），手机端则统一 MPV 避免歧义。
+  static List<PlayerEngine> supportedEngines({bool tvMode = false}) {
     if (isOhos) return const <PlayerEngine>[PlayerEngine.mpv];
     if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return const <PlayerEngine>[
-          PlayerEngine.mdk,
-          PlayerEngine.erika,
-          PlayerEngine.mpv,
-        ];
+        // 681：手机只 MPV；TV 保留三引擎（用户明确要求）
+        return tvMode
+            ? const <PlayerEngine>[
+                PlayerEngine.mdk,
+                PlayerEngine.erika,
+                PlayerEngine.mpv,
+              ]
+            : const <PlayerEngine>[PlayerEngine.mpv];
       case TargetPlatform.iOS:
         return const <PlayerEngine>[PlayerEngine.erika];
       case TargetPlatform.windows:
-        // 646.1：加回 MPV，移除 media_kit。
-        //
-        // 【真机证据链】
-        // - v1.5.3 默认 MDK → 正常；手动切 media_kit → 闪退
-        // - 1.5.59/1.5.60 用 MPV texture → 闪退（flutter_windows.dll 0x1551f）
-        // - 641 移除 MPV 后，Windows 只剩 media_kit（必崩）+ MDK
-        // - 646 实现了原生顶层窗口（HDR 直出），但原生 UI 门控要求
-        //   `engine == 'mpv'`，而列表里没有 MPV → 永远不启用
-        //   （真机截图右上角显示 `libmpv` 即为证据）
-        //
-        // 故加回 MPV 作为**默认**（走原生顶层窗口 + vo=gpu-next HDR 直出），
-        // MDK 保留为备选（Flutter 纹理，不崩但 SDR tone map）。
-        return const <PlayerEngine>[
-          PlayerEngine.mdk,
-          PlayerEngine.mpv,
-          PlayerEngine.erika,
-        ];
+        // 681：只 MPV。Qt 播放窗（646+）走原生顶层窗口 + HDR 直出，
+        // 本进程 MPV 作为 Qt 启动失败时的回退，两条路都是 MPV。
+        return const <PlayerEngine>[PlayerEngine.mpv];
       default:
         return const <PlayerEngine>[PlayerEngine.mdk];
     }
   }
+
+  /// 是否只有一个引擎（决定播放器内是否显示切换控件）。
+  ///
+  /// 【681】单引擎平台（安卓手机/鸿蒙/Windows/iOS）不该再出现「内核胶囊」——
+  /// 点开只有一个选项，纯属噪音。
+  static bool isSingleEngine({bool tvMode = false}) =>
+      supportedEngines(tvMode: tvMode).length <= 1;
 
   /// 平台默认引擎：Android / 鸿蒙为 MPV，**Windows 为 media_kit**，
   /// iOS 为 Erika。
@@ -140,12 +129,17 @@ class PlayerEngineFactory {
   }
 
   /// 解析落盘内核 id；不支持时回退平台默认。
-  static PlayerEngine resolveSelectedEngine(String? id) {
+  ///
+  /// 【681】安卓手机老用户存档可能是 `mdk` / `erika`——收敛到仅 MPV 后
+  /// 必须回退，否则会拿到一个当前平台不支持的引擎。
+  static PlayerEngine resolveSelectedEngine(String? id, {bool tvMode = false}) {
     final selected = PlayerEngine.fromId(id);
-    return supportedEngines().contains(selected) ? selected : defaultEngine();
+    return supportedEngines(tvMode: tvMode).contains(selected)
+        ? selected
+        : defaultEngine();
   }
 
   /// 引擎在指定平台是否可用（用于设置页 tab / 校验）。
-  static bool isSupported(PlayerEngine engine) =>
-      supportedEngines().contains(engine);
+  static bool isSupported(PlayerEngine engine, {bool tvMode = false}) =>
+      supportedEngines(tvMode: tvMode).contains(engine);
 }

@@ -1188,10 +1188,26 @@ class NativePlayerScreenView(
         )
         addView(segmentScrim, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(segmentCard, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
-        // 房间资源面板（590）：右侧 320dp 分栏，铺满高度。
+        // 房间资源面板（590）：右侧分栏，铺满高度。
+        //
+        // 【681 真机回归：视频与面板之间有缝隙漏底光】
+        // 旧实现用固定 `dp(ROOM_PANEL_WIDTH)` + `Gravity.END` —— 面板左缘
+        // 由「屏幕宽 - dp(320)」算出，而视频窗右缘由 Flutter 下发的
+        // `insetPx`（dp × dpr 取整）算出。**两条独立取整路径**必然差
+        // 1~2px → 中间露一条底光。
+        //
+        // 改为「从视频右缘铺到屏幕右缘」：宽度 MATCH_PARENT、
+        // `leftMargin = 视频区宽 - 1`（-1 让面板盖住视频右缘那 1px）。
+        // 面板宽度自适应，不再依赖两个数值相等。
         addView(
             roomPanel,
-            lp(dp(NPTheme.ROOM_PANEL_WIDTH), LayoutParams.MATCH_PARENT, Gravity.END),
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ).also {
+                it.gravity = Gravity.START or Gravity.TOP
+                it.leftMargin = 0  // 由 renderRoomPanel 按视频区宽动态设置
+            },
         )
 
         configureTopBar()
@@ -3302,6 +3318,23 @@ class NativePlayerScreenView(
         }
         roomPanel.visibility = if (show) VISIBLE else GONE
         if (!show) return
+
+        // 681：面板从**视频区右缘**开始铺到屏幕右缘（不再固定 dp(320)）。
+        // `-1` 让面板盖住视频窗那多出的 1px，彻底消除缝隙漏底光。
+        run {
+            val availableW = if (portrait) screenW else screenW - panelPx
+            val leftMargin = if (portrait) 0 else (availableW - 1).coerceAtLeast(0)
+            (roomPanel.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+                lp.leftMargin = leftMargin
+                lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+                lp.height = if (portrait) {
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                } else {
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                }
+                roomPanel.layoutParams = lp
+            }
+        }
 
         // ── 头部（对齐 Flutter：Expanded(资源) | 搜索 | 人数 | 角色）──
         roomPanelTitle.text = "资源"

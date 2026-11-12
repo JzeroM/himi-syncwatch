@@ -3901,6 +3901,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         const Size(RoomPanelLayout.minPanelWidth, RoomPanelLayout.minPanelHeight),
       );
       await windowManager.setBounds(panelRect);
+      // 681：**记录 Qt 宽度**——进房首次摆位就必须记住，否则用户一进房
+      // 拖面板时 `_lastQtWidth` 还是 0，`_pushPanelRectToQt` 直接 return
+      // → Qt 窗纹丝不动 → 两窗堆叠（真机截图）。
+      final vw = (video['w'] as num?)?.toDouble();
+      if (vw != null && vw > 0) _lastQtWidth = vw;
       // 677：房间模式去掉最大化/最小化按钮（最大化会挤掉 Qt 窗，
       // 最小化会让用户以为房间没了）。关闭 + 拖边缩放保留。
       await WindowsWindowStyle.setRoomChrome(true);
@@ -4282,7 +4287,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final networkText = settings.showNetworkSpeed && _networkSpeedBps != null
         ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
         : null;
-    final engines = PlayerEngineFactory.supportedEngines();
+    final engines = PlayerEngineFactory.supportedEngines(
+      tvMode: settings.tvMode,
+    );
     mpv.nativeDanmakuComments = _danmakuComments;
     mpv.applyNativePanelData(
       episodes: List<NativeEpisode>.generate(
@@ -4389,6 +4396,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (qt != null && !qt.isDisposed) {
       final stateJson = mpv.buildNativePlayerState().toJson();
       stateJson['brightness'] = _brightnessNotifier.value;
+      // 681：Qt 接管时 `_player` 是**空闲引擎**（`_prepared` 恒 false），
+      // 直接用会让 Qt 的占位层「请从资源面板选择要播放的内容」永远显示
+      // ——即使 mpv 正在播。改用 Qt 的真实播放态判断。
+      stateJson['playerReady'] = qt.isAlive && qt.position >= 0 &&
+          (qt.duration > 0 || qt.state != AdapterPlaybackState.stopped);
       qt.pushNativeState(
         stateJson,
         playUrl: _currentPlayUrl,
@@ -9898,6 +9910,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           },
                           onClose: _closeSelectorPanel,
                           focusNode: _selectorFirstFocusNode,
+                          // 681：TV 三引擎 / 手机仅 MPV
+                          tvMode: ref.read(settingsProvider).tvMode,
                         )
                       : _showSubtitleStyleMenu
                           ? _buildDisplayAdjustPanel()
@@ -10076,7 +10090,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           PlayerScreen.showTopBarNetworkSpeed(tvMode: settings.tvMode),
       // 640：TV 模式的引擎切换移到**底栏弹幕开关之后**（遥控更顺手），
       // 顶栏只在非 TV 显示。
-      showKernelButton: !settings.tvMode && !_switchingKernel,
+      // 681：单引擎平台（安卓手机/鸿蒙/Windows/iOS）不显示内核胶囊
+      showKernelButton: !settings.tvMode &&
+          !_switchingKernel &&
+          !PlayerEngineFactory.isSingleEngine(tvMode: settings.tvMode),
       kernelLabel: _currentEngine.shortLabel,
       kernelMenuOpen: _showKernelMenu,
       kernelFocusNode: _kernelButtonFocusNode,
@@ -10173,6 +10190,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 顶栏「播放内核」胶囊：开关内核选择面板。
   void _toggleKernelMenu() {
     if (_switchingEngine || _switchingKernel) return;
+    // 681：单引擎平台不允许打开切换菜单（控件已隐藏，这里兜底）
+    if (PlayerEngineFactory.isSingleEngine(
+      tvMode: ref.read(settingsProvider).tvMode,
+    )) {
+      return;
+    }
     setState(() {
       _showSubtitleMenu = false;
       _showKernelMenu = !_showKernelMenu;
@@ -11501,7 +11524,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   // 遥控链路：OK → _toggleKernelMenu → _openSelectorPanel
                   // 把焦点交给面板首项；面板内 D-pad 选择；返回 → 
                   // _closeSelectorPanel 把焦点还给本按钮。
-                  if (tvMode && !_switchingKernel) ...[
+                  // 681：TV 保留三引擎才显示；单引擎平台（鸿蒙/Windows/iOS）
+                  // 即使在 TV 模式下也不显示。
+                  if (tvMode &&
+                      !_switchingKernel &&
+                      !PlayerEngineFactory.isSingleEngine(tvMode: true)) ...[
                     _buildControlButton(
                       icon: Icons.memory,
                       focusNode: _kernelButtonFocusNode,
