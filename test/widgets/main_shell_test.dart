@@ -97,12 +97,12 @@ void main() {
     expect(find.text('Emby'), findsNothing);
     expect(contentWidth(tester), 1280 - 72);
 
-    // 把手：底部胶囊钮（36×36）
+    // 687：把手常态是 32×4 圆角短横线（悬停/展开才变 36×36 圆钮）
     final handle = tester.renderObject<RenderBox>(
       find.byKey(const ValueKey('drawerToggle')),
     );
-    expect(handle.size.width, 36);
-    expect(handle.size.height, 36);
+    expect(handle.size.width, 32);
+    expect(handle.size.height, 4);
 
     // 底层渐变全宽（Dock 区与内容区同一张背景）
     final bg = tester.renderObject<RenderBox>(

@@ -60,12 +60,16 @@ Rectangle {
         return "自适应"
     }
 
-    // ── 679：顶栏拖拽区（无边框窗口的移动手柄）──
+    // ── 679/687：顶栏拖拽区（**仅房间模式**，无边框时用）──
+    //
+    // 单人模式有原生标题栏，拖动/缩放交给系统；这里必须禁用，
+    // 否则点标题栏会触发 `startSystemMove` 与系统拖动竞争。
     //
     // 放在 RowLayout **之前**（z 序在下），按钮先消费事件，空白处才落到
     // 这里 → 拖动不会误触按钮。整条顶栏可拖（用户选定的方案）。
     MouseArea {
         anchors.fill: parent
+        enabled: playerState.isRoom
         // 只在按到空白区域时接管（子控件已处理的不再冒泡到这里）
         propagateComposedEvents: false
         onPressed: (mouse) => {
@@ -80,7 +84,19 @@ Rectangle {
         anchors.rightMargin: Theme.barPadH
         spacing: 8
 
-        // 679：返回按钮已移除（退出统一走 Flutter 面板窗关闭 + Esc）
+        // 687：左上角返回按钮（**仅单人模式**）。
+        //
+        // 房间模式不显示——退出统一走右侧 Flutter 面板窗的关闭确认。
+        // 点击发 `requestExit`，由 Dart 侧走 `_safePopPlayerPage()` +
+        // `closeQtPlayer()`（与原生 X 关闭同一条链路）。
+        ControlButton {
+            visible: !playerState.isRoom
+            icon: Icons.arrowBack
+            iconSize: Theme.topIconSize
+            tooltip: "返回"
+            onClicked: pipeServer.sendCommand({"type": "requestExit"})
+        }
+
         // 标题（保底 56 宽，超出省略）
         Text {
             Layout.fillWidth: true

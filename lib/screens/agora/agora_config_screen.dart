@@ -26,8 +26,16 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
   /// 已配置时默认收起表单，通过状态卡「编辑」按钮展开。
   late bool _editing;
 
-  /// 切走分支时递增，重建书本使其回到合上封面（v1.2.41）。
-  int _bookEpoch = 0;
+  /// 687：切走分支时**发重置信号**让书回到合上封面（v1.2.41 行为）。
+  ///
+  /// 【为什么不再用 epoch + ValueKey 重建】旧实现每次切走/切回都让
+  /// `AgoraGuideBook` 的 key 变化 → Flutter 销毁旧 State、重建整棵
+  /// 子树：封面 6 处 `BoxShadow`（blur 30/26/14）重新离屏渲染、4 页
+  /// 内容全部重建、`TweenAnimationBuilder` 白跑 320ms 颜色动画。
+  /// 安卓真机切到「声网」标签时明显卡一下，就是这么来的。
+  ///
+  /// 现在只发一个信号，书本 State 保留 → 零重建。
+  final ValueNotifier<int> _bookReset = ValueNotifier<int>(0);
 
   @override
   void initState() {
@@ -47,6 +55,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
 
   @override
   void dispose() {
+    _bookReset.dispose();
     _appIdController.dispose();
     _certController.dispose();
     super.dispose();
@@ -99,8 +108,9 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
         _certController.text = saved?.appCertificate ?? '';
         setState(() {
           _editing = saved?.isConfigured != true;
-          _bookEpoch++;
         });
+        // 687：只发重置信号，不换 key（不重建书本）。
+        _bookReset.value++;
       },
     );
 
@@ -124,7 +134,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
             child: AgoraGuideBook(
-              key: ValueKey('agoraGuideBook_$_bookEpoch'),
+              resetSignal: _bookReset,
               themeColor: themeColor == null ? null : Color(themeColor),
               onImageTap: (image) => _showFullImage(context, image),
               extraPageBuilder: (context, palette, index, total) {

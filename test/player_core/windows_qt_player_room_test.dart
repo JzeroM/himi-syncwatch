@@ -761,16 +761,24 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('K 无边框与双向跟随', () {
-    test('K1 Qt 窗无边框（去掉最小化/最大化/关闭三钮）', () {
-      // 680：必须**保留 Qt.Window 类型位**——只写 FramelessWindowHint 会让
-      // 类型退化成 Qt::Widget → Windows 走 WS_POPUP → 不进任务栏。
-      expect(mainQml, contains('Qt.Window | Qt.FramelessWindowHint'));
+    test('K1 687：Qt 窗边框按房间态切换（房间无边框 / 单人带三钮）', () {
+      // 【结论反转】679 时这里是「全局无边框」；687 真机反馈单人播放
+      // 也需要最小化/最大化/关闭三钮。
+      //
+      // 现在：QML 初始 `flags: Qt.Window`（带边框），进房时 C++ 的
+      // `setRoomChrome(true)` 改 GWL_STYLE 去掉边框——**不能**用 QML 改
+      // flags（会销毁重建窗口 → 播放中断、wid 绑定失效黑屏）。
+      expect(mainQml, contains('flags: Qt.Window'));
+      expect(mainQml, isNot(contains('FramelessWindowHint')));
+      // 680：仍保留 Qt.Window 类型位（否则 WS_POPUP → 不进任务栏）
+      expect(mpvH, contains('Q_INVOKABLE void setRoomChrome(bool room)'));
+      expect(mpvCpp, contains('void MpvWindow::setRoomChrome(bool room)'));
     });
 
-    test('K2 左上角返回按钮已移除', () {
-      expect(topBar, isNot(contains('Icons.arrowBack')));
-      expect(topBar, isNot(contains('backClicked')));
-      expect(overlayQml, isNot(contains('onBackClicked')));
+    test('K2 687：返回按钮恢复但仅单人显示', () {
+      // 679 曾整体移除；687 恢复（仅单人）。
+      expect(topBar, contains('Icons.arrowBack'));
+      expect(topBar, contains('visible: !playerState.isRoom'));
     });
 
     test('K3 顶栏拖拽区走 startSystemMove', () {
@@ -1046,8 +1054,8 @@ void main() {
 
   group('N6 任务栏与三端分享统一', () {
     test('N6 两个窗口都进任务栏（Qt 保留 Qt.Window + WS_EX_APPWINDOW）', () {
-      // QML 层：类型位不能丢
-      expect(mainQml, contains('Qt.Window | Qt.FramelessWindowHint'));
+      // QML 层：类型位不能丢（687 起初始带边框，但仍必须是 Qt.Window）
+      expect(mainQml, contains('flags: Qt.Window'));
       // C++ 层兜底：清 owner + 强制 APPWINDOW + FRAMECHANGED
       expect(mainCpp, contains('WS_EX_APPWINDOW'));
       expect(mainCpp, contains('GWLP_HWNDPARENT, 0'));

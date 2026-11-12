@@ -1062,11 +1062,15 @@ ApplicationWindow {
         }
     }
 
-    // ── 680：无边框窗口的 8 向拉伸热区（最上层，只占最外 6px）──
+    // ── 680/687：无边框窗口的 8 向拉伸热区（**仅房间模式**）──
+    //
+    // 单人模式有原生边框，缩放交给系统；这里必须隐藏，
+    // 否则最外 6px 会拦截系统缩放。
     //
     // 【为什么放最后】QML 后声明者 z 序更高。热区只在窗口最外 6px，
     // 与顶栏拖拽区（startSystemMove）、按钮区域都不重叠。
     WindowResizeEdges {
         anchors.fill: parent
+        visible: playerState.isRoom
     }
 }

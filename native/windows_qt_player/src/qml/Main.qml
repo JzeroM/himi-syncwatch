@@ -19,18 +19,15 @@ ApplicationWindow {
     title: (playerState.title !== "" ? playerState.title + " — HIMI" : "HIMI Player")
            + (playerState.windowDiag !== "" ? " [" + playerState.windowDiag + "]" : "")
     color: "#000000"
-    // 679：无边框——去掉系统标题栏（最小化/最大化/关闭三钮）。
+    // 687：**默认带原生标题栏**（单人播放需要最小化/最大化/关闭三钮）。
     //
-    // 【为什么】房间模式下 Qt 窗是「播放器」，退出统一走 Flutter 面板窗
-    // 的确认流程（避免用户误点 X 直接杀掉播放窗、房间悬空）。
-    // 无边框后拖动/缩放由 TopBar 拖拽区 + WindowResizeEdges 接管。
+    // 房间模式由 C++ 的 `MpvWindow::setRoomChrome(true)` 去掉边框——
+    // 那里改 `GWL_STYLE` 位，不会重建窗口（QML 改 flags 会销毁重建，
+    // 导致播放中断 + `wid` 绑定失效黑屏）。
     //
-    // 【680 真机回归：Qt 窗不进任务栏】旧值只写 `Qt.FramelessWindowHint`
-    // ——这行**完全替换** flags，类型位从 `Qt::Window`(0x1) 退化成
-    // `Qt::Widget`(0x0)，Qt 在 Windows 上改走 `WS_POPUP`；Win32 规则下
-    // `WS_POPUP` 窗口不进任务栏（除非有 WS_EX_APPWINDOW）。
-    // 必须显式保留 `Qt.Window` 类型位（C++ 侧再补 WS_EX_APPWINDOW 兜底）。
-    flags: Qt.Window | Qt.FramelessWindowHint
+    // 【680 真机回归：Qt 窗不进任务栏】必须显式保留 `Qt.Window` 类型位，
+    // 否则退化成 `WS_POPUP`，Win32 不给它任务栏图标。
+    flags: Qt.Window
 
     // 播放快捷键（两窗共用组件；焦点在任一窗都有效）
     PlayerShortcuts { }

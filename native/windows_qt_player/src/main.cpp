@@ -668,6 +668,12 @@ int main(int argc, char* argv[]) {
                              mpv.setTopmost(
                                  cmd.value(QLatin1String("topmost"))
                                      .toBool(false));
+                         } else if (type == QLatin1String("setRoomChrome")) {
+                             // 687：按房间态切换窗口边框
+                             //（单人带三钮 / 房间无边框）。
+                             mpv.setRoomChrome(
+                                 cmd.value(QLatin1String("room"))
+                                     .toBool(false));
                          }
                      });
 

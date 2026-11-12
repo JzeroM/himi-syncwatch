@@ -3977,6 +3977,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await WindowsWindowStyle.setRoomChrome(true);
       // 682：两窗同层——面板与 Qt 视频要么都在上层，要么一起被盖。
       unawaited(_applyRoomTopmost(true));
+      // 687：房间模式去掉 Qt 窗的原生标题栏三钮
+      //（退出统一走右侧面板窗的关闭确认，避免误点 X 杀掉播放窗）。
+      qt.setRoomChrome(true);
       qt.setWindowRect(
         x: (video['x'] as num).round(),
         y: (video['y'] as num).round(),
@@ -4167,6 +4170,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _roomQtWired = false;
     final qt = MpvSessionPlatform.activeQtAdapter;
     qt?.setFollowParent(false);
+    // 687：退房 → 恢复 Qt 窗的原生标题栏三钮（单人播放需要）。
+    qt?.setRoomChrome(false);
     // 682：退房 → 关闭两窗同层（回归普通应用窗口层级）。
     unawaited(_applyRoomTopmost(false));
     // 677：恢复标题栏按钮（退房后面板窗回归普通应用窗口）
@@ -4539,15 +4544,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     // 677：Qt 房间模式下「退出」要先弹「解散/离开房间」确认，
     // 不能像单人那样直接退页（房主离开会解散房间，必须确认）。
-    if (command is RequestExit && widget.roomCode != null && _roomQtActive) {
-      final shouldPop = await _confirmLeaveRoom();
-      if (!mounted) return;
-      if (shouldPop) {
+    //
+    // 687：单人模式补上退出分支——此前 `RequestExit` **没有 case**
+    // （落到 switch 的 default 被静默丢弃），导致单人点 Qt 窗口的
+    // 原生 X 或左上角返回按钮**毫无反应**。
+    if (command is RequestExit) {
+      if (widget.roomCode != null && _roomQtActive) {
+        final shouldPop = await _confirmLeaveRoom();
+        if (!mounted) return;
+        if (shouldPop) {
+          await _safePopPlayerPage();
+          await MpvSessionPlatform.closeQtPlayer();
+        } else {
+          // 取消：把 Qt 播放窗拉回最前（否则焦点还在面板上）
+          MpvSessionPlatform.activeQtAdapter?.focus();
+        }
+      } else {
+        // 单人：直接退出（用户选定「点 X 直接退出」语义）——
+        // 关 Qt 播放窗 + 回详情页，主窗保留。
         await _safePopPlayerPage();
         await MpvSessionPlatform.closeQtPlayer();
-      } else {
-        // 取消：把 Qt 播放窗拉回最前（否则焦点还在面板上）
-        MpvSessionPlatform.activeQtAdapter?.focus();
       }
       return;
     }

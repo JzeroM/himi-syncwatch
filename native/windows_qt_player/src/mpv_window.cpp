@@ -699,6 +699,33 @@ void MpvWindow::raiseToFront() {
     host_->requestActivate();
 }
 
+/// 687：按房间态切换窗口边框。
+///
+/// 【单人】恢复标准可缩放窗口：标题栏 + 最小化/最大化/关闭三钮。
+/// 【房间】去掉标题栏与三钮（退出统一走 Flutter 面板窗的确认流程）。
+///
+/// 只改 `GWL_STYLE` 位，不重建窗口——播放不中断、`wid` 绑定不变。
+void MpvWindow::setRoomChrome(bool room) {
+    if (host_ == nullptr) return;
+    const HWND h = reinterpret_cast<HWND>(host_->winId());
+    if (h == nullptr) return;
+
+    const LONG_PTR kCaption = WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                              WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+    LONG_PTR style = ::GetWindowLongPtrW(h, GWL_STYLE);
+    const LONG_PTR next = room ? (style & ~kCaption) : (style | kCaption);
+    if (next == style) return;  // 幂等：无变化不折腾
+
+    ::SetWindowLongPtrW(h, GWL_STYLE, next);
+    // 【必须发 FRAMECHANGED】改完 style 后非客户区不会自动重绘——
+    // 三钮要等下次窗口显隐才出现（真机观感「改了没生效」）。
+    ::SetWindowPos(h, nullptr, 0, 0, 0, 0,
+                   SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+                       SWP_NOZORDER | SWP_NOACTIVATE);
+    qInfo().noquote() << "[window] 边框:" << (room ? "无边框（房间）"
+                                                   : "标准窗口（单人）");
+}
+
 /// 683：与 Flutter 面板窗**联动抬升**（房间并排，两窗同层）。
 ///
 /// 【与 682 置顶的区别】

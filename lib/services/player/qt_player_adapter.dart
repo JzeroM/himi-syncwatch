@@ -231,6 +231,15 @@ class QtPlayerAdapter implements PlayerAdapter {
     _pipe.sendCommandRaw({'type': 'setTopmost', 'topmost': topmost});
   }
 
+  /// 687：按房间态切换窗口边框（单人带三钮 / 房间无边框）。
+  ///
+  /// 【为什么必须由 Dart 驱动】窗口在起播时就创建了，那时可能还没进房；
+  /// 进房/退房是两个明确的时机，由页面在摆位/恢复时各发一次最准确。
+  void setRoomChrome(bool room) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'setRoomChrome', 'room': room});
+  }
+
   /// 677：把播放窗拉回最前。
   void focus() {
     if (_disposed) return;

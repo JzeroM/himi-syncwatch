@@ -118,20 +118,51 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('C Dock 视觉（液态玻璃）', () {
-    test('C1 选中态：主色外发光 + 描边', () {
-      expect(sideDrawer, contains('boxShadow: selected'));
-      expect(sideDrawer, contains('blurRadius: 12'));
-      expect(sideDrawer, contains('kNavBlobColor.withValues(alpha: 0.35)'));
+    test('C1 687：选中态主色渐变玻璃 + 外发光 + 内高光', () {
+      // 687 从「淡色底 + 细描边」升级为「主色渐变 + 外发光 + 顶部内高光」
+      expect(sideDrawer, contains('LinearGradient('));
+      expect(sideDrawer, contains('blurRadius: 16'));
+      expect(sideDrawer, contains('kNavBlobColor.withValues(alpha: 0.30)'));
+      // 内高光（玻璃厚度感）
+      expect(sideDrawer, contains('Colors.white.withValues(alpha: 0.10)'));
     });
 
-    test('C2 选中态右侧 3px 主色竖条', () {
+    test('C2 687：选中指示器改为竖向光条（AnimatedPositioned 滑动）', () {
+      // 旧的「右侧 3px 竖条」改成独立的 DockIndicatorBar：
+      // 切换时平滑滑到新位置，不是瞬间消失出现
+      expect(sideDrawer, contains('class DockIndicatorBar'));
+      expect(sideDrawer, contains('AnimatedPositioned'));
       expect(sideDrawer, contains('width: 3'));
-      expect(sideDrawer, contains('height: 20'));
+      expect(sideDrawer, contains('height: 24'));
     });
 
-    test('C3 悬停态整块右移（Dock 浮起手感）', () {
+    test('C3 687：悬停时图标上浮 + 放大（Dock 磁吸感）', () {
       expect(sideDrawer, contains('AnimatedSlide'));
-      expect(sideDrawer, contains('Offset(0.04, 0)'));
+      expect(sideDrawer, contains('AnimatedScale'));
+      expect(sideDrawer, contains('Offset(0, -0.04)'));
+      expect(sideDrawer, contains('scale: hovered ? 1.08 : 1.0'));
+    });
+
+    test('C6 687：整条侧边栏包在大圆角玻璃里', () {
+      expect(sideDrawer, contains('GlassContainer('));
+      expect(sideDrawer, contains('BorderRadius.circular(20)'));
+    });
+
+    test('C7 687：收起态品牌为单字母 H', () {
+      expect(sideDrawer, contains("'H'"));
+      expect(sideDrawer, contains('ValueKey(\'brandLetter\')'));
+      // 展开态仍是 HIMI / 同步观影
+      expect(sideDrawer, contains("'HIMI'"));
+      expect(sideDrawer, contains("'同步观影'"));
+    });
+
+    test('C8 687：收起态选中项有呼吸圆点', () {
+      expect(sideDrawer, contains('!showLabel && selected'));
+      expect(sideDrawer, contains('shape: BoxShape.circle'));
+    });
+
+    test('C9 687：导航项分组（组间空隙代替横线）', () {
+      expect(sideDrawer, contains('_groupSplitAfter'));
     });
 
     test('C4 收起态用 Tooltip 显示名称（文字不常显）', () {

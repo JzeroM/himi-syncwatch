@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_cover.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_page.dart';
@@ -33,12 +34,20 @@ class AgoraGuideBook extends StatefulWidget {
     this.extraPageBuilder,
     this.onImageTap,
     this.themeColor,
+    this.resetSignal,
   });
 
   final List<AgoraGuideStep> steps;
   final AgoraBookExtraPageBuilder? extraPageBuilder;
   final ValueChanged<String>? onImageTap;
   final Color? themeColor;
+
+  /// 687：外部重置信号——值变化时书本**回到合上封面**。
+  ///
+  /// 【为什么用信号而不是换 key】换 key 会销毁重建整个 State：封面
+  /// 6 处 `BoxShadow` 重新离屏渲染、4 页内容全部重建、颜色动画白跑
+  /// 320ms。安卓真机切标签卡顿的主因就是这个。
+  final ValueListenable<int>? resetSignal;
 
   @override
   State<AgoraGuideBook> createState() => _AgoraGuideBookState();
@@ -63,10 +72,55 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
   void initState() {
     super.initState();
     _flip = AnimationController(vsync: this);
+    _accentTween = ColorTween(end: _accentTarget);
+    widget.resetSignal?.addListener(_handleReset);
   }
 
   @override
+  void didUpdateWidget(AgoraGuideBook old) {
+    super.didUpdateWidget(old);
+    if (old.resetSignal != widget.resetSignal) {
+      old.resetSignal?.removeListener(_handleReset);
+      widget.resetSignal?.addListener(_handleReset);
+    }
+    // 687：只有主题色**真的变了**才重启动画。
+    //
+    // 旧实现每次 build 都新建 `ColorTween`，`TweenAnimationBuilder` 会
+    // 从当前值再跑一遍 320ms → 整本书每帧重建、`AgoraBookPalette.
+    // fromAccent` 每帧重算（切标签卡顿的第二个来源）。
+    if (old.themeColor != widget.themeColor) {
+      _accentTween = ColorTween(begin: _accent, end: _accentTarget);
+    }
+  }
+
+  /// 687：外部重置 → 回到合上封面（**不销毁重建**）。
+  void _handleReset() {
+    if (!mounted) return;
+    _flip.stop();
+    setState(() {
+      _index = -1;
+      _target = null;
+      _dragDx = 0;
+      _dragTarget = null;
+      _flip.value = 0;
+    });
+  }
+
+  /// 当前主题色（动画中间值，供下次 `ColorTween` 的起点）。
+  Color get _accent =>
+      _accentTween.evaluate(AlwaysStoppedAnimation(1)) ??
+      AgoraBookPalette.defaultAccent;
+
+  /// 目标主题色。
+  Color get _accentTarget =>
+      widget.themeColor ?? AgoraBookPalette.defaultAccent;
+
+  /// 687：缓存的主题色 tween（避免每次 build 新建导致动画重跑）。
+  late ColorTween _accentTween;
+
+  @override
   void dispose() {
+    widget.resetSignal?.removeListener(_handleReset);
     _flip.dispose();
     super.dispose();
   }
@@ -167,62 +221,64 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
   Widget build(BuildContext context) {
     if (_pageCount == 0) return const SizedBox.shrink();
     return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(
-        end: widget.themeColor ?? AgoraBookPalette.defaultAccent,
-      ),
+      // 687：用缓存的 tween——同一实例不会重启动画。
+      tween: _accentTween,
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
       builder: (context, accent, _) {
         final palette = AgoraBookPalette.fromAccent(accent);
-        return Column(
-          key: const ValueKey('agoraGuideBook'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AspectRatio(
-              aspectRatio: 0.72,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  _bookWidth = constraints.maxWidth;
-                  return GestureDetector(
-                    key: const ValueKey('agoraBookViewport'),
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart: _handleDragStart,
-                    onHorizontalDragUpdate: _handleDragUpdate,
-                    onHorizontalDragEnd: _handleDragEnd,
-                    onHorizontalDragCancel: _handleDragCancel,
-                    child: IgnorePointer(
-                      ignoring: _busy,
-                      child: _buildBook(palette),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 6),
-            _BookControls(
-              cover: _index == -1,
-              page: _index,
-              total: _pageCount,
-              busy: _busy,
-              onPrevious: () => _goToStep(_index - 1),
-              onNext: () => _goToStep(_index + 1),
-              onSelect: _goToStep,
-            ),
-            if (widget.extraPageBuilder != null) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                width: math.min(_bookWidth * 0.74, 300),
-                child: AspectRatio(
-                  aspectRatio: 246 / 72,
-                  child: AgoraBookQuill(
-                    palette: palette,
-                    enabled: !_busy && _index != _pageCount - 1,
-                    onTap: () => _goToStep(_pageCount - 1),
-                  ),
+        // 687：整本书独立成层——翻页/重置时不牵连同级兄弟节点重绘。
+        return RepaintBoundary(
+          child: Column(
+            key: const ValueKey('agoraGuideBook'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AspectRatio(
+                aspectRatio: 0.72,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    _bookWidth = constraints.maxWidth;
+                    return GestureDetector(
+                      key: const ValueKey('agoraBookViewport'),
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragStart: _handleDragStart,
+                      onHorizontalDragUpdate: _handleDragUpdate,
+                      onHorizontalDragEnd: _handleDragEnd,
+                      onHorizontalDragCancel: _handleDragCancel,
+                      child: IgnorePointer(
+                        ignoring: _busy,
+                        child: _buildBook(palette),
+                      ),
+                    );
+                  },
                 ),
               ),
+              const SizedBox(height: 6),
+              _BookControls(
+                cover: _index == -1,
+                page: _index,
+                total: _pageCount,
+                busy: _busy,
+                onPrevious: () => _goToStep(_index - 1),
+                onNext: () => _goToStep(_index + 1),
+                onSelect: _goToStep,
+              ),
+              if (widget.extraPageBuilder != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: math.min(_bookWidth * 0.74, 300),
+                  child: AspectRatio(
+                    aspectRatio: 246 / 72,
+                    child: AgoraBookQuill(
+                      palette: palette,
+                      enabled: !_busy && _index != _pageCount - 1,
+                      onTap: () => _goToStep(_pageCount - 1),
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         );
       },
     );

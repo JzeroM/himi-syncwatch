@@ -190,15 +190,21 @@ void main() {
       //   解码图标是 memory（原 highQuality 是「HD」错字形）；
       //   新增 tune（显示调节）；倍速/全屏**不在顶栏**（桌面倍速在底栏、
       //   全屏只在底栏，用户明确）。
-      // 679：返回按钮已按用户要求移除（退出统一走 Flutter 面板窗关闭）
+      // 687：**返回按钮恢复**（仅单人模式）——679 曾按用户要求移除，
+      // 但真机反馈单人播放也需要它退出播放。房间模式仍不显示（退出统一
+      // 走右侧 Flutter 面板窗的关闭确认）。
       for (final icon in [
         'Icons.memory',
         'Icons.tune',
+        'Icons.arrowBack',
       ]) {
         expect(topBar, contains(icon), reason: '顶栏缺 $icon');
       }
-      expect(topBar, isNot(contains('Icons.arrowBack')),
-          reason: '679：返回按钮已移除');
+      // 返回按钮必须受房间态门控
+      final backIdx = topBar.indexOf('Icons.arrowBack');
+      expect(topBar.substring(backIdx - 200, backIdx),
+          contains('visible: !playerState.isRoom'),
+          reason: '返回按钮仅单人显示');
       expect(topBar, contains('playerState.title'));
       expect(topBar, contains('playerState.networkSpeedText'));
       // 667：内核胶囊已删（Qt 恒 MPV，用户要求去引擎控件）
@@ -392,15 +398,19 @@ void main() {
           reason: 'detachedWithStdio 的管道不读会阻塞子进程');
     });
 
-    test('679：宿主窗口改为无边框（去掉最小化/最大化/关闭三钮）', () {
-      // 用户要求：Qt 窗不要系统窗口控件。无边框后拖动/缩放由
-      // TopBar 拖拽区（startSystemMove）+ startSystemResize 接管。
+    test('687：宿主窗口边框按房间态切换（单人带三钮）', () {
+      // 【结论反转】679 时这里是「全局无边框」；687 真机反馈单人播放
+      // 也需要最小化/最大化/关闭三钮，于是改为：
+      //   - QML 初始 `flags: Qt.Window`（带边框）
+      //   - 进房时 C++ `setRoomChrome(true)` 改 GWL_STYLE 去掉边框
+      //     （QML 改 flags 会销毁重建窗口 → 播放中断、wid 绑定失效）
       final codeLines = read('$dir/src/qml/Main.qml')
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
       // 680：必须保留 Qt.Window 类型位（否则 WS_POPUP → 不进任务栏）
-      expect(codeLines, contains('Qt.Window | Qt.FramelessWindowHint'));
+      expect(codeLines, contains('flags: Qt.Window'));
+      expect(codeLines, isNot(contains('FramelessWindowHint')));
     });
   });
 
