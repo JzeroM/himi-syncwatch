@@ -69,6 +69,14 @@ class QtPlayerPipe {
   Stream<Map<String, Object?>> get windowMoved =>
       _windowMovedController.stream;
 
+  /// 683：Qt 窗被抬到前面 → Dart 把面板也抬上来（两窗同层）。
+  ///
+  /// 【与置顶的区别】这只是「一起抬一下」，不设 `AlwaysOnTop`——用户切到
+  /// 别的软件时两窗仍会被正常盖住（用户明确要求「灵活、不要固定最上层」）。
+  final StreamController<void> _raisedController =
+      StreamController<void>.broadcast();
+  Stream<void> get raised => _raisedController.stream;
+
   /// 断开回调（Qt 进程退出/崩溃）。
   void Function()? onDisconnected;
 
@@ -197,6 +205,9 @@ class QtPlayerPipe {
             if (data is Map) {
               _windowMovedController.add(Map<String, Object?>.from(data));
             }
+          } else if (type == 'raised') {
+            // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
+            _raisedController.add(null);
           }
         } catch (e) {
           LogService().log('QtPlayer', '管道 JSON 解析失败: $e');
@@ -221,6 +232,7 @@ class QtPlayerPipe {
     unawaited(_windowStateController.close());
     unawaited(_layoutController.close());
     unawaited(_windowMovedController.close());
+    unawaited(_raisedController.close());
   }
 
   /// 推送播放器状态给 Qt。
@@ -289,6 +301,7 @@ class QtPlayerPipe {
     } catch (_) {}
     try {
       await _windowMovedController.close();
+      await _raisedController.close();
     } catch (_) {}
   }
 }

@@ -183,7 +183,9 @@ void main() {
       expect(idx, greaterThan(0));
       final body = androidHost.substring(idx, idx + 1600);
       expect(body, contains('alpha = 1f'));
-      expect(body, contains('clearFlags'));
+      // 682：`clearFlags` 是 Window 的方法，LayoutParams 只能操作 flags
+      // 位字段（旧写法编译失败：Unresolved reference 'clearFlags'）。
+      expect(body, contains('FLAG_NOT_TOUCHABLE.inv()'));
       expect(body, contains('applyVideoInsetRight(lastVideoInsetPx)'));
     });
   });

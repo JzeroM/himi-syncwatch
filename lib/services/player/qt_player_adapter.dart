@@ -108,6 +108,12 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// 677：窗口态回调（全屏切换；房间并排与全屏互斥）。
   void Function(bool fullscreen)? onFullscreenChanged;
 
+  /// 683：Qt 窗被抬到前面 → 把 Flutter 面板窗也抬上来（两窗同层）。
+  ///
+  /// 【为什么不置顶】用户明确要求「两窗同一层，但不要固定最上层」——
+  /// 切到别的软件时两窗要能一起被盖住。
+  void Function()? onRaised;
+
   /// 677：房间观众权限（由播放页按 `_canControlPlayback` 注入）。
   ///
   /// 【最后一道防线】即使 QML 漏了 `canControl` 门，这里也直接丢弃
@@ -130,6 +136,8 @@ class QtPlayerAdapter implements PlayerAdapter {
     _pipe.windowStates.listen(_applyWindowState);
     _pipe.layouts.listen((data) => onSplitLayout?.call(data));
     _pipe.windowMoved.listen((data) => onWindowMoved?.call(data));
+    // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
+    _pipe.raised.listen((_) => onRaised?.call());
     _pipe.onDisconnected = () {
       if (_disposed) return;
       LogService().log('QtPlayer', 'Qt 进程已退出');

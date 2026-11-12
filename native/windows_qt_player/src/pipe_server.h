@@ -67,6 +67,9 @@ public:
     /// 679：回传**用户**拖动/缩放后的窗口矩形（`windowMoved` 帧）。
     void sendWindowMoved(const QJsonObject& rect);
 
+    /// 683：Qt 窗被抬到前面 → 通知 Dart 把面板也抬上来（两窗同层）。
+    void sendRaised();
+
 signals:
     /// 收到完整的一帧状态 JSON。
     void stateReceived(const QJsonObject& state);

@@ -28,10 +28,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// 旧实现两窗合计铺满整个工作区（宽 = 工作区宽、高 = 工作区高）。
 /// 修复：按工作区缩比居中（宽 82% 且不超 1600，高 80%）。
 ///
-/// ## 4. 并排两窗必须同层
+/// ## 4. 并排两窗必须同层（但**不置顶**）
 ///
-/// 两个独立顶层窗在普通 z-order 下可能只被盖住一个。修复：两窗同时
-/// `HWND_TOPMOST`，全屏除外。
+/// 【683 需求澄清】用户要的是「两窗在 z-order 里始终相邻、不被拆散」，
+/// **不是**「压在所有软件之上」。682 误实现成了 `HWND_TOPMOST`，房间
+/// 开着时把别的软件全盖住 → 用户明确否掉：「要灵活，我只要求了两窗口
+/// 同一层，没说固定最上层」。
+///
+/// 现在：Qt 窗激活 → `HWND_TOP` 抬到非置顶层最前 + 发 `raised` 帧 →
+/// Dart 把面板也抬上来。切到别的软件时两窗一起被正常盖住。
 void main() {
   const dir = 'native/windows_qt_player';
   String read(String p) => File(p).readAsStringSync();
@@ -39,6 +44,9 @@ void main() {
   late String mpvCpp;
   late String mpvH;
   late String mainCpp;
+  late String pipeH;
+  late String pipeCpp;
+  late String pipeDart;
   late String adapterDart;
   late String playerScreen;
 
@@ -46,9 +54,22 @@ void main() {
     mpvCpp = read('$dir/src/mpv_window.cpp');
     mpvH = read('$dir/src/mpv_window.h');
     mainCpp = read('$dir/src/main.cpp');
+    pipeH = read('$dir/src/pipe_server.h');
+    pipeCpp = read('$dir/src/pipe_server.cpp');
+    pipeDart = read('lib/services/player/qt_player_pipe.dart');
     adapterDart = read('lib/services/player/qt_player_adapter.dart');
     playerScreen = read('lib/screens/player/player_screen.dart');
   });
+
+  /// 剔除注释行（`//` 与 `///`）——注释里会提到旧写法「说明为什么改」，
+  /// 直接用 `contains` 会误判成「代码里还在用」。
+  String codeOnly(String src) => src
+      .split('\n')
+      .where((l) {
+        final t = l.trimLeft();
+        return !t.startsWith('//') && !t.startsWith('*');
+      })
+      .join('\n');
 
   /// 截取 `signature` 起始到函数体结束的片段（源码断言用）。
   ///
@@ -218,66 +239,90 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // D. 并排两窗同层
+  // D. 并排两窗联动抬升（同层，但不置顶）
   // ═══════════════════════════════════════════════════════════════
 
-  group('D 并排两窗永远同层（全屏除外）', () {
-    test('D1 Qt 侧用 HWND_TOPMOST / HWND_NOTOPMOST', () {
+  group('D 并排两窗同层但不置顶（683 需求澄清）', () {
+    test('D1 任何地方都不得用 HWND_TOPMOST（会永久压住别的软件）', () {
+      // 用户明确要求：「要灵活，我只要求了两窗口同一层，没说固定最上层」
+      expect(codeOnly(mpvCpp), isNot(contains('HWND_TOPMOST')));
+      expect(codeOnly(mainCpp), isNot(contains('HWND_TOPMOST')));
+      expect(codeOnly(mpvCpp), isNot(contains('HWND_NOTOPMOST')));
+    });
+
+    test('D2 setTopmost 退化为「联动模式开关」（不改窗口层级）', () {
       final body = extract(mpvCpp, 'void MpvWindow::setTopmost(');
-      expect(body, contains('HWND_TOPMOST'));
-      expect(body, contains('HWND_NOTOPMOST'));
-      // 去重：同值不重复 SetWindowPos
-      expect(body, contains('if (topmost_ == topmost) return;'));
+      expect(body, contains('topmost_ = topmost'));
+      // 关键：不得再调 SetWindowPos
+      expect(body, isNot(contains('SetWindowPos')));
     });
 
-    test('D2 置顶是持久层级属性（不是周期性 raise）', () {
-      expect(mpvH, contains('Q_INVOKABLE void setTopmost(bool topmost)'));
-      expect(mpvH, contains('一半被盖'));
+    test('D3 Qt 侧提供 raiseTogether（HWND_TOP 联动抬升）', () {
+      expect(mpvH, contains('Q_INVOKABLE void raiseTogether()'));
+      final body = extract(mpvCpp, 'void MpvWindow::raiseTogether()');
+      expect(body, contains('HWND_TOP'));
+      expect(body, contains('emit raisedToFront()'));
+      expect(body, isNot(contains('HWND_TOPMOST')));
     });
 
-    test('D3 IPC 命令 setTopmost 已接通', () {
-      expect(mainCpp, contains('QLatin1String("setTopmost")'));
-      expect(mainCpp, contains('mpv.setTopmost('));
-      expect(adapterDart, contains("'type': 'setTopmost'"));
+    test('D4 Qt 窗激活时联动抬升（activeChanged 钩子）', () {
+      final attach = extract(mpvCpp, 'bool MpvWindow::attach(');
+      expect(attach, contains('activeChanged'));
+      expect(attach, contains('emit raisedToFront()'));
+      // 失活不处理（让用户正常切走）
+      expect(attach, contains('if (!host_->isActive()) return;'));
     });
 
-    test('D4 Dart 侧进房置顶、退房取消', () {
+    test('D5 raised 帧接通 IPC（Qt → Dart）', () {
+      expect(mainCpp, contains('MpvWindow::raisedToFront'));
+      expect(mainCpp, contains('pipe.sendRaised()'));
+      expect(pipeH, contains('void sendRaised()'));
+      expect(pipeCpp, contains('QStringLiteral("raised")'));
+      expect(pipeDart, contains("type == 'raised'"));
+    });
+
+    test('D6 Dart 侧收到 raised → 抬面板（不置顶、不抢焦点）', () {
+      final body = extract(playerScreen, 'Future<void> _raisePanelWithQt(');
+      // `show(inactive: true)` = 提到最前但不抢键盘焦点
+      expect(body, contains('windowManager.show(inactive: true)'));
+      // 绝不能置顶
+      expect(body, isNot(contains('setAlwaysOnTop(true)')));
+      // 不能 focus()——会把焦点从用户刚点的 Qt 窗抢走
+      expect(body, isNot(contains('windowManager.focus()')));
+      expect(playerScreen, contains('adapter.onRaised'));
+    });
+
+    test('D7 进房开联动、退房关联动', () {
       final body = extract(playerScreen, 'Future<void> _applyRoomTopmost(');
       expect(body, contains('qt.setTopmost(enabled)'));
-      expect(body, contains('windowManager.setAlwaysOnTop(panelTopmost)'));
-      // 进房
       expect(playerScreen, contains('unawaited(_applyRoomTopmost(true))'));
-      // 退房
       final exit = extract(playerScreen, 'Future<void> _exitRoomSplitLayout()');
       expect(exit, contains('_applyRoomTopmost(false)'));
     });
 
-    test('D5 全屏是唯一例外（全屏时关闭两窗置顶）', () {
+    test('D8 主动清掉历史 setAlwaysOnTop 残留（升级用户不再被压住）', () {
+      final body = codeOnly(
+          extract(playerScreen, 'Future<void> _applyRoomTopmost('));
+      // 只允许 false
+      expect(body, contains('windowManager.setAlwaysOnTop(false)'));
+      expect(body, isNot(contains('setAlwaysOnTop(true)')));
+    });
+
+    test('D9 全屏仍按 !fullscreen 开关联动', () {
       final body = extract(playerScreen, 'void _wireRoomQtAdapter');
-      // 全屏回调里按 !fullscreen 应用
       expect(body, contains('_applyRoomTopmost(!fullscreen)'));
     });
 
-    test('D6 Qt 已退出时不留面板单独置顶（否则挡住别的软件）', () {
-      final body = extract(playerScreen, 'Future<void> _applyRoomTopmost(');
-      // Qt 存活判定单独提出
-      expect(body, contains('final qtAlive = qt != null && qt.isAlive;'));
-      // 面板置顶必须以 Qt 存活为前提
-      expect(body, contains('final panelTopmost = enabled && qtAlive;'));
-      expect(body, contains('windowManager.setAlwaysOnTop(panelTopmost)'));
-    });
-
-    test('D7 抬升窗口不破坏置顶层（HWND_TOP 会降级）', () {
-      // Win32 语义：SetWindowPos(HWND_TOP) 把窗口插入**非置顶组**最前，
-      // 置顶窗会被降回普通层 → 两窗同层失效。
+    test('D10 抬升窗口只用 HWND_TOP（不破坏层级语义）', () {
       final raise = extract(mpvCpp, 'void MpvWindow::raiseToFront()');
-      expect(raise, contains('topmost_ ? HWND_TOPMOST : HWND_TOP'));
-      // main.cpp 的 forceForeground 同理（按 exstyle 判定）
+      expect(raise, contains('HWND_TOP'));
+      expect(codeOnly(raise), isNot(contains('HWND_TOPMOST')));
+      // main.cpp 的 forceForeground 同理
       final fgStart = mainCpp.indexOf('const auto forceForeground');
       expect(fgStart, greaterThan(0));
-      final fg = mainCpp.substring(fgStart, fgStart + 1200);
-      expect(fg, contains('WS_EX_TOPMOST'));
-      expect(fg, contains('topmost ? HWND_TOPMOST : HWND_TOP'));
+      final fg = codeOnly(mainCpp.substring(fgStart, fgStart + 1200));
+      expect(fg, contains('HWND_TOP'));
+      expect(fg, isNot(contains('HWND_TOPMOST')));
     });
   });
 
@@ -311,6 +356,13 @@ void main() {
 
     test('F2 hasMedia 在 disposed 后为 false（避免残留判据）', () {
       expect(adapterDart, contains('bool get hasMedia => _hasMedia && !_disposed'));
+    });
+
+    test('F3 适配器 setTopmost 只发联动开关（注释说明不置顶）', () {
+      final body = extract(adapterDart, 'void setTopmost(bool topmost)');
+      expect(body, contains("'type': 'setTopmost'"));
+      // 只是开关，不改层级；Dart 侧注释需写明用户要求
+      expect(adapterDart, contains('不置顶'));
     });
   });
 }

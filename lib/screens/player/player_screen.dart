@@ -3801,6 +3801,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     adapter.onSplitLayout = (layout) {
       unawaited(_applyRoomSplitLayout(layout));
     };
+    // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
+    adapter.onRaised = () => unawaited(_raisePanelWithQt());
     // 679：双向跟随——用户拖/缩 Qt 窗 → 面板窗贴到它右侧、等高
     // 681：记录 Qt 当前宽度（驱动 Qt 跟随时保持不变），并把面板平移过去
     adapter.onWindowMoved = (rect) {
@@ -3870,37 +3872,59 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  /// 682：房间并排时两窗同层（永不「一个被盖、一个没被盖」）。
+  /// 683：房间并排两窗**联动抬升**（同一层，但**不置顶**）。
   ///
-  /// 【问题】房间并排是两个**独立顶层窗**（Qt 视频 + Flutter 面板）。
-  /// 普通 z-order 下用户切到别的软件，可能只盖住其中一个 → 观感像两个
-  /// 不相干的窗口。
+  /// 【需求澄清】用户要的是「两窗在 z-order 里始终相邻、不被拆散」，
+  /// **不是**「压在所有软件之上」。682 误实现成了 `HWND_TOPMOST`，
+  /// 房间开着时把别的软件全盖住 → 用户明确否掉（「要灵活，我只要求了
+  /// 两窗口同一层，没说固定最上层」）。
   ///
-  /// 【方案】两窗同时 `SetWindowPos(HWND_TOPMOST)`：要么都压在别的软件
-  /// 之上，要么被另一个**同样置顶**的窗一起盖住，结构上不可能「一半
-  /// 被盖」。
+  /// 【现在的行为】
+  ///   - 点 Qt 视频窗 → Qt 抬到非置顶层最前 + 发 `raised` 帧 →
+  ///     面板也抬上来（两窗相邻）
+  ///   - 点面板窗 → 面板本来就到最前 → Dart 主动让 Qt 也抬一次
+  ///   - 切到别的软件 → 两窗一起被正常盖住（没有任何置顶属性）
   ///
-  /// 【全屏例外】用户明确要求「全屏除外」——Qt 全屏时关闭两窗置顶，
-  /// 面板也不会飘在全屏视频上。
+  /// 结构上仍保证「要么都在上面、要么都被盖住」，因为两窗永远一起动。
+  ///
+  /// 【全屏例外】Qt 全屏时独占屏幕，面板不参与联动。
   Future<void> _applyRoomTopmost(bool enabled) async {
     if (defaultTargetPlatform != TargetPlatform.windows) return;
     if (widget.roomCode == null) return;
     final qt = MpvSessionPlatform.activeQtAdapter;
     final qtAlive = qt != null && qt.isAlive;
-    if (qtAlive) {
-      qt.setTopmost(enabled);
-    }
-    // 【Qt 已退出时不单独置顶面板】此时并排已不存在（只剩面板一个窗），
-    // 再置顶会让面板挡住用户所有其他软件——与「两窗同层」的初衷相反。
-    final panelTopmost = enabled && qtAlive;
+    // 只开/关「联动模式」，**绝不改窗口置顶属性**。
+    if (qtAlive) qt.setTopmost(enabled);
+    // 保险：确保面板没有被历史的 setAlwaysOnTop(true) 残留置顶。
     try {
-      await windowManager.setAlwaysOnTop(panelTopmost);
-    } catch (e) {
-      LogService().log('Room', '面板窗置顶失败: $e');
+      await windowManager.setAlwaysOnTop(false);
+    } catch (_) {
+      // 非 Windows / 插件不支持：忽略（本来也不该置顶）。
     }
     LogService().log('Room',
-        '并排两窗同层: ${panelTopmost ? "on" : "off"}'
-        '${qtAlive ? "" : "（Qt 未存活，面板不置顶）"}');
+        '并排联动: ${enabled ? "on" : "off"}'
+        '${qtAlive ? "" : "（Qt 未存活，面板独立）"}');
+  }
+
+  /// 683：把 Flutter 面板窗抬到前面（与 Qt 窗保持同层，不置顶）。
+  ///
+  /// 由 Qt 的 `raised` 帧触发——用户点了 Qt 视频窗，面板也要跟上来，
+  /// 否则会出现「视频在前面、面板在后面」的割裂观感。
+  ///
+  /// 【为什么不调 focus()】`focus()` 会把**键盘焦点**抢到面板窗，用户
+  /// 刚点的 Qt 视频窗立刻失活（空格/方向键全失效）。这里只做「提到
+  /// 非置顶层最前」——`show(inactive: true)` 正好是这个语义：显示但
+  /// 不激活。
+  Future<void> _raisePanelWithQt() async {
+    if (!mounted || _disposed) return;
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    if (widget.roomCode == null) return;
+    try {
+      // 已可见时 `show()` 仍会抬 z-order；`inactive: true` 保证不抢焦点。
+      await windowManager.show(inactive: true);
+    } catch (e) {
+      LogService().log('Room', '面板联动抬升失败: $e');
+    }
   }
 
   /// 677：应用 Qt 算好的并排布局（`splitLayout` 帧回调）。

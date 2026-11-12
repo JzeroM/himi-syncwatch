@@ -547,9 +547,13 @@ class AndroidNativePlayerHost(
             try {
                 val w = surf.window
                 if (w != null) {
+                    // 【682 编译修复】`addFlags`/`clearFlags` 是 **Window**
+                    // 的方法，不是 `WindowManager.LayoutParams` 的——这里
+                    // 的接收者是 `w.attributes`（LayoutParams），只能直接
+                    // 操作 `flags` 位字段。
                     w.attributes = w.attributes.apply {
                         alpha = 0f
-                        addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                     }
                 }
             } catch (_: Throwable) {
@@ -562,7 +566,7 @@ class AndroidNativePlayerHost(
                 if (w != null) {
                     w.attributes = w.attributes.apply {
                         alpha = 0f
-                        addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                     }
                 }
             } catch (_: Throwable) {
@@ -577,9 +581,11 @@ class AndroidNativePlayerHost(
             try {
                 val w = surf.window
                 if (w != null) {
+                    // 只清 NOT_TOUCHABLE 这一位，保留其它 flag（全屏/常亮
+                    // 由 applyFullscreen 维护，不能被这里误清）。
                     w.attributes = w.attributes.apply {
                         alpha = 1f
-                        clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
                     }
                 }
                 // show()/属性变更可能重置布局，重申分栏（681）
@@ -595,7 +601,7 @@ class AndroidNativePlayerHost(
                 if (w != null) {
                     w.attributes = w.attributes.apply {
                         alpha = 1f
-                        clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
                     }
                 }
                 // 属性变更可能丢掉全屏/沉浸标志，重申一次

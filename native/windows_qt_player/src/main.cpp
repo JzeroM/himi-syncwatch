@@ -368,13 +368,10 @@ int main(int argc, char* argv[]) {
         // 后面（真机回归：「Qt 窗口出现在详情页后面」）——
         // AttachThreadInput 组合拳 + HWND_TOP 强制到最前。
         //
-        // 682：已置顶（房间并排两窗同层）时改用 HWND_TOPMOST——
-        // `HWND_TOP` 会把窗口从置顶层拽回普通层，导致两窗同层失效
-        //（真机：一个被盖、一个没被盖）。
+        // 683：**只用 HWND_TOP，绝不 HWND_TOPMOST**。用户明确要求房间
+        // 两窗「同一层但不要固定最上层」——置顶会把别的软件永久盖住。
         HWND h = reinterpret_cast<HWND>(host->winId());
-        const bool topmost = (::GetWindowLongPtrW(h, GWL_EXSTYLE) &
-                              WS_EX_TOPMOST) != 0;
-        ::SetWindowPos(h, topmost ? HWND_TOPMOST : HWND_TOP, 0, 0, 0, 0,
+        ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         const DWORD fgThread =
             ::GetWindowThreadProcessId(::GetForegroundWindow(), nullptr);
@@ -800,6 +797,14 @@ int main(int argc, char* argv[]) {
                      [movedTimer](int, int, int, int) {
                          if (!movedTimer->isActive()) movedTimer->start();
                      });
+
+    // ── 683：Qt 窗被抬到前面 → 通知 Dart 抬面板（两窗同层）──
+    //
+    // 【为什么不在这里直接置顶】用户明确要求「同一层但不要固定最上层」：
+    // 切到别的软件时两窗要能一起被盖住。这里只发一个「一起抬」的信号，
+    // Dart 侧把面板窗 `show()`/`focus()` 一下即可。
+    QObject::connect(&mpv, &MpvWindow::raisedToFront, &app,
+                     [&pipe]() { pipe.sendRaised(); });
 
     // ── 677：并排布局回传（Qt 算 → Dart 应用面板侧）──
     QObject::connect(

@@ -165,6 +165,17 @@ void PipeServer::sendWindowMoved(const QJsonObject& rect) {
     sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
 }
 
+/// 683：Qt 窗被抬到前面 → Dart 把 Flutter 面板窗也抬上来（两窗同层）。
+///
+/// 【无 data 字段】只是个「一起抬」的信号，Dart 侧收到就
+/// `windowManager.show()` / `focus()` 面板窗即可。
+void PipeServer::sendRaised() {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("raised"));
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
 void PipeServer::sendRaw(const QByteArray& payload) {
     if (client_ == nullptr) return;
     client_->write(payload);

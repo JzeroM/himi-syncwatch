@@ -160,6 +160,18 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
         lastUserRect_ = g;
         emit userWindowMoved(g.x(), g.y(), g.width(), g.height());
     });
+    // 683：本窗被激活 → 通知 Dart 把面板一起抬上来（两窗同层）。
+    //
+    // 【为什么用 activeChanged 而不是轮询 z-order】`QWindow::activeChanged`
+    // 是系统焦点变化的直接信号，零延迟、零轮询开销。用户点 Qt 视频窗时
+    // 立刻联动，点面板窗时由 Dart 侧对称处理。
+    connect(host, &QWindow::activeChanged, this, [this]() {
+        if (host_ == nullptr) return;
+        // 只在房间并排联动模式（topmost_ 复用为该开关）下生效。
+        if (!topmost_) return;
+        if (!host_->isActive()) return;  // 失活不处理（让用户正常切走）
+        emit raisedToFront();
+    });
     if (host_hwnd_ == nullptr) return false;
 
     hdrRequested_ = hdr;
@@ -677,30 +689,45 @@ void MpvWindow::raiseToFront() {
     if (host_ == nullptr) return;
     const HWND h = reinterpret_cast<HWND>(host_->winId());
     if (h == nullptr) return;
-    // 682：置顶态必须用 HWND_TOPMOST 抬升——`HWND_TOP` 会把窗口从置顶层
-    // 拽回普通层（Win32 语义：插入到**非置顶**组的最前），两窗同层立刻
-    // 失效（面板仍置顶、视频被降级 = 用户反馈的「一个被盖一个没被盖」）。
-    ::SetWindowPos(h, topmost_ ? HWND_TOPMOST : HWND_TOP, 0, 0, 0, 0,
+    // 683：**只用 HWND_TOP，绝不 HWND_TOPMOST**。
+    // `HWND_TOP` 把窗口放到「非置顶层」最前——正常压住别的软件一次，
+    // 但用户切走后就自然被盖住（用户要的「灵活」）。置顶会永久压住
+    // 别人，已被明确否掉。
+    ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     ::SetForegroundWindow(h);
     host_->requestActivate();
 }
 
-/// 682：置顶开关（房间并排时两窗同层，永不「一半被盖」）。
+/// 683：与 Flutter 面板窗**联动抬升**（房间并排，两窗同层）。
 ///
-/// 【为什么用 HWND_TOPMOST 而不是周期性 raise】raise 只能压住「当前已
-/// 存在」的窗口；用户切到别的软件后，那个软件自然会盖住本窗，下次切回
-/// 时才重新抬升。置顶是**持久的层级属性**，与焦点无关，两窗都置顶才能
-/// 保证「要么都在上面、要么被另一个置顶窗一起盖住」。
-void MpvWindow::setTopmost(bool topmost) {
+/// 【与 682 置顶的区别】
+///   - 682：`HWND_TOPMOST` → 永久压在所有软件之上（用户否掉）
+///   - 683：`HWND_TOP`    → 只在被点击/激活时抬到非置顶层最前，
+///                          用户切到别的软件时两窗一起被正常盖住
+///
+/// 关键在「一起」：本窗抬升后发 `userWindowMoved`-同级信号让 Dart 把
+/// 面板也抬上来，于是两窗在 z-order 里始终相邻，不会出现「一个在前面
+/// 一个在后面」的割裂观感。
+void MpvWindow::raiseTogether() {
     if (host_ == nullptr) return;
     const HWND h = reinterpret_cast<HWND>(host_->winId());
     if (h == nullptr) return;
-    if (topmost_ == topmost) return;
-    topmost_ = topmost;
-    ::SetWindowPos(h, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+    ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    qInfo().noquote() << "[window] 置顶:" << (topmost ? "on" : "off");
+    // 通知 Dart：Qt 窗被抬升 → 面板也跟着抬（两窗同层）。
+    emit raisedToFront();
+}
+
+/// 682→683：置顶开关已废弃。
+///
+/// 【为什么保留】旧版 Dart 仍可能发 `setTopmost` 命令；保留为**只记
+/// 状态、不改层级**的 no-op，避免旧包与新 Qt 混用时出现未知命令。
+/// 真正的层级控制改走 [raiseTogether]。
+void MpvWindow::setTopmost(bool topmost) {
+    // 只记录「是否处于并排联动模式」，绝不改窗口 z-order 属性。
+    topmost_ = topmost;
+    qInfo().noquote() << "[window] 并排联动模式:" << (topmost ? "on" : "off");
 }
 
 void MpvWindow::setWindowVisible(bool visible) {
