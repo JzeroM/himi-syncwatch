@@ -70,6 +70,13 @@ public:
     /// 683：Qt 窗被抬到前面 → 通知 Dart 把面板也抬上来（两窗同层）。
     void sendRaised();
 
+    /// 691：播放结束（自然播完）→ 通知 Dart 自动切下一集。
+    ///
+    /// 【为什么必须有】`MpvWindow::playbackEnded` 信号此前**无人连接**——
+    /// Qt 播完一集后 Dart 完全不知道，自动下一集在 Windows 上从未生效
+    ///（安卓靠 `AdapterMediaStatus.end` 事件，Qt 缺这条链路）。
+    void sendEnded();
+
 signals:
     /// 收到完整的一帧状态 JSON。
     void stateReceived(const QJsonObject& state);

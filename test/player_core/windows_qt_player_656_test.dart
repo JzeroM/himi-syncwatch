@@ -1087,7 +1087,8 @@ void main() {
 
     test('headers 透传 mpv（Emby 流鉴权全靠 X-Emby-Token，丢则 401 黑屏）', () {
       expect(mainCpp, contains('"headers"'));
-      // 690：load 多了 startMs 参数（续播起点走 loadfile 的 start 选项）
+      // 690/691：load 多了 startMs 参数（起点在 FILE_LOADED 时 seek，
+      // 不再走 loadfile 的 start 选项——mpv_command 不支持选项字符串）。
       expect(mainCpp, contains('mpv.load(url, headers,'));
       expect(mpvCpp, contains('http-header-fields'));
     });

@@ -114,6 +114,13 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// 切到别的软件时两窗要能一起被盖住。
   void Function()? onRaised;
 
+  /// 691：Qt 自然播完 → 自动切下一集。
+  ///
+  /// 【对齐安卓】安卓靠 `AdapterMediaStatus.end` 事件触发
+  /// `_handleEpisodeFinished`；Qt 侧此前没有对应通道，导致 Windows
+  /// 播完一集不会自动下一集。
+  void Function()? onPlaybackEnded;
+
   /// 677：房间观众权限（由播放页按 `_canControlPlayback` 注入）。
   ///
   /// 【最后一道防线】即使 QML 漏了 `canControl` 门，这里也直接丢弃
@@ -138,6 +145,8 @@ class QtPlayerAdapter implements PlayerAdapter {
     _pipe.windowMoved.listen((data) => onWindowMoved?.call(data));
     // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
     _pipe.raised.listen((_) => onRaised?.call());
+    // 691：自然播完 → 自动切下一集
+    _pipe.ended.listen((_) => onPlaybackEnded?.call());
     _pipe.onDisconnected = () {
       if (_disposed) return;
       LogService().log('QtPlayer', 'Qt 进程已退出');

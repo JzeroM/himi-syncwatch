@@ -176,6 +176,14 @@ void PipeServer::sendRaised() {
     sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
 }
 
+/// 691：播放结束 → Dart 自动切下一集。
+void PipeServer::sendEnded() {
+    if (client_ == nullptr || !authed_) return;
+    QJsonObject frame;
+    frame.insert(QStringLiteral("type"), QStringLiteral("ended"));
+    sendRaw(QJsonDocument(frame).toJson(QJsonDocument::Compact) + '\n');
+}
+
 void PipeServer::sendRaw(const QByteArray& payload) {
     if (client_ == nullptr) return;
     client_->write(payload);

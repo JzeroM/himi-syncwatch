@@ -453,20 +453,16 @@ void MpvWindow::load(const QString& url,
     }
 
     const QByteArray u = url.toUtf8();
-    // 690：**续播起点交给 loadfile 的 `start` 选项**（与鸿蒙
-    // `options.set('start', ...)` 同款做法）。
+    // 691：**回到最简 loadfile**。
     //
-    // 【真机回归】旧实现是 load 之后立刻 `seekTo(startMs)`——`loadfile`
-    // 只是入队（异步），此刻 mpv 还没媒体，`time-pos` 写入被直接忽略
-    // → 有进度点击续播却从头播。
-    QByteArray startOpt;
-    const char* cmd[6] = {"loadfile", u.constData(), "replace", nullptr,
-                          nullptr, nullptr};
-    if (startMs > 0) {
-        startOpt = QByteArray("start=") +
-                   QByteArray::number(startMs / 1000.0, 'f', 3);
-        cmd[3] = startOpt.constData();
-    }
+    // 【真机回归：点继续观看一直黑屏】690 试图用 `loadfile` 的
+    // `start=12.345` 字符串选项传起点——但 `mpv_command` **不接受选项
+    // 字符串**（options 必须走 `mpv_command_node` 的 NODE_MAP），命令
+    // 失败 → 无媒体 → 黑屏。
+    //
+    // 现在改为：load 保持最简形式，起点在 `FILE_LOADED` 事件里补 seek
+    //（那时媒体已就绪，seek 一定生效）。
+    const char* cmd[] = {"loadfile", u.constData(), nullptr};
     const int rc = mpv_command(mpv_, cmd);
     if (rc < 0) {
         lastError_ = QStringLiteral("loadfile 失败: %1")
@@ -475,7 +471,7 @@ void MpvWindow::load(const QString& url,
         return;
     }
 
-    // 690：记下起点，`FILE_LOADED` 时兜底（防旧版 mpv 不认 start 选项）。
+    // 691：记下起点，`FILE_LOADED` 时补 seek。
     pendingStartMs_ = startMs > 0 ? startMs : 0;
 
     // 682：**新资源必须显式起播**。
@@ -1181,21 +1177,18 @@ void MpvWindow::pumpEvents() {
                 break;
             }
             case MPV_EVENT_FILE_LOADED: {
-                // 690：续播起点兜底。
+                // 691：续播定位——**无条件** seek 到目标位置。
                 //
-                // `loadfile` 的 `start` 选项在较新 mpv 才支持；万一当前
-                // 构建不认，这里补一次 seek，保证「有进度点击续播」不会
-                // 从头播。偏差 >1.5s 才补，避免正常情况下的多余跳转
-                //（阈值与 Dart 侧 `_ensureInitialPosition` 一致）。
+                // 【为什么去掉 1.5s 阈值】那是 690 的兜底逻辑（防 `start`
+                // 选项已生效时重复跳转）。现在不再传 `start` 选项，这里
+                // 是**唯一**的定位点，必须执行——否则偏差小时不补 seek
+                // → 从头播。
                 if (pendingStartMs_ > 0) {
                     const qint64 target = pendingStartMs_;
                     pendingStartMs_ = 0;
-                    if (qAbs(positionMs_ - target) > 1500) {
-                        seekTo(target);
-                        qInfo().noquote()
-                            << "[mpv] FILE_LOADED 兜底 seek →" << target
-                            << "ms（start 选项未生效）";
-                    }
+                    seekTo(target);
+                    qInfo().noquote() << "[mpv] FILE_LOADED → seek"
+                                      << target << "ms";
                 }
                 break;
             }

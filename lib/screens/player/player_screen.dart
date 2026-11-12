@@ -3710,6 +3710,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       return true;
     }
 
+    // 691：**单人模式也要接「播完自动下一集」**。
+    //
+    // 房间分支在 `_wireRoomQtAdapter` 里接；单人走 Session 接管，需在这里
+    // 补上——否则 Windows 单人播完一集就停住（安卓靠 `MediaStatus.end`）。
+    adapter.onPlaybackEnded = _handleQtPlaybackEnded;
+
     // 664：Qt 窗口已出现 → **会话常驻接管 + 主窗口立即回详情页**
     // （用户要求：Qt 窗口一出现，另一个窗口就是详情页）。
     //
@@ -3806,6 +3812,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     };
     // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
     adapter.onRaised = () => unawaited(_raisePanelWithQt());
+    // 691：Qt 自然播完 → 自动切下一集（对齐安卓 `MediaStatus.end` 链路）
+    adapter.onPlaybackEnded = _handleQtPlaybackEnded;
     // 679：双向跟随——用户拖/缩 Qt 窗 → 面板窗贴到它右侧、等高
     // 681：记录 Qt 当前宽度（驱动 Qt 跟随时保持不变），并把面板平移过去
     adapter.onWindowMoved = (rect) {
@@ -8346,6 +8354,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // 切集（房主操作 + 发送RTM命令）
+  /// 691：Qt 自然播完 → 自动切下一集（对齐安卓 `MediaStatus.end` 链路）。
+  ///
+  /// 【与安卓的差异】安卓的 `shouldHandleEngineEnd` 用「位置接近时长」
+  /// 判断（防 mdk keyframe seek 误报 end 位）。Qt 的 `playbackEnded` 来自
+  /// mpv 的 `MPV_EVENT_END_FILE(EOF)`——**只在真正播完时**触发，本身
+  /// 可靠，不需要位置校验。
+  ///
+  /// 但仍要防两种误触发：
+  /// - seek 冷却期内（用户拖到结尾附近时 mpv 也可能报 EOF）
+  /// - `_handleEpisodeFinished` 内部已有 `_endHandled` 防重 + 观众权限门
+  void _handleQtPlaybackEnded() {
+    if (!mounted || _disposed) return;
+    // 与安卓同款：seek/拖动中忽略
+    final seekAt = _lastSeekCompletedAt;
+    final seekInProgress = _isSeekingPlayback ||
+        _isDraggingSlider ||
+        (seekAt != null &&
+            DateTime.now().difference(seekAt) <
+                PlayerScreen.autoNextSeekCooldown);
+    if (seekInProgress) {
+      LogService().log('Player', 'Qt 播完但处于 seek 冷却期，忽略');
+      return;
+    }
+    LogService().log('Player', 'Qt 自然播完 → 自动下一集');
+    unawaited(_handleEpisodeFinished(
+      completedAtMs:
+          _duration.inMilliseconds > 0 ? _duration.inMilliseconds : null,
+    ));
+  }
+
   /// 当前集播放完毕：自动切下一集；已是最后一集则提示完播。
   /// `_endHandled` 保证单集只触发一次（mdk end 事件与位置兜底并存）。
   /// [completedAtMs] 用于跳过片尾：按总时长上报并显式标记已观看。

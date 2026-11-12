@@ -806,6 +806,16 @@ int main(int argc, char* argv[]) {
     QObject::connect(&mpv, &MpvWindow::raisedToFront, &app,
                      [&pipe]() { pipe.sendRaised(); });
 
+    // ── 691：自然播完 → 通知 Dart 自动切下一集 ──
+    //
+    // 【为什么必须有】`playbackEnded` 此前**无人连接**——Qt 播完一集后
+    // Dart 完全不知道，Windows 的「自动下一集」从未生效（安卓靠
+    // `AdapterMediaStatus.end` 事件驱动）。
+    QObject::connect(&mpv, &MpvWindow::playbackEnded, &app, [&pipe]() {
+        qInfo() << "[mpv] 播放结束 → 通知 Dart 自动下一集";
+        pipe.sendEnded();
+    });
+
     // ── 677：并排布局回传（Qt 算 → Dart 应用面板侧）──
     QObject::connect(
         &mpv, &MpvWindow::splitLayoutReady, &app,

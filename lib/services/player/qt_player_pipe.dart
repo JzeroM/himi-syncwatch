@@ -77,6 +77,15 @@ class QtPlayerPipe {
       StreamController<void>.broadcast();
   Stream<void> get raised => _raisedController.stream;
 
+  /// 691：自然播完 → 自动切下一集。
+  ///
+  /// 【为什么需要】`MpvWindow::playbackEnded` 此前无人连接——Qt 播完一集
+  /// Dart 完全不知道，Windows 的自动下一集从未生效（安卓靠
+  /// `AdapterMediaStatus.end` 驱动）。
+  final StreamController<void> _endedController =
+      StreamController<void>.broadcast();
+  Stream<void> get ended => _endedController.stream;
+
   /// 断开回调（Qt 进程退出/崩溃）。
   void Function()? onDisconnected;
 
@@ -208,6 +217,9 @@ class QtPlayerPipe {
           } else if (type == 'raised') {
             // 683：Qt 窗被抬到前面 → 面板也抬上来（两窗同层，不置顶）
             _raisedController.add(null);
+          } else if (type == 'ended') {
+            // 691：自然播完 → 自动切下一集
+            _endedController.add(null);
           }
         } catch (e) {
           LogService().log('QtPlayer', '管道 JSON 解析失败: $e');
@@ -233,6 +245,7 @@ class QtPlayerPipe {
     unawaited(_layoutController.close());
     unawaited(_windowMovedController.close());
     unawaited(_raisedController.close());
+    unawaited(_endedController.close());
   }
 
   /// 推送播放器状态给 Qt。
@@ -302,6 +315,7 @@ class QtPlayerPipe {
     try {
       await _windowMovedController.close();
       await _raisedController.close();
+      await _endedController.close();
     } catch (_) {}
   }
 }

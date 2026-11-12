@@ -318,25 +318,21 @@ ApplicationWindow {
         }
     }
 
-    // ── 690：跳过片头/片尾**独立胶囊** ──
+    // ── 690/691：跳过片头/片尾**独立胶囊**（底栏水平居中）──
     //
-    // 【为什么从 BottomBar 移出来】旧实现放在底栏里，跟随
-    // `playerState.controlsVisible` 一起显隐——用户 5 秒不动，控件自动
-    // 隐藏时跳过提示也跟着消失（真机反馈「跳过片头片尾不跟随其他控件
-    // 一起隐藏，有自己的隐藏倒计时」）。
+    // 【为什么独立于 BottomBar】BottomBar 整体由 `controlsVisible` 控制
+    // 透明度，胶囊放里面会跟着控件一起隐藏（真机反馈「跳过提示不该跟随
+    // 其他控件隐藏，有自己的倒计时」）。
     //
-    // 现在独立成层：
-    //   - 显隐只看 `playerState.skipPrompt`（Dart 侧 8 秒倒计时驱动）
-    //   - 不参与 controlsVisible 淡出
-    //   - 位置贴底栏上方（避开进度条），水平居中
+    // 【位置】底栏高 96、胶囊高 34 → 垂直居中在底栏内 = bottomMargin 31。
     Rectangle {
         id: skipCapsule
         visible: playerState.skipPrompt === "intro"
                  || playerState.skipPrompt === "outro"
+        // 底栏水平居中
         anchors.horizontalCenter: parent.horizontalCenter
-        // 贴底栏上沿 + 16（底栏隐藏时胶囊仍停在原位，不跳动）
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.bottomBarHeight + 16
+        anchors.bottomMargin: 31
         width: skipLabel.implicitWidth + 32
         height: 34
         radius: 17
