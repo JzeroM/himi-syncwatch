@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -134,7 +135,11 @@ class _HomeListState extends ConsumerState<_HomeList> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsProvider);
+    // 687：只订阅真正用到的字段——`ref.watch(settingsProvider)` 会监听
+    // 整个 AppSettings（100+ 字段），改任意无关设置都会重建整页，
+    // 这是滚动卡顿/抖动的头号来源。
+    final carouselEnabled =
+        ref.watch(settingsProvider.select((s) => s.homeCarousel));
     final imageBase = ref.watch(tmdbImageBaseProvider);
     final epoch = ref.watch(tmdbHomeRefreshEpochProvider);
     if (epoch != _lastRefreshEpoch) {
@@ -164,7 +169,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
       return _EmptyHome(tvMode: widget.tvMode);
     }
 
-    final carouselEnabled = showHero && settings.homeCarousel;
+    final showCarousel = showHero && carouselEnabled;
     final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
     final headerCount =
         (showHero && (hero != null || heroLoading || sectionsLoading)) ? 1 : 0;
@@ -181,7 +186,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
       if (headerCount > 0)
         hero == null
             ? _HeroSkeleton(height: heroHeight)
-            : carouselEnabled
+            : showCarousel
                 ? HomeHeroCarousel(
                     items: [
                       for (final entry in heroes) _toHero(entry),
@@ -238,7 +243,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
         ),
     ];
 
-    final list = RefreshIndicator(
+    final list = GlassRefreshIndicator(
       onRefresh: () => refreshTmdbHome(ref),
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -256,7 +261,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (carouselEnabled && hero != null)
+        if (showCarousel && hero != null)
           HomeHeroBackground(
             imageUrl: _toHero(hero).imageUrl,
             baseColor: Theme.of(context).scaffoldBackgroundColor,

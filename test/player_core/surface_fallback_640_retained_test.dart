@@ -156,8 +156,8 @@ void main() {
 
   group('⑤ TV 引擎控件移到弹幕开关后', () {
     test('681：顶栏单引擎/ TV 模式均隐藏引擎按钮', () {
-      expect(screen, contains('showKernelButton: !settings.tvMode'));
-      expect(screen, contains('isSingleEngine(tvMode: settings.tvMode)'));
+      expect(screen, contains('showKernelButton: !tvMode'));
+      expect(screen, contains('isSingleEngine(tvMode: tvMode)'));
     });
 
     test('681：底栏引擎按钮仅多引擎 TV 显示', () {

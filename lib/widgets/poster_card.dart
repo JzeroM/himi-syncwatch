@@ -13,6 +13,7 @@ class PosterCard extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.serverBadge,
+    this.heroTag,
   });
 
   /// 资源数据。
@@ -30,6 +31,15 @@ class PosterCard extends StatelessWidget {
   /// 集数角标让位（同为左上角，来源归属优先）。
   final String? serverBadge;
 
+  /// 687：Hero 共享元素 tag（可选）。
+  ///
+  /// 【只在主列表传值】首页/分类/搜索/收藏 → 详情页这条链路启用。
+  /// 「相似推荐」等可能同页出现相同影片的位置**不传**，否则同页多个
+  /// 同 tag 的 Hero 会抛异常。
+  ///
+  /// 详情页侧落点见 `detail_screen.dart` 的隐藏 Hero。
+  final Object? heroTag;
+
   /// 海报下方文字区预留高度（标题 + 年份 + 间距，含少量余量）。
   static const double textReservedHeight = 46;
 
@@ -38,6 +48,55 @@ class PosterCard extends StatelessWidget {
 
   /// 海报图区（2:3）高度：供横栏箭头垂直居中对齐使用。
   static double mediaHeightFor(double width) => width * 1.5;
+
+  /// 687：传了 [heroTag] 才包 Hero（主列表 → 详情页共享元素）。
+  ///
+  /// 【为什么要去重】同一个影片可能在同一页出现多次（首页的「继续观看」
+  /// 与「分类区」、搜索的多个来源等）。Flutter 要求**同一路由子树内
+  /// Hero tag 唯一**，重复会直接抛
+  /// `There are multiple heroes that share the same tag`。
+  ///
+  /// 这里用「本帧已用过的 tag 集合」做运行时去重：先出现的包 Hero，
+  /// 后出现的自动降级为普通卡片（视觉上无差别，只是不参与飞行动画）。
+  static final Set<Object> _heroTagsInFrame = {};
+  static int _heroFrameStamp = -1;
+
+  Widget _maybeHero(Widget child) {
+    final tag = heroTag;
+    if (tag == null) return child;
+    // 每帧重置集合（用帧号判断，避免 addPostFrameCallback 的时序问题）
+    final frame = WidgetsBinding.instance.currentSystemFrameTimeStamp;
+    final stamp = frame.inMicroseconds;
+    if (_heroFrameStamp != stamp) {
+      _heroFrameStamp = stamp;
+      _heroTagsInFrame.clear();
+    }
+    if (!_heroTagsInFrame.add(tag)) {
+      // 本帧已有同 tag → 本次不参与 Hero（避免断言崩溃）
+      return child;
+    }
+    return Hero(
+      tag: tag,
+      // 飞行中保持 2:3 竖版 + 圆角收敛（详情页落点是极小占位，
+      // 主视觉由 backdrop 接管，不做横竖比拉伸）。
+      flightShuttleBuilder: (_, animation, __, ___, ____) {
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (context, _) {
+            final t = Curves.easeOut.transform(animation.value);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(12 * (1 - t)),
+              child: Material(
+                color: Colors.transparent,
+                child: child,
+              ),
+            );
+          },
+        );
+      },
+      child: child,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +115,14 @@ class PosterCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ClipRRect(
+          // 687：Hero 共享元素（仅传了 heroTag 的主列表卡片启用）。
+          //
+          // 【flightShuttleBuilder】列表是竖版 2:3 海报，详情页落点是
+          // 极小占位（详情页主视觉是横版 backdrop）——默认 Hero 会把
+          // 竖版硬拉到横版变形。这里让飞行中保持 2:3 + 圆角随进度
+          // 收敛，落地瞬间由详情页 backdrop 接管。
+          _maybeHero(
+            ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
               height: width * 1.5,
@@ -132,6 +198,7 @@ class PosterCard extends StatelessWidget {
                     ),
                 ],
               ),
+            ),
             ),
           ),
           const SizedBox(height: 6),

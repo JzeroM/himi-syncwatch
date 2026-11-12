@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/skeleton.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -240,11 +241,12 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     }
     final results = _results;
     if (results == null) {
-      return const Center(child: CircularProgressIndicator());
+      // 687：骨架屏
+      return const SkeletonPosterGrid(columns: 3, rows: 3);
     }
     if (results.isEmpty) {
       return _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonPosterGrid(columns: 3, rows: 3)
           : const Center(
               child: Text('未找到结果', style: TextStyle(color: Colors.white70)),
             );
@@ -332,6 +334,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
             final r = results[index];
             return PosterCard(
               key: ValueKey('posterCard_${r.item.id}_${r.server.id}'),
+              // 687：Hero 共享元素（聚合搜索按来源区分 tag，防同页冲突）
+              heroTag: 'poster_${r.item.id}_${r.server.id}',
               item: r.item,
               width: cellWidth,
               serverBadge: r.server.serverName,

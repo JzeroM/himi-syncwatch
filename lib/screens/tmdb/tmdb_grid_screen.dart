@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -252,7 +253,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
         decoration: BoxDecoration(
           gradient: PosterPalette.pageGradient(accent, base),
         ),
-        child: RefreshIndicator(
+        child: GlassRefreshIndicator(
           onRefresh: () => _load(reset: true),
           child: LayoutBuilder(
             builder: (context, constraints) {

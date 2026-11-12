@@ -108,8 +108,8 @@ void main() {
 
     test('R7 播放器内引擎控件单引擎时隐藏', () {
       // 顶栏
-      expect(playerScreen, contains('showKernelButton: !settings.tvMode'));
-      expect(playerScreen, contains('isSingleEngine(tvMode: settings.tvMode)'));
+      expect(playerScreen, contains('showKernelButton: !tvMode'));
+      expect(playerScreen, contains('isSingleEngine(tvMode: tvMode)'));
       // 底栏（TV）
       expect(playerScreen, contains('isSingleEngine(tvMode: true)'));
       // 菜单守卫

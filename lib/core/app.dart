@@ -1,6 +1,8 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/router.dart';
+import 'package:himi_syncwatch/core/scroll_behavior.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
@@ -30,6 +32,9 @@ class HimiSyncApp extends ConsumerWidget {
         child: MaterialApp.router(
           title: 'HIMI',
           debugShowCheckedModeBanner: false,
+          // 687：统一滚动手感——手机 iOS 式回弹、桌面 Clamping +
+          // 鼠标可拖动 + 细滚动条（详见 HimiScrollBehavior）。
+          scrollBehavior: const HimiScrollBehavior(),
           // TV 模式：焦点事件链上挂遥控器按键层（方向键滚动贯通 + OK 作用域落焦）
           // + directional 导航模式（Slider 只消费左右键，上下放行给焦点导航）
           builder: (context, child) {
@@ -46,6 +51,17 @@ class HimiSyncApp extends ConsumerWidget {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
+            // 687：页面转场——手机 iOS 横滑（比 Android 默认 Zoom 自然），
+            // 桌面淡入上移（不抢眼）。
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+                TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+                TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+              },
+            ),
             // 聚焦可见反馈（TV 遥控器导航：ListTile/Switch/IconButton 等）
             focusColor: const Color(0x886366F1),
             hoverColor: const Color(0x336366F1),

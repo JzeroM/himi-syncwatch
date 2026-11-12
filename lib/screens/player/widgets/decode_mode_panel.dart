@@ -22,7 +22,10 @@ class DecodeModePanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentMode = ref.watch(settingsProvider).decodeMode;
+    // 687：只订阅 decodeMode（旧写法先取整个 AppSettings 再读字段，
+    // 等价于全量监听）。
+    final currentMode =
+        ref.watch(settingsProvider.select((s) => s.decodeMode));
     final modes = ['auto', 'hw', 'sw'];
     final labels = {'auto': '智能', 'hw': '硬解', 'sw': '软解'};
     final descriptions = {

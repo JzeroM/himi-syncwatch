@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 /// 液态玻璃面板（适配层）。
@@ -21,6 +22,7 @@ class GlassContainer extends ConsumerWidget {
     this.fallbackColor = GlassConfig.fallbackColor,
     this.showShadow = true,
     this.popup = false,
+    this.degradeWhileScrolling = false,
   });
 
   final Widget child;
@@ -45,9 +47,24 @@ class GlassContainer extends ConsumerWidget {
   /// 且不参与折射管线，反而与全局降级不一致且完全盖死磨砂。
   final bool popup;
 
+  /// 687：滚动中降级为纯色（停止 120ms 后恢复真折射）。
+  ///
+  /// 【为什么需要】真折射管线每帧都要重新采样背景纹理——列表滚动时
+  /// 每个玻璃项每帧重采样，中低端设备明显掉帧、拖动发涩。滚动中用户
+  /// 看不清折射细节，此时降级视觉几乎无差，却能省掉大部分 GPU 开销。
+  ///
+  /// 只在**列表内的玻璃项**打开（配合外层 [ScrollGlassScope]）；
+  /// 顶栏/底栏/弹层等固定元素保持 true 折射。
+  final bool degradeWhileScrolling;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final glassEnabled = ref.watch(settingsProvider.select((s) => s.glassUi));
+    final settingsGlass =
+        ref.watch(settingsProvider.select((s) => s.glassUi));
+    // 滚动中降级：玻璃开关仍开着，但本帧按纯色渲染。
+    final scrollingDegrade =
+        degradeWhileScrolling && ScrollGlassIndicator.of(context);
+    final glassEnabled = settingsGlass && !scrollingDegrade;
     // iOS 用更淡的默认着色（自定义 tint 不覆盖）→ 背景更透。
     final effectiveTint =
         tint == GlassConfig.panelTint ? GlassConfig.panelTintOf() : tint;

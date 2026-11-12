@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/widgets/pressable_scale.dart';
 
 /// TV 模式下的可聚焦交互项。
 ///
@@ -65,11 +66,13 @@ class TvFocusable extends ConsumerWidget {
     final secondaryTap =
         desktopMouse && onLongPress != null ? onLongPress : null;
     if (!tvMode || !enabled) {
-      return GestureDetector(
+      // 687：非 TV 模式加按压反馈（缩放 0.97）——旧实现直接返回
+      // GestureDetector，手机端点卡片毫无视觉回应（真机「点了没反应」）。
+      return PressableScale(
         onTap: onTap,
         onLongPress: effectiveLongPress,
         onSecondaryTap: secondaryTap,
-        behavior: HitTestBehavior.opaque,
+        enabled: enabled,
         child: child,
       );
     }

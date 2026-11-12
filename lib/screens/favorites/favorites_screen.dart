@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
+import 'package:himi_syncwatch/widgets/skeleton.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -54,12 +56,14 @@ class FavoritesScreen extends ConsumerWidget {
         decoration: BoxDecoration(
           gradient: PosterPalette.pageGradient(accent, base),
         ),
-        child: RefreshIndicator(
+        child: GlassRefreshIndicator(
           onRefresh: () => aggregateMode
               ? ref.refresh(aggregateFavoriteItemsProvider.future)
               : ref.refresh(favoriteItemsProvider.future),
           child: async.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            // 687：骨架屏
+            loading: () =>
+                const SkeletonPosterGrid(columns: 3, rows: 3),
             error: (e, _) => _centered('收藏加载失败：$e'),
             data: (groups) => groups.isEmpty
                 ? _centered(aggregateMode
@@ -240,6 +244,8 @@ class _FavoriteSection extends StatelessWidget {
                           onTap: () => onOpen(entry),
                         )
                       : PosterCard(
+                          // 687：Hero 共享元素（收藏 → 详情页）
+                          heroTag: 'poster_${entry.item.id}',
                           item: entry.item,
                           width: cardWidth,
                           serverBadge:

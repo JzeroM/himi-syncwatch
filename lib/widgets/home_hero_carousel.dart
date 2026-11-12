@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/utils/motion.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 
@@ -212,11 +213,33 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
                 widget.onPageChanged(i);
                 _schedule();
               },
-              itemBuilder: (context, index) => _HeroSlide(
-                item: items[index],
-                imageBuilder: widget.imageBuilder,
-                onTap: widget.onTap,
-              ),
+              itemBuilder: (context, index) {
+                // 687：滚动视差——背景图随页面切换以 0.5 倍速平移，
+                // 制造纵深（前景文字保持原位）。系统减少动画时关闭。
+                final slide = _HeroSlide(
+                  item: items[index],
+                  imageBuilder: widget.imageBuilder,
+                  onTap: widget.onTap,
+                );
+                if (Motion.reduced(context)) return slide;
+                return AnimatedBuilder(
+                  animation: widget.controller,
+                  builder: (context, child) {
+                    double delta = 0;
+                    if (widget.controller.hasClients &&
+                        widget.controller.position.haveDimensions) {
+                      final page = widget.controller.page ?? index.toDouble();
+                      delta = (index - page).clamp(-1.0, 1.0);
+                    }
+                    return Transform.translate(
+                      // 0.5 倍反向位移（相邻页最大偏移半个屏宽）
+                      offset: Offset(delta * 60, 0),
+                      child: child,
+                    );
+                  },
+                  child: slide,
+                );
+              },
             ),
           ),
           if (items.length > 1)

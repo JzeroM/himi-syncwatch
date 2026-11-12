@@ -20,8 +20,10 @@ class DeviceCapabilityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(deviceProfileProvider);
-    final settings = ref.watch(settingsProvider);
-    final eglMarked = settings.eglFaultSeen;
+    // 687：只订阅 eglFaultSeen——旧写法监听整个 AppSettings，
+    // 改任意无关设置都会重建这张卡片。
+    final eglMarked =
+        ref.watch(settingsProvider.select((s) => s.eglFaultSeen));
 
     return Padding(
       key: const ValueKey('deviceCapabilityCard'),

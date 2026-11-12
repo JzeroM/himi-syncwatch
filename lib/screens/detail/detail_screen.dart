@@ -1636,6 +1636,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   // 无缝衔接（不再另算纯色渐变，消除色相跳变与硬接缝）。
                   if (_item != null) _buildAmbientBackdrop(base),
                   content,
+                  // 687：Hero 落点——主列表海报飞过来后在这里「落地」，
+                  // 随即被 backdrop/氛围底覆盖。尺寸 0 保证不参与布局、
+                  // 不遮挡任何内容，只承接共享元素动画的终点。
+                  if (_item != null)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: Hero(
+                        tag: 'poster_${_item!.id}',
+                        child: const SizedBox(width: 0, height: 0),
+                      ),
+                    ),
                 ],
               ),
       ),
@@ -2353,8 +2365,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 非 TV：点某版本 = 选中（信息/流随之更新），再点「开始播放」进播放器。
   /// TV：焦点移到某版本 = 选中，按 OK = 用该版本直接播放。
   Widget _buildMediaSources(MediaItem item, {MediaItem? episode}) {
-    final settings = ref.watch(settingsProvider);
-    final tv = settings.tvMode;
+    // 687：只订阅 tvMode——旧写法监听整个 AppSettings，改任意无关设置
+    // 都会重建这一整块（版本行可能很多，滚动时尤其明显）。
+    final tv = ref.watch(settingsProvider.select((s) => s.tvMode));
     final primary = Theme.of(context).colorScheme.primary;
     // 按「版本偏好」排序（高优先级在前）。
     final ordered = _sortedSources(episode?.mediaSources ?? item.mediaSources);

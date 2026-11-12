@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/skeleton.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
@@ -355,7 +356,8 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
   ) {
     if (aggregateMode) {
       return aggregate!.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        // 687：骨架屏
+        loading: () => const SkeletonPosterGrid(columns: 3, rows: 3),
         error: (e, _) => _errorView(e.toString()),
         data: (groups) {
           final all = _entriesOf(groups);
@@ -406,6 +408,8 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
                           )
                         : PosterCard(
                             key: ValueKey('posterCard_${entry.id}'),
+                            // 687：Hero 共享元素
+                            heroTag: 'poster_${entry.id}',
                             item: entry.item,
                             width: cardWidth,
                             serverBadge:

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
@@ -463,11 +464,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ? emptyView
                         : TvRefreshHotkey(
                             onRefresh: _loadMedia,
-                            child: RefreshIndicator(
+                            child: GlassRefreshIndicator(
                               onRefresh: _loadMedia,
                               child: ListView.builder(
+                                // 687：记住滚动位置——切 tab 回来不再跳回顶部。
+                                key: const PageStorageKey('homeMainList'),
                                 // 空白/内容不足一屏时也可下拉刷新（v1.2.19）
                                 physics: const AlwaysScrollableScrollPhysics(),
+                                // 687：预渲染更多，快速滚动时不易露白。
+                                // ignore: deprecated_member_use
+                                cacheExtent: 600,
                                 padding: EdgeInsets.only(
                                   // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
                                   top: showHero
@@ -483,78 +489,121 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     (_counts != null ? 1 : 0) +
                                     (showHero ? 1 : 0),
                                 itemBuilder: (context, index) {
-                                  if (showHero && index == 0) {
-                                    return HomeHeroCarousel(
-                                      items: _heroItems,
-                                      controller: _heroController,
-                                      height: heroHeight,
-                                      onPageChanged: (i) =>
-                                          setState(() => _heroIndex = i),
-                                      onTap: (item) {
-                                        final media = item.payload;
-                                        if (media is MediaItem) {
-                                          context.push('/detail/${media.id}');
-                                        }
-                                      },
-                                    );
-                                  }
-                                  var i = index - (showHero ? 1 : 0);
-                                  if (_libraries.isNotEmpty) {
-                                    if (i == 0) {
-                                      return _LibraryBar(
-                                        libraries: _libraries,
-                                        onOpen: (lib) => context.push(
-                                          '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-                                        ),
-                                      );
-                                    }
-                                    i--;
-                                  }
-                                  if (resumeVisible.isNotEmpty) {
-                                    if (i == 0) {
-                                      return _ContinueWatchingBar(
-                                        items: resumeVisible,
-                                        onOpen: (item) {
-                                          // 集条目 → 剧详情页 + 定位到该集
-                                          if (item.isEpisode &&
-                                              item.seriesId != null) {
-                                            context.push(
-                                                '/detail/${item.seriesId}?episode=${item.id}');
-                                          } else {
-                                            context.push('/detail/${item.id}');
-                                          }
-                                        },
-                                        onItemLongPress: (item, rect) =>
-                                            showResumeCardMenu(
-                                                context, ref, item, rect),
-                                      );
-                                    }
-                                    i--;
-                                  }
-                                  if (i < _categories.length) {
-                                    final cat = _categories[i];
-                                    return _CategorySection(
-                                      category: cat,
-                                      onViewAll: () => context.push(
-                                        '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
-                                      ),
-                                      onItemTap: (item) =>
-                                          context.push('/detail/${item.id}'),
-                                      onItemLongPress: (item, rect) =>
-                                          showPosterCardMenu(
-                                              context, ref, item, rect),
-                                    );
-                                  }
-                                  // 列表收尾：媒体统计面板（计数加载成功才渲染）
-                                  return StatsPanel(
-                                    key: const ValueKey('statsPanel'),
-                                    counts: _counts!,
+                                  // 687：每项独立图层——滚动时只移动合成层，
+                                  // 不重绘内容（玻璃/阴影项尤其明显）。
+                                  return RepaintBoundary(
+                                    child: _buildHomeItem(
+                                      context,
+                                      index,
+                                      showHero: showHero,
+                                      heroHeight: heroHeight,
+                                      resumeVisible: resumeVisible,
+                                    ),
                                   );
                                 },
                               ),
                             ),
                           );
 
+    return _buildHomeScaffold(
+      tvMode: tvMode,
+      content: content,
+      showHero: showHero,
+      heroHeight: heroHeight,
+      accent: accent,
+      base: base,
+      heroIndex: heroIndex,
+    );
+  }
+
+  /// 687：首页列表单项（原 itemBuilder 内联体抽出，便于统一包
+  /// [RepaintBoundary]）。
+  Widget _buildHomeItem(
+    BuildContext context,
+    int index, {
+    required bool showHero,
+    required double heroHeight,
+    required List<MediaItem> resumeVisible,
+  }) {
+    if (showHero && index == 0) {
+      return HomeHeroCarousel(
+        items: _heroItems,
+        controller: _heroController,
+        height: heroHeight,
+        onPageChanged: (i) =>
+            setState(() => _heroIndex = i),
+        onTap: (item) {
+          final media = item.payload;
+          if (media is MediaItem) {
+            context.push('/detail/${media.id}');
+          }
+        },
+      );
+    }
+    var i = index - (showHero ? 1 : 0);
+    if (_libraries.isNotEmpty) {
+      if (i == 0) {
+        return _LibraryBar(
+          libraries: _libraries,
+          onOpen: (lib) => context.push(
+            '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+          ),
+        );
+      }
+      i--;
+    }
+    if (resumeVisible.isNotEmpty) {
+      if (i == 0) {
+        return _ContinueWatchingBar(
+          items: resumeVisible,
+          onOpen: (item) {
+            // 集条目 → 剧详情页 + 定位到该集
+            if (item.isEpisode &&
+                item.seriesId != null) {
+              context.push(
+                  '/detail/${item.seriesId}?episode=${item.id}');
+            } else {
+              context.push('/detail/${item.id}');
+            }
+          },
+          onItemLongPress: (item, rect) =>
+              showResumeCardMenu(
+                  context, ref, item, rect),
+        );
+      }
+      i--;
+    }
+    if (i < _categories.length) {
+      final cat = _categories[i];
+      return _CategorySection(
+        category: cat,
+        onViewAll: () => context.push(
+          '/category/${cat.folder.id}?name=${Uri.encodeComponent(cat.folder.name)}&type=${cat.folder.collectionType}',
+        ),
+        onItemTap: (item) =>
+            context.push('/detail/${item.id}'),
+        onItemLongPress: (item, rect) =>
+            showPosterCardMenu(
+                context, ref, item, rect),
+      );
+    }
+    // 列表收尾：媒体统计面板（计数加载成功才渲染）
+    return StatsPanel(
+      key: const ValueKey('statsPanel'),
+      counts: _counts!,
+    );
+  }
+
+  /// 687：首页 Scaffold（原 build 尾部内联体抽出）。
+  Widget _buildHomeScaffold({
+    required bool tvMode,
+    required Widget content,
+    required bool showHero,
+    required double heroHeight,
+    required Color? accent,
+    required Color base,
+    required int heroIndex,
+  }) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -829,6 +878,8 @@ class _CategorySection extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: PosterCard(
                     key: ValueKey('posterCard_${item.id}'),
+                    // 687：Hero 共享元素（主列表 → 详情页）
+                    heroTag: 'poster_${item.id}',
                     item: item,
                     width: 102,
                     onTap: () => onItemTap(item),

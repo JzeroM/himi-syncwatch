@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
+import 'package:himi_syncwatch/widgets/skeleton.dart';
+import 'package:himi_syncwatch/widgets/stagger_reveal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
@@ -386,7 +389,8 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      // 687：骨架屏（形状预告内容布局，感知速度比转圈快）
+      return const SkeletonPosterGrid(columns: 3, rows: 3);
     }
 
     if (_error != null) {
@@ -416,7 +420,7 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
 
     return TvRefreshHotkey(
       onRefresh: _loadFirstPage,
-      child: RefreshIndicator(
+      child: GlassRefreshIndicator(
         onRefresh: _loadFirstPage,
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -445,14 +449,22 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                       mainAxisSpacing: 8,
                     ),
                     delegate: SliverChildBuilderDelegate(
-                      (context, index) => PosterCard(
-                        key: ValueKey('posterCard_${_items[index].id}'),
-                        item: _items[index],
-                        width: cellWidth,
-                        onTap: () =>
-                            context.push('/detail/${_items[index].id}'),
-                        onLongPress: (rect) => showPosterCardMenu(
-                            context, ref, _items[index], rect),
+                      // 687：入场 stagger（只播一次）+ 每项独立图层
+                      (context, index) => StaggerReveal(
+                        index: index,
+                        child: RepaintBoundary(
+                          child: PosterCard(
+                            key: ValueKey('posterCard_${_items[index].id}'),
+                            // 687：Hero 共享元素
+                            heroTag: 'poster_${_items[index].id}',
+                            item: _items[index],
+                            width: cellWidth,
+                            onTap: () =>
+                                context.push('/detail/${_items[index].id}'),
+                            onLongPress: (rect) => showPosterCardMenu(
+                                context, ref, _items[index], rect),
+                          ),
+                        ),
                       ),
                       childCount: _items.length,
                     ),

@@ -10200,10 +10200,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildTopBar() {
-    final settings = ref.watch(settingsProvider);
+    // 687：只订阅顶栏真正用到的三个字段（旧写法监听整个 AppSettings，
+    // 播放中任何无关设置变化都会重建顶栏 → 与进度条刷新叠加抖动）。
+    final (:tvMode, :showNetworkSpeed, :glassUi) =
+        ref.watch(settingsProvider.select(
+      (s) => (
+        tvMode: s.tvMode,
+        showNetworkSpeed: s.showNetworkSpeed,
+        glassUi: s.glassUi,
+      ),
+    ));
     final mobilePlatform = PlayerPlatform.isMobile;
     final phoneControls = PlayerScreen.isMobilePhoneControls(
-      tvMode: settings.tvMode,
+      tvMode: tvMode,
       mobilePlatform: mobilePlatform,
     );
     // 竖屏手机不显示标题（589）：尾簇控件多，标题会被压成「…」甚至把
@@ -10216,45 +10225,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return PlayerTopBar(
       title: showTitle ? _currentEpisodeTitle : '',
       // 642：TV 隐藏左上角返回（遥控返回键已覆盖退出），左侧让给时钟/标题。
-      showBack: PlayerScreen.showTopBarBackButton(tvMode: settings.tvMode),
+      showBack: PlayerScreen.showTopBarBackButton(tvMode: tvMode),
       // 642：TV 的网速移到最右（原时钟位置），顶栏 Row 内不再渲染。
       showNetworkSpeed:
-          PlayerScreen.showTopBarNetworkSpeed(tvMode: settings.tvMode),
+          PlayerScreen.showTopBarNetworkSpeed(tvMode: tvMode),
       // 640：TV 模式的引擎切换移到**底栏弹幕开关之后**（遥控更顺手），
       // 顶栏只在非 TV 显示。
       // 681：单引擎平台（安卓手机/鸿蒙/Windows/iOS）不显示内核胶囊
-      showKernelButton: !settings.tvMode &&
+      showKernelButton: !tvMode &&
           !_switchingKernel &&
-          !PlayerEngineFactory.isSingleEngine(tvMode: settings.tvMode),
+          !PlayerEngineFactory.isSingleEngine(tvMode: tvMode),
       kernelLabel: _currentEngine.shortLabel,
       kernelMenuOpen: _showKernelMenu,
       kernelFocusNode: _kernelButtonFocusNode,
       onToggleKernel: _toggleKernelMenu,
-      networkSpeedText: settings.showNetworkSpeed && _networkSpeedBps != null
+      networkSpeedText: showNetworkSpeed && _networkSpeedBps != null
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
       // Erika 无解码档位（自动硬解/软解回退）→ 隐藏解码控件
       showDecodeButton:
-          PlayerScreen.showDecodeButton(tvMode: settings.tvMode) &&
+          PlayerScreen.showDecodeButton(tvMode: tvMode) &&
               _currentEngine != PlayerEngine.erika,
       decodeMenuOpen: _showDecodeModeMenu,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
-          PlayerScreen.showTopSubtitleStyleButton(tvMode: settings.tvMode),
+          PlayerScreen.showTopSubtitleStyleButton(tvMode: tvMode),
       subtitleStyleMenuOpen: _showSubtitleStyleMenu,
       subtitleStyleFocusNode: _subtitleStyleButtonFocusNode,
       onToggleSubtitleStyle: _toggleSubtitleStyleMenu,
-      glassEnabled: settings.glassUi,
+      glassEnabled: glassUi,
       // Erika 画面缩放控件暂不可用 → 隐藏
       showVideoFitButton: widget.roomCode == null &&
-          !settings.tvMode &&
+          !tvMode &&
           _currentEngine != PlayerEngine.erika,
       videoFitIcon: _videoFitIcons[_videoFitModes.indexOf(_videoFit)],
       videoFitLabel: _videoFitLabels[_videoFitModes.indexOf(_videoFit)],
       onCycleVideoFit: _cycleVideoFit,
       // 倍速（网速右侧）/ 转屏（画面比例右侧）：手机版移入顶栏
       showSpeedButton: PlayerScreen.showTopSpeedButton(
-        tvMode: settings.tvMode,
+        tvMode: tvMode,
         mobilePlatform: mobilePlatform,
         isRoom: widget.roomCode != null,
       ),
