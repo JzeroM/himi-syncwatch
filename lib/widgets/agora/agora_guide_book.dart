@@ -72,7 +72,16 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
   void initState() {
     super.initState();
     _flip = AnimationController(vsync: this);
-    _accentTween = ColorTween(end: _accentTarget);
+    // 689：**首次构建直接把 begin 设成目标色**。
+    //
+    // `ColorTween(begin: null, end: X)` 会让 `TweenAnimationBuilder` 从
+    // null 开始插值 → 每次进入声网页都白跑 320ms 颜色动画（整本书每帧
+    // 重建 + `AgoraBookPalette.fromAccent` 每帧重算），这就是「切到声网
+    // 标签卡一下」的**主要原因**。begin == end 时动画无变化，零开销。
+    _accentTween = ColorTween(
+      begin: _accentTarget,
+      end: _accentTarget,
+    );
     widget.resetSignal?.addListener(_handleReset);
   }
 
@@ -288,9 +297,13 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
     final target = _target;
     if (target == null) {
       if (_index == -1) {
-        return AgoraBookCover(
-          palette: palette,
-          onOpen: _openCover,
+        // 689：封面有 7 处 BoxShadow（blur 30/26/14/10/6），每次切回
+        // 声网页都会重建 → 独立图层，避免牵连整页重绘。
+        return RepaintBoundary(
+          child: AgoraBookCover(
+            palette: palette,
+            onOpen: _openCover,
+          ),
         );
       }
       return AgoraBookShell(

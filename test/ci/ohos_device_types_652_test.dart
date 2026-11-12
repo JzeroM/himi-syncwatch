@@ -68,8 +68,14 @@ void main() {
       final m = RegExp(r'^version: (\d+)\.(\d+)\.(\d+)\+(\d+)$', multiLine: true)
           .firstMatch(src);
       expect(m, isNotNull, reason: '版本号格式应为 x.y.z+n');
-      final patch = int.parse(m!.group(3)!);
-      expect(patch, greaterThanOrEqualTo(72));
+      // 689：改用**构建号**判定而非 patch。
+      //
+      // 【为什么】版本号按语义化递增，patch 会在 minor 升级时归零
+      //（如 1.5.99 → 1.6.0），用 patch >= 72 判定会在这种正常升级时误报。
+      // 构建号 `+N` 按 AGENTS.md 要求**单调递增**，是可靠的「已越过 652」判据。
+      final build = int.parse(m!.group(4)!);
+      expect(build, greaterThanOrEqualTo(652),
+          reason: '构建号应已越过 652（当前 +$build）');
     });
   });
 }

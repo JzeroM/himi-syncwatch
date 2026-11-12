@@ -32,6 +32,7 @@ class StaggerReveal extends StatefulWidget {
     this.maxDelayMs = 300,
     this.stepMs = 30,
     this.offsetY = 8,
+    this.itemKey,
   });
 
   /// 该项在列表中的序号（决定延迟）。
@@ -47,6 +48,13 @@ class StaggerReveal extends StatefulWidget {
 
   /// 初始上移距离（像素）。
   final double offsetY;
+
+  /// 688：稳定的项标识（用 item id，**不要用 index**）。
+  ///
+  /// 【为什么需要】列表滚动会把项回收再重建，若用 index 作 key，
+  /// 回收后重新挂载的项可能被误判为「未播过」而重播淡入——滚动中
+  /// 突然闪现动画很突兀。传 item id 可保证同一项只播一次。
+  final Object? itemKey;
 
   /// 已播放过的项（key = identityHashCode of state）。
   ///
@@ -109,8 +117,11 @@ class _StaggerRevealState extends State<StaggerReveal>
     });
   }
 
-  int _identityKey() =>
-      Object.hash(widget.index, widget.child.runtimeType, widget.key);
+  int _identityKey() => Object.hash(
+        // 688：优先用稳定 itemKey（item id）；无则退回 index
+        widget.itemKey ?? widget.index,
+        widget.child.runtimeType,
+      );
 
   @override
   void dispose() {

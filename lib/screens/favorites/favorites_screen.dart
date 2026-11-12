@@ -81,7 +81,6 @@ class FavoritesScreen extends ConsumerWidget {
   Widget _centered(String text) {
     return LayoutBuilder(
       builder: (context, constraints) => ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           SizedBox(
             height: constraints.maxHeight,
@@ -104,7 +103,6 @@ class FavoritesScreen extends ConsumerWidget {
   Widget _buildSections(BuildContext context, WidgetRef ref,
       FavoriteGroups groups, bool tvMode, bool aggregateMode) {
     return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
         top: tvMode ? 12 : GlassConfig.topInsetOf(context),
         bottom: GlassConfig.bottomReserveOf(context),

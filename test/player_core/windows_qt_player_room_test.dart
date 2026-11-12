@@ -169,14 +169,25 @@ void main() {
       expect(sw, contains('_roomEngine.position / 1000.0'));
     });
 
-    test('B6 _syncPlayState / _seekGuarded 房间路径走真实引擎', () {
+    test('B6 _syncPlayState / _seekGuarded 走真实引擎（689 统一口径）', () {
+      // 【结论反转】677 时用 `roomCode == null ? _player : _roomEngine`
+      // 三元，只在**房间模式**读真实引擎；689 真机发现单人模式同样需要
+      //（Windows Qt 接管时 `_player` 是空闲引擎，播放/暂停/跳转全失效），
+      // 于是统一收敛到 `_reportEngine`（内部含同样的 Windows+Qt 判定）。
       final sync = _extract(playerScreen, 'void _syncPlayState()');
-      expect(sync, contains('widget.roomCode == null ? _player : _roomEngine'));
+      expect(sync, contains('final engine = _reportEngine;'));
       final seek = _extract(playerScreen, 'Future<void> _seekGuarded');
-      expect(
-        seek,
-        contains('widget.roomCode == null ? _player : _roomEngine'),
-      );
+      expect(seek, contains('_reportEngine'));
+      // 旧三元写法必须绝迹（注释里提到是说明为什么改，剔除后判定）
+      final codeOnly = playerScreen
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('*');
+          })
+          .join('\n');
+      expect(codeOnly,
+          isNot(contains('widget.roomCode == null ? _player : _roomEngine')));
     });
   });
 

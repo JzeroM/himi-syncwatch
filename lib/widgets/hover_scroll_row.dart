@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/utils/motion.dart';
+import 'package:himi_syncwatch/widgets/horizontal_row_coordinator.dart';
 
 /// 首页横向栏：桌面（鼠标）悬停时左右显示翻页箭头。
 ///
@@ -48,11 +50,38 @@ class _HoverScrollRowState extends State<HoverScrollRow> {
   bool _showLeft = false;
   bool _showRight = false;
 
+  /// 688：互斥回正协调器（仅在首页作用域内存在）。
+  HorizontalRowCoordinator? _coordinator;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_recompute);
+    // 688：接入互斥回正——用户滚本栏时其余栏滑回开头。
+    //
+    // 【为什么只对自建 controller 生效】外部传入 controller 的栏（如
+    // 详情页选集行）有自动定位逻辑，回正会打断它。
+    //
+    // 【为什么不能在 initState 里查 InheritedWidget】会抛
+    // `dependOnInheritedWidgetOfExactType() called before initState
+    // completed`——必须推迟到首帧后。
+    if (_ownsController) {
+      _controller.addListener(_onRowScroll);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _coordinator = HorizontalRowCoordinatorScope.maybeOf(context);
+        _coordinator?.register(_controller);
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _recompute());
+  }
+
+  /// 688：本栏被用户滚动 → 其余栏回正。
+  void _onRowScroll() {
+    if (!_controller.hasClients) return;
+    // 只在用户主动滚动时激活（程序性 jumpTo 不触发）
+    if (!_controller.position.isScrollingNotifier.value) return;
+    _coordinator?.activate(_controller, reduced: Motion.reduced(context));
   }
 
   @override
@@ -66,7 +95,11 @@ class _HoverScrollRowState extends State<HoverScrollRow> {
   @override
   void dispose() {
     _controller.removeListener(_recompute);
-    if (_ownsController) _controller.dispose();
+    if (_ownsController) {
+      _controller.removeListener(_onRowScroll);
+      _coordinator?.unregister(_controller);
+      _controller.dispose();
+    }
     super.dispose();
   }
 

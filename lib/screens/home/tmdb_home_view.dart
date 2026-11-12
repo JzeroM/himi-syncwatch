@@ -246,7 +246,6 @@ class _HomeListState extends ConsumerState<_HomeList> {
     final list = GlassRefreshIndicator(
       onRefresh: () => refreshTmdbHome(ref),
       child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(
           top: headerCount > 0
               ? 0
@@ -446,7 +445,6 @@ class _EmptyHome extends ConsumerWidget {
         disc?.sections.any((section) => section.items.isNotEmpty) ?? false;
 
     return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(
         top: tvMode ? 20 : GlassConfig.topInsetOf(context),
         bottom: GlassConfig.bottomReserveOf(context),

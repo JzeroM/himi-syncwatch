@@ -452,6 +452,8 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
                       // 687：入场 stagger（只播一次）+ 每项独立图层
                       (context, index) => StaggerReveal(
                         index: index,
+                        // 688：用 item id 作稳定标识（防滚动回收后重播）
+                        itemKey: _items[index].id,
                         child: RepaintBoundary(
                           child: PosterCard(
                             key: ValueKey('posterCard_${_items[index].id}'),

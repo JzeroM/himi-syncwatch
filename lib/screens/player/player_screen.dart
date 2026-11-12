@@ -5025,6 +5025,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (tookOver) {
           _isSwitchingMedia = false;
           LogService().log('Player', 'Qt 播放器接管，跳过内置播放器起播');
+          // 689：**Qt 接管分支必须补上会话上报**。
+          //
+          // 【真机根因】此处 `return true` 直接跳过了下面所有逻辑，包括
+          // `_reportStart()`——于是 Windows 单人播放**从未向 Emby 上报
+          // 会话开始/进度**（真机反馈「Win 版播放没向 Emby 上传进度」）。
+          //
+          // 上报链路内部读 `_reportEngine`（已改为 Qt 真实引擎），
+          // 所以这里只要启动即可，位置/暂停态都取 Qt 的值。
+          unawaited(_reportStart());
           return true;
         }
       }
@@ -5331,7 +5340,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   void _syncDurationFromPlayer() {
     final next = Duration(
       milliseconds: PlayerScreen.effectiveDurationMs(
-        playerMs: _player.duration,
+        // 689：读真实引擎（Windows Qt 接管时 `_player.duration` 恒 0，
+        // 只能靠 fallback；读 Qt 才能拿到真实时长）。
+        playerMs: _reportEngine.duration,
         fallbackMs: _fallbackDurationMs,
       ),
     );
@@ -5530,7 +5541,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (_isDraggingSlider || _isSeekingPlayback) {
         return; // 拖动/seek 中不更新，避免进度条回弹/跳回开头
       }
-      final pos = _player.position;
+      // 689：读真实引擎——Windows Qt 接管时 `_player.position` 恒 0，
+      // 会导致 `_evaluateSkipPrompt(0)` 永不满足 → 跳过片头/片尾提示
+      // 在 Qt 播放窗里**从不出现**（真机反馈）。
+      final pos = _reportEngine.position;
       // 原生负值防御：seek 窗口/异常时 mdk position 可能返回 -1 等，
       // 不写入（跳过本 tick，等 seek 完成后回读同步）。
       if (pos < 0) return;
@@ -6973,8 +6987,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _togglePlayPause() {
-    // 677：房间路径要作用在真实引擎（Qt 接管时是 Qt 的 mpv）
-    final engine = widget.roomCode == null ? _player : _roomEngine;
+    // 689：统一走 `_reportEngine`（含 Windows + Qt 存活判定）。
+    // 旧写法只在房间模式用真实引擎，单人模式操作空闲 `_player` →
+    // Windows Qt 接管时「播放/暂停」点了没反应。
+    final engine = _reportEngine;
     if (engine.state == AdapterPlaybackState.playing) {
       engine.state = AdapterPlaybackState.paused;
       if (widget.roomCode != null) {
@@ -7047,8 +7063,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _syncPlayState() {
-    // 677：房间路径读真实引擎（Qt 接管时是 Qt 的 mpv）
-    final engine = widget.roomCode == null ? _player : _roomEngine;
+    // 689：统一走 `_reportEngine`（Windows Qt 接管时读 Qt 真实状态）。
+    final engine = _reportEngine;
     final playing = engine.state == AdapterPlaybackState.playing;
     if (playing) _markPlaybackStarted();
     if (_isPlayingNotifier.value != playing) {
@@ -7063,9 +7079,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool get _shouldReportPlayback => widget.roomCode == null;
 
+  /// 689：**上报链路要读的真实播放引擎**。
+  ///
+  /// 【为什么不能直接用 `_player`】Windows 单人播放走 Qt 独立窗口，真正的
+  /// mpv 在 Qt 进程里，本页的 `_player` 是一台**从未起播的空闲引擎**：
+  ///   - `_player.position` 恒 0 → 上报进度永远写 0，Emby 里看不到续播
+  ///   - `_player.state` 恒 stopped → `isPaused` 判定错误
+  ///
+  /// 房间模式早已用 `_roomEngine` 处理了这个问题，但单人模式漏了
+  ///（真机反馈「Win 版播放没向 Emby 上传进度」）。
+  ///
+  /// 语义与 `_roomEngine` 一致：Windows 且 Qt 存活用 Qt，否则回退本页引擎
+  ///（Android / 鸿蒙 / iOS 行为完全不变）。
+  PlayerAdapter get _reportEngine {
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      final qt = MpvSessionPlatform.activeQtAdapter;
+      if (qt != null && qt.isAlive) return qt;
+    }
+    return _player;
+  }
+
   /// 初始终点尚未被引擎确认时，避免把 0 写回服务器清掉续播。
   int get _reportPosition {
-    final enginePosition = _player.position;
+    final enginePosition = _reportEngine.position;
     if (enginePosition > 0) return enginePosition;
     return _position.inMilliseconds > 0 ? _position.inMilliseconds : 0;
   }
@@ -7098,7 +7134,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       playSessionId: _playSessionId,
       mediaSourceId: _reportMediaSourceId,
       positionMs: _reportPosition,
-      isPaused: _player.state == AdapterPlaybackState.paused,
+      // 689：读真实引擎（Windows Qt 接管时 `_player` 恒 stopped）
+      isPaused: _reportEngine.state == AdapterPlaybackState.paused,
     );
     // 进度变化即刷新续播栏（节流 ≤1 次/2s）
     if (ok && mounted) {
@@ -7477,16 +7514,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _seekGuarded(int targetMs) async {
     _isSeekingPlayback = true;
     try {
-      // 677：房间路径要 seek 真实引擎（Qt 接管时是 Qt 的 mpv）
-      await (widget.roomCode == null ? _player : _roomEngine)
+      // 689：**统一走 `_reportEngine`**——它已包含「Windows + Qt 存活用
+      // Qt，否则回退本页引擎」的判定。
+      //
+      // 旧写法 `widget.roomCode == null ? _player : _roomEngine` 只在
+      // **房间模式**用真实引擎，单人模式仍 seek 空闲的 `_player` →
+      // Windows Qt 接管时「跳过片头/片尾」点了毫无反应（真机反馈）。
+      await _reportEngine
           .seek(positionMs: targetMs)
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
     _isSeekingPlayback = false;
     _lastSeekCompletedAt = DateTime.now();
     if (!mounted) return;
-    // 677：回读也读真实引擎（Qt 接管时 `_player.position` 恒 0）
-    final pos = (widget.roomCode == null ? _player : _roomEngine).position;
+    // 回读也读真实引擎（Qt 接管时 `_player.position` 恒 0）
+    final pos = _reportEngine.position;
     if (pos >= 0) {
       _position = Duration(milliseconds: pos);
       _positionNotifier.value = _position;
@@ -7671,7 +7713,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final segment = _skipController.evaluate(
       positionMs: positionMs,
       durationMs: durationMs,
-      playing: _player.state == AdapterPlaybackState.playing,
+      // 689：读真实引擎（Windows Qt 接管时 `_player.state` 恒 stopped，
+      // 会让 evaluate 认为「未在播放」→ 跳过提示永不触发）。
+      playing: _reportEngine.state == AdapterPlaybackState.playing,
       enabled: true,
       segments: _skipSegments,
     );
@@ -7685,6 +7729,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _skipPromptSegment = segment;
       _showControls = true;
     });
+    // 689：`_skipPromptSegment` 的 **setter 内部已调 `_syncNativePanelData()`**
+    //（见字段定义），这里无需重复推送。
     _resetHideTimer();
     _skipPromptTimer = Timer(const Duration(seconds: 8), () {
       if (mounted) _dismissSkipPrompt();
@@ -7730,6 +7776,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final needsRestore =
         primary == _skipPromptFocusNode || !_isVisiblePlayerFocus(primary);
     setState(() => _skipPromptSegment = null);
+    // 689：隐藏侧同样由 setter 自动推送，无需重复。
     // 提示期间控制条保持可见，但计时器可能已临近到点；给用户完整操作窗口。
     _resetHideTimer();
     if (needsRestore) {

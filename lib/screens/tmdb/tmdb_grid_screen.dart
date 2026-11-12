@@ -270,7 +270,6 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
               return CustomScrollView(
                 key: const ValueKey('tmdbGridScroll'),
                 controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
                   if (widget.isPlatform)
                     SliverPadding(

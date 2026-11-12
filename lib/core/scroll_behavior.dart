@@ -51,20 +51,6 @@ class HimiScrollBehavior extends MaterialScrollBehavior {
         PointerDeviceKind.mouse,
       };
 
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) {
-    // 触屏不显示滚动条（手指本来就能滑，滚动条只会挡内容）
-    if (_isTouchPlatform(getPlatform(context))) return child;
-    // 桌面：细滚动条，可拖动定位
-    return Scrollbar(
-      thickness: 3,
-      radius: const Radius.circular(2),
-      interactive: true,
-      child: child,
-    );
-  }
+  // 688：**不覆写 buildScrollbar**——桌面细滚动条观感差（用户明确否掉），
+  // 回归 Flutter 默认（桌面自带系统滚动条，触屏不显示）。
 }

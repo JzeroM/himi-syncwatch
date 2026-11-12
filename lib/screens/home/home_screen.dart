@@ -5,6 +5,8 @@ import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
+import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
+import 'package:himi_syncwatch/widgets/horizontal_row_coordinator.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
@@ -81,8 +83,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 启动静默检查更新定时器（首屏渲染后触发，dispose 时取消）。
   Timer? _updateCheckTimer;
 
+  /// 688：首页纵向滚动控制器。
+  ///
+  /// 【为什么不用 PageStorageKey】它会把偏移量持久化到磁盘 → 重启应用
+  /// 后首页落在上次位置（用户反馈「初始不在开头」）。用 controller
+  /// 可以精确控制：切 tab 回来时主动 jumpTo(0)。
+  final ScrollController _homeScrollController = ScrollController();
+
+  /// 688：横向栏互斥回正协调器（仅首页作用域）。
+  final HorizontalRowCoordinator _rowCoordinator = HorizontalRowCoordinator();
+
   @override
   void dispose() {
+    _homeScrollController.dispose();
     _updateCheckTimer?.cancel();
     _heroController.dispose();
     super.dispose();
@@ -92,6 +105,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _init();
+    // 688：切回首页时回到顶部（用户明确要求「每次都回顶部」）。
+    //
+    // 监听分支代数：MainShell 切走首页时 bump(0)，回到首页时再触发一次。
+    // 用 post-frame 是因为此时列表可能还没挂载。
+    ref.listenManual<int>(
+      shellBranchEpochProvider.select((m) => m[0] ?? 0),
+      (previous, next) {
+        if (previous == next) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_homeScrollController.hasClients) return;
+          _homeScrollController.jumpTo(0);
+        });
+      },
+    );
     // 检测更新（v1.2.30）：延迟 3s 避开首屏加载高峰；门槛（永不提醒 /
     // 24h 节流 / 忽略此版本）与失败静默都在 checkAndPromptUpdate 内处理。
     _updateCheckTimer = Timer(const Duration(seconds: 3), () {
@@ -467,13 +494,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: GlassRefreshIndicator(
                               onRefresh: _loadMedia,
                               child: ListView.builder(
-                                // 687：记住滚动位置——切 tab 回来不再跳回顶部。
-                                key: const PageStorageKey('homeMainList'),
-                                // 空白/内容不足一屏时也可下拉刷新（v1.2.19）
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                // 687：预渲染更多，快速滚动时不易露白。
+                                // 688：用页面级 controller 代替 PageStorageKey
+                                // ——后者会把滚动位置**跨启动持久化**，导致
+                                // 打开软件时首页不在开头（用户反馈）。
+                                controller: _homeScrollController,
+                                // 688：从 600 降到 250——过大的预渲染反而
+                                // 增加单帧布局开销，滚动发涩。
                                 // ignore: deprecated_member_use
-                                cacheExtent: 600,
+                                cacheExtent: 250,
                                 padding: EdgeInsets.only(
                                   // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
                                   top: showHero
@@ -507,7 +535,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return _buildHomeScaffold(
       tvMode: tvMode,
-      content: content,
+      // 688：横向栏互斥回正作用域——首页内的所有 HoverScrollRow
+      // 共享一个协调器：滚 B 栏时 A 栏自动滑回开头。
+      content: HorizontalRowCoordinatorScope(
+        coordinator: _rowCoordinator,
+        child: content,
+      ),
       showHero: showHero,
       heroHeight: heroHeight,
       accent: accent,

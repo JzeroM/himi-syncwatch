@@ -209,12 +209,16 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('E 列表性能', () {
-    test('E1 首页列表有 PageStorageKey（保滚动位置）', () {
-      expect(homeScreen, contains("PageStorageKey('homeMainList')"));
+    test('E1 688：改用 ScrollController（PageStorageKey 会跨启动持久化）', () {
+      // 【结论反转】687 用 PageStorageKey 想「切 tab 保位置」，但它会把
+      // 滚动偏移持久化到磁盘 → 重启应用后首页不在开头（真机反馈）。
+      // 688 改为页面级 ScrollController + 切 tab 时主动 jumpTo(0)。
+      expect(homeScreen, isNot(contains("PageStorageKey('homeMainList')")));
+      expect(homeScreen, contains('controller: _homeScrollController'));
     });
 
-    test('E2 首页列表有预渲染缓存', () {
-      expect(homeScreen, contains('cacheExtent: 600'));
+    test('E2 688：预渲染缓存降到 250（600 反而增加单帧开销）', () {
+      expect(homeScreen, contains('cacheExtent: 250'));
     });
 
     test('E3 首页列表项包 RepaintBoundary', () {
