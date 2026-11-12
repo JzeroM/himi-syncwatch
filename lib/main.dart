@@ -303,7 +303,9 @@ Future<void> _bootstrap() async {
 
   // 670：Qt 播放器**启动即预热**（隐藏待命）——冷启动的数秒被完全
   // 掩盖，起播窗口秒出。失败静默（起播时再试/回退 646）。
-  if (Platform.isWindows && settingsNotifier.snapshot.useQtPlayer) {
+  //
+  // 685：Windows 恒预热（Qt 播放器已硬编码启用，不再看设置开关）。
+  if (Platform.isWindows) {
     unawaited(MpvSessionPlatform.prewarmQtPlayer());
     LogService().log('Diag', 'Qt 播放器预热已触发（隐藏待命）');
   }

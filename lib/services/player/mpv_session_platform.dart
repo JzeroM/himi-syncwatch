@@ -85,9 +85,24 @@ class MpvSessionPlatform {
 
   /// 656：Windows 是否启用 Qt 播放器窗口。
   ///
-  /// 由播放页按设置注入（`AppSettings.useQtPlayer`）。为 true 时
-  /// `openNativeUi` 会拉起 Qt 进程而不是走 646 的 Win32 顶层窗口。
-  static bool qtPlayerEnabled = false;
+  /// 685：**Windows 恒启用**（设置页已移除「使用 Qt 播放器窗口」开关）。
+  ///
+  /// 【为什么硬编码】Qt 窗口是 Windows 上唯一完整的播放器（进度条 /
+  /// 播放控制 / 音量 / 选集 / 音轨 / 字幕）。关掉会退化成「只有视频、
+  /// 没有控件」的裸窗口，没有任何合理场景，反而让用户以为功能坏了。
+  ///
+  /// 【为什么保留 setter】播放页仍会写一次（值恒为 true），测试与
+  /// 旧代码路径不受影响；写入 false 会被 [isQtPlayerEnabled] 忽略。
+  static bool _qtPlayerEnabled = false;
+
+  /// 656/685：Qt 播放器是否启用。
+  ///
+  /// Windows 恒为 true（硬编码）；其它平台恒为 false。
+  static bool get qtPlayerEnabled =>
+      Platform.isWindows ? true : _qtPlayerEnabled;
+
+  /// 685：兼容旧调用点的 setter——**Windows 上写入会被忽略**。
+  static set qtPlayerEnabled(bool value) => _qtPlayerEnabled = value;
 
   /// 656：Qt 播放器进程的 exe 路径（Windows）。
   ///
@@ -160,7 +175,7 @@ class MpvSessionPlatform {
     }
   }
 
-  /// 670：启动预热（`useQtPlayer` 开启时由应用启动引导调用）。
+  /// 670/685：启动预热（Windows 恒启用，应用启动即调用）。
   ///
   /// 失败静默（起播时会再试/回退 646）；预热期进程意外退出则清理
   /// 死适配器（防起播误复用）。

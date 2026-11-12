@@ -2065,7 +2065,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 弹出、加载在 Qt 窗口内完成。任何失败路径走 [_abandonQtTakeover]
     // 恢复本页 UI（646 回退链路不变）。
     if (defaultTargetPlatform == TargetPlatform.windows &&
-        ref.read(settingsProvider).useQtPlayer &&
+        // 685：Windows 恒启用 Qt（设置页已移除开关）
+        MpvSessionPlatform.qtPlayerEnabled &&
         _qtPlayerExePath() != null) {
       // 677：房间模式也预启动 Qt（否则进房后要等 Qt 冷启动）。
       // 但**不隐身**——房间模式本页要显示房间面板（`_roomPanelMode`）。
@@ -2343,10 +2344,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 这里只做「参数注入」——真正的进程拉起点在 [_startQtPlayer]，
     // 由起播流程调用（那时才知道 URL 与 HDR 决策）。
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      MpvSessionPlatform.qtPlayerEnabled = settings.useQtPlayer;
+      // 685：Windows 恒启用 Qt 播放器（设置页已移除开关，见
+      // `MpvSessionPlatform.qtPlayerEnabled` 的 getter 兜底）。
+      MpvSessionPlatform.qtPlayerEnabled = true;
       MpvSessionPlatform.qtPlayerExePath = _qtPlayerExePath();
       LogService().log('Player',
-          'Qt 播放器开关=${settings.useQtPlayer} exe=${MpvSessionPlatform.qtPlayerExePath}');
+          'Qt 播放器已启用（Windows 固定）exe=${MpvSessionPlatform.qtPlayerExePath}');
     }
 
     // 配置解码器
@@ -3497,7 +3500,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String? _qtPlayerExePath() => MpvSessionPlatform.resolveQtPlayerExePath();
 
   /// 669 B3：Qt 接管进行中——本页 UI 隐藏（起播不露 Flutter 播放页）。
-  /// initState 按「Windows + 非房间 + useQtPlayer + exe 存在」置 true；
+  /// initState 按「Windows + 非房间 + exe 存在」置 true（685 起 Qt 恒启用）；
   /// 任何失败路径经 [_abandonQtTakeover] 清除并恢复 UI。
   bool _qtUiHidden = false;
 

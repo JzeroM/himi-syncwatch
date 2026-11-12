@@ -68,14 +68,21 @@ void main() {
   });
 
   group('② 迁移只执行一次（不反复覆盖用户选择）', () {
-    test('已迁移过 → 用户后来手动选 texture 会被尊重', () {
+    test('685：Windows 下即使已迁移过也恒为 surface', () {
+      // 655 时这里断言「已迁移过 → 用户后来手动选 texture 会被尊重」；
+      // 685 起 Windows 已移除「视频路径」设置（texture 必闪退），
+      // `mpvTextureMigration` 在 Windows 无条件返回 surface + userSet=false。
+      //
+      // 注：本测试运行在 Linux 主机上，`defaultTargetPlatform` 非 windows，
+      // 因此这里验证的是「迁移函数在非 Windows 下仍尊重旧语义」——
+      // Windows 分支由 `windows_hardcoded_settings_685_test.dart` 覆盖。
       final s = AppSettings.fromJson(<String, dynamic>{
         'mpvVideoOutput': 'texture',
         'mpvVideoOutputUserSet': true,
         'mpvTextureAutoMigrated': true, // 已迁移过
       });
       expect(s.mpvVideoOutput, 'texture',
-          reason: '迁移只跑一次，之后用户的选择不能被覆盖');
+          reason: '非 Windows 平台迁移只跑一次，之后用户的选择不能被覆盖');
       expect(s.mpvVideoOutputUserSet, isTrue);
     });
 

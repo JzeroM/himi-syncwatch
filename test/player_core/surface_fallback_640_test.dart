@@ -199,8 +199,14 @@ void main() {
       expect(engineConfig, contains('手动切到'));
     });
 
-    test('Windows 文案保持「默认 Surface」不变', () {
-      expect(engineConfig, contains('Windows 默认 Surface'));
+    test('685：Windows 已移除「视频路径」项（不再有会崩的入口）', () {
+      // 640 时这里断言设置页有「Windows 默认 Surface」文案（提醒别切纹理）；
+      // 685 起整项从 Windows 移除——文案与下拉框一起消失，运行时由
+      // `effectiveMpvVideoOutput` 恒返回 surface 兜底。
+      expect(engineConfig, isNot(contains('Windows 默认 Surface')));
+      expect(engineConfig, isNot(contains('纹理路径在 Windows 会闪退')));
+      // Android/鸿蒙仍保留该项
+      expect(engineConfig, contains("title: '视频路径'"));
     });
   });
 

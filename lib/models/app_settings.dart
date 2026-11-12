@@ -796,6 +796,20 @@ class AppSettings {
     final userSet = json['mpvVideoOutputUserSet'] == true;
     final alreadyMigrated = json['mpvTextureAutoMigrated'] == true;
 
+    // 685：**Windows 恒为 surface**（设置页已移除该选项）。
+    //
+    // 【为什么在这里清理】texture 路径在 Windows 会 0xc0000005 闪退。
+    // 历史配置里若存了 texture / userSet=true，必须一次性纠正并回写，
+    // 否则升级用户一开播就崩。运行时 `effectiveMpvVideoOutput` 也恒返回
+    // surface（双保险，防迁移未及时生效）。
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return const <String, Object>{
+        'mpvVideoOutput': 'surface',
+        'mpvVideoOutputUserSet': false,
+        'mpvTextureAutoMigrated': true,
+      };
+    }
+
     if (stored == 'texture' && userSet && !alreadyMigrated) {
       return const <String, Object>{
         'mpvVideoOutput': 'surface',
@@ -959,7 +973,13 @@ class AppSettings {
           ? json['mpvRenderer'] as String
           : 'auto',
       // 656：Qt 播放器开关。旧数据无此字段 → false（走现有 646 路径）。
-      useQtPlayer: json['useQtPlayer'] as bool? ?? false,
+      //
+      // 685：**Windows 硬编码为 true**——设置页已移除该开关，Qt 窗口是
+      // Windows 上唯一完整的播放器。历史配置里若存了 false，这里直接
+      // 纠正（加载后会回写，等于一次性迁移）。
+      useQtPlayer: defaultTargetPlatform == TargetPlatform.windows
+          ? true
+          : (json['useQtPlayer'] as bool? ?? false),
       renderCompatMode: json['renderCompatMode'] as bool? ?? false,
       // 旧数据无此字段 → 默认 false（保持 mdk 默认 image=1）
       videoDecoderNoImage: json['videoDecoderNoImage'] as bool? ?? false,
@@ -1077,19 +1097,26 @@ class AppSettings {
     return renderer == 'gpu' ? 'gpu' : 'gpu-next';
   }
 
-  /// MPV 实际生效的视频路径：Windows 未手动设置时默认 **surface**，
-  /// Android/鸿蒙默认 Surface。
+  /// MPV 实际生效的视频路径。
   ///
   /// 646.1：Windows 从 texture 改为 surface。原生顶层窗口（WS_POPUP）需要
   /// `vo=gpu-next` + `wid` 才能 HDR 直出；texture 路径在 Windows 上会崩
   /// （`flutter_windows.dll` 0xc0000005 @ 0x1551f，三次真机实证）。
+  ///
+  /// 685：**Windows 恒返回 surface**（不再是「未手动设置时才默认」）。
+  ///
+  /// 【为什么硬编码】设置页已移除这一项——Windows 只有 Surface 可用，
+  /// 留着下拉框等于给用户一个「点了就闪退」的选项。历史配置里若存了
+  /// `texture`（或 `userSet=true`），也必须被这里兜住，否则升级用户
+  /// 一开播就崩。
+  ///
+  /// Android/鸿蒙保持可配置（Surface / 纹理都能跑）。
   static String effectiveMpvVideoOutput(
     String configured, {
     required bool userSet,
     TargetPlatform? platform,
   }) {
-    if ((platform ?? defaultTargetPlatform) == TargetPlatform.windows &&
-        !userSet) {
+    if ((platform ?? defaultTargetPlatform) == TargetPlatform.windows) {
       return 'surface';
     }
     return configured == 'texture' ? 'texture' : 'surface';

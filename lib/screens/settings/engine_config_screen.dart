@@ -117,7 +117,8 @@ class _EngineTabBody extends ConsumerWidget {
         // 640：原文案写死「HarmonyOS MPV」+「ohcodec 硬件解码」——Android /
         // Windows 也用 MPV（默认内核），且硬解器按平台不同
         // （Android=MediaCodec、Windows=D3D11/DXVA、鸿蒙=ohcodec）。
-        // 641：Windows 已移除 MPV（texture 返回崩溃、surface 灰屏）。
+        // 685：Windows 已统一为 MPV（Qt 独立播放窗 + vo=gpu-next 直出），
+        // 原先「641：Windows 已移除 MPV」的说明已过时。
         title: Text('MPV'),
         subtitle: Text(
           'libmpv 内核（Android / Windows / 鸿蒙默认），'
@@ -136,27 +137,27 @@ class _EngineTabBody extends ConsumerWidget {
         onSelected: (v) => notifier.update(decodeMode: v),
       ),
       const Divider(height: 1),
-      settingOptionTile(
-        context: context,
-        tvMode: settings.tvMode,
-        title: '视频路径',
-        // 646.1：Windows 改为默认 Surface（原生顶层窗口 + vo=gpu-next
-        // HDR 直出）；纹理路径在 Windows 上会崩（0xc0000005 @ 0x1551f）。
-        //
-        // 655：删除「渲染失败自动回退纹理」——自动判据会误伤正常设备，
-        // 且误判会持久化锁死。现在完全由用户手动选择。
-        subtitle: defaultTargetPlatform == TargetPlatform.windows
-            ? 'Windows 默认 Surface（原生顶层窗口，HDR 直出）；'
-                '纹理路径在 Windows 会闪退，请勿切换'
-            : '默认 Surface 直出（HDR 需显示端支持）；'
-                '若出现有声音无画面，请手动切到「纹理」',
-        labels: AppSettings.mpvVideoOutputLabels,
-        value: AppSettings.effectiveMpvVideoOutput(
-          settings.mpvVideoOutput,
-          userSet: settings.mpvVideoOutputUserSet,
+      // 685：Windows **不再展示**「视频路径」——
+      // Windows 只有 Surface 可用（texture 会 0xc0000005 闪退），
+      // 给一个点了就崩的下拉框没有意义。运行时由
+      // `AppSettings.effectiveMpvVideoOutput` 恒返回 'surface' 兜底。
+      //
+      // Android/鸿蒙保留可切换（Surface / 纹理都能跑）。
+      if (defaultTargetPlatform != TargetPlatform.windows) ...[
+        settingOptionTile(
+          context: context,
+          tvMode: settings.tvMode,
+          title: '视频路径',
+          subtitle: '默认 Surface 直出（HDR 需显示端支持）；'
+              '若出现有声音无画面，请手动切到「纹理」',
+          labels: AppSettings.mpvVideoOutputLabels,
+          value: AppSettings.effectiveMpvVideoOutput(
+            settings.mpvVideoOutput,
+            userSet: settings.mpvVideoOutputUserSet,
+          ),
+          onSelected: (v) => notifier.update(mpvVideoOutput: v),
         ),
-        onSelected: (v) => notifier.update(mpvVideoOutput: v),
-      ),
+      ],
       // 655：渲染器手动选择（仅 Android Surface 路径有意义）。
       //
       // 取代 639 的「GLES 版本自动探测」——版本号无法预测 gpu-next 能否
@@ -175,19 +176,10 @@ class _EngineTabBody extends ConsumerWidget {
           onSelected: (v) => notifier.update(mpvRenderer: v),
         ),
       ],
-      // 656：Windows 独立 Qt 播放器窗口（带顶栏/底栏/面板控件）。
-      if (defaultTargetPlatform == TargetPlatform.windows) ...[
-        const Divider(height: 1),
-        SwitchListTile(
-          value: settings.useQtPlayer,
-          onChanged: (v) => notifier.update(useQtPlayer: v),
-          title: const Text('使用 Qt 播放器窗口'),
-          subtitle: const Text(
-            '开启后播放视频会打开独立窗口，带完整控件（进度条/播放控制/'
-            '音量/选集/音轨/字幕）。关闭则使用内置原生窗口（只有视频）。',
-          ),
-        ),
-      ],
+      // 685：Windows **不再展示**「使用 Qt 播放器窗口」开关——
+      // Qt 窗口是 Windows 上唯一完整的播放器（进度条/播放控制/音量/
+      // 选集/音轨/字幕）。关掉只剩「有视频没控件」的裸窗口，没有合理
+      // 场景。运行时由 `MpvSessionPlatform.qtPlayerEnabled` 恒 true 兜底。
     ];
   }
 

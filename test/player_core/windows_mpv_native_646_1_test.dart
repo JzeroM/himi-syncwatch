@@ -74,14 +74,17 @@ void main() {
       );
     });
 
-    test('手动设置 texture 时尊重用户（用于排障）', () {
+    test('685：手动设置 texture 也被强制为 surface（Windows 唯一可用）', () {
+      // 646.1 时这里断言「尊重用户选择 texture（用于排障）」；
+      // 685 起设置页已移除该选项——texture 在 Windows 会 0xc0000005
+      // 闪退，留着「排障开关」等于留一个必崩的入口。
       expect(
         AppSettings.effectiveMpvVideoOutput(
           'texture',
           userSet: true,
           platform: TargetPlatform.windows,
         ),
-        'texture',
+        'surface',
       );
     });
 
