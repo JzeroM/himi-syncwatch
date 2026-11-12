@@ -162,28 +162,6 @@ plugins/
 └── himi_windows_rtm/  # Windows RTM
 ```
 
-## 构建
-
-```bash
-# 通用
-flutter pub get
-flutter build apk --release          # Android
-flutter build windows --release      # Windows（另需构建 native/windows_qt_player）
-flutter build ios --release          # iOS
-
-# HarmonyOS（需 Flutter-OH SDK + HarmonyOS Command Line Tools）
-./scripts/build_ohos_local.sh
-```
-
-Windows 的 Qt 播放窗由 `.github/workflows/windows-qt-player.yml` 单独构建，产物打进安装包。
-
-## 测试
-
-```bash
-flutter test                     # 全量
-flutter test test/player_core/   # 播放器 / 房间 / 原生 UI 架构断言
-```
-
 ## 许可
 
 本项目为公开项目，欢迎 Star 与 Issue 反馈。
