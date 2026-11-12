@@ -397,8 +397,13 @@ void main() {
       expect(split, contains('maxPanelW'));
     });
 
-    test('F8 50ms 节拍驱动跟随（复用现有 syncTimer）', () {
-      expect(mainCpp, contains('followParentOncePublic'));
+    test('F8 681：跟随改为事件驱动（50ms 轮询已删除）', () {
+      // 旧实现 syncTimer 每 50ms 把 Qt 拽回 work.left()，用户拖走后
+      // 立刻弹回（真机回归「拖了没跟随」）。681 改为：
+      //   拖 Qt → windowMoved 帧 → Dart 移面板
+      //   拖面板 → WindowListener → setWindowRect 驱动 Qt
+      expect(mainCpp, isNot(contains('followParentOncePublic()')));
+      expect(playerScreen, contains('_RoomSplitWindowListener'));
     });
   });
 
@@ -603,14 +608,15 @@ void main() {
       expect(body, contains('kMinHeight'));
     });
 
-    test('I6 面板窗最小尺寸注入（320×500）', () {
+    test('I6 面板窗最小尺寸注入（320×360）', () {
       final body = _extract(playerScreen, 'Future<void> _applyRoomSplitLayout');
       expect(body, contains('setMinimumSize'));
       expect(body, contains('RoomPanelLayout.minPanelWidth'));
       expect(body, contains('RoomPanelLayout.minPanelHeight'));
       // 常量值必须与 Qt 侧一致
       expect(RoomPanelLayout.minPanelWidth, 320);
-      expect(RoomPanelLayout.minPanelHeight, 500);
+      // 681：500 → 360（与 Qt kMinHeight 一致，用户能自由压矮）
+      expect(RoomPanelLayout.minPanelHeight, 360);
       // Qt 侧 kMinPanelWidth 与 Dart 对齐
       expect(mpvCpp, contains('kMinPanelWidth = 320'));
     });
@@ -1086,22 +1092,82 @@ void main() {
       }
     });
 
-    test('N17 面板跟随 Qt：等高 + 位置贴右 + 放开最大尺寸再 setBounds', () {
+    test('O1 删除 50ms 跟随轮询（拖动不再被拽回原位）', () {
+      // 真机回归：syncTimer 每 50ms 调 followParentOnce() → 用户拖走
+      // Qt 窗 400ms 后就被拽回屏幕左缘（`left = work.left()` 写死）。
+      final mainSrc = read('$dir/src/main.cpp');
+      expect(mainSrc, isNot(contains('followParentOncePublic()')));
+      // Dart 侧不再启用自动托管
+      expect(playerScreen, isNot(contains('qt.setFollowParent(true)')));
+    });
+
+    test('O2 面板窗 move/resize 监听（拖面板 → 驱动 Qt 跟随）', () {
+      expect(playerScreen, contains('_RoomSplitWindowListener'));
+      expect(playerScreen, contains('windowManager.addListener'));
+      expect(playerScreen, contains('windowManager.removeListener'));
+      expect(playerScreen, contains('void _attachSplitWindowListener()'));
+      expect(playerScreen, contains('void _detachSplitWindowListener()'));
+      // dispose 里必须注销
+      final dispose = _extract(playerScreen, 'void dispose()');
+      expect(dispose, contains('_detachSplitWindowListener()'));
+      // 类实现 WindowListener
+      final listener = _extract(playerScreen, 'class _RoomSplitWindowListener');
+      expect(listener, contains('with WindowListener'));
+      expect(listener, contains('onWindowMove'));
+      expect(listener, contains('onWindowResized'));
+    });
+
+    test('O3 防回环：程序性 setBounds 期间不反向驱动 Qt', () {
+      expect(playerScreen, contains('bool _applyingFollowBounds'));
+      final follow = _extract(playerScreen, 'Future<void> _followQtWindow');
+      expect(follow, contains('_applyingFollowBounds = true'));
+      expect(follow, contains('_applyingFollowBounds = false'));
+      final changed = _extract(playerScreen, 'void _onPanelWindowChanged()');
+      expect(changed, contains('if (_applyingFollowBounds) return'));
+    });
+
+    test('O4 拖面板 → Qt 矩形：左侧平移 + 等高 + 宽度不变', () {
+      final body = _extract(playerScreen, 'Future<void> _pushPanelRectToQt');
+      // Qt 在面板左侧
+      expect(body, contains('final qtX = b.left - qtW'));
+      // 等高、同 y
+      expect(body, contains('y: b.top.round()'));
+      expect(body, contains('h: b.height.round()'));
+      // 宽度保持
+      expect(body, contains('w: qtW.round()'));
+      expect(playerScreen, contains('double _lastQtWidth'));
+    });
+
+    test('O5 Qt 拖动 → 面板平移 + 等高（宽度保持）', () {
+      final body = _extract(playerScreen, 'Future<void> _followQtWindow');
+      expect(body, contains('final panelLeft = x + w'));
+      expect(body, contains('Rect.fromLTWH(panelLeft, y, panelW, h)'));
+      // 保持自身宽度（不再用 screenW - panelLeft 算）
+      expect(body, contains('var panelW = cur.width'));
+    });
+
+    test('O6 面板高度可调（min 360 + max 留余量）', () {
+      expect(RoomPanelLayout.minPanelHeight, 360);
+      final apply = _extract(playerScreen, 'Future<void> _applyRoomSplitLayout');
+      // maxH 必须留余量，否则初始即最大、无法调高
+      expect(apply, contains('maxH + 200'));
+    });
+
+    test('O7 程序性 setGeometry 同步 lastUserRect_（防异步回传抖动）', () {
+      final body = _extract(mpvCpp, 'void MpvWindow::setWindowRect');
+      expect(body, contains('lastUserRect_ = next'));
+    });
+
+    test('N17 面板跟随 Qt：等高 + 位置贴右 + 保持自身宽度', () {
       final body = _extract(playerScreen, 'Future<void> _followQtWindow');
       // 位置 = Qt 右边缘
       expect(body, contains('final panelLeft = x + w'));
       // 高度 = Qt 高度（等高）
       expect(body, contains('Rect.fromLTWH(panelLeft, y, panelW, h)'));
-      // 最大尺寸必须先放开，否则 setBounds 被 ptMaxTrackSize 截断
-      // （用具体调用串定位，避免命中注释里的 setMaximumSize 字样）
-      final relaxIdx = body.indexOf('setMaximumSize(Size(screenW, screenW))');
-      final boundsIdx = body.indexOf('windowManager.setBounds(');
-      expect(relaxIdx, greaterThan(0));
-      expect(boundsIdx, greaterThan(0));
-      expect(relaxIdx, lessThan(boundsIdx),
-          reason: '必须先放开最大尺寸再 setBounds');
-      // 空间不足时保持当前宽度（不压成缝）
-      expect(body, contains('RoomPanelLayout.minPanelWidth'));
+      // 681：保持自身宽度（不再用 screenW - panelLeft 算 → 不会抽动）
+      expect(body, contains('var panelW = cur.width'));
+      // 防回环
+      expect(body, contains('_applyingFollowBounds = true'));
     });
 
     test('N15 删除在播资源时 Qt 引擎也要卸载（真机回归「删了还在放」）', () {

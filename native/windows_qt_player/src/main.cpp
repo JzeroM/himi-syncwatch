@@ -750,10 +750,17 @@ int main(int argc, char* argv[]) {
         state.setControlsVisible(true);
     });
 
-    // ── 677：房间并排跟随（50ms 节拍，变化才动）──
-    QObject::connect(syncTimer, &QTimer::timeout, &app, [&mpv]() {
-        mpv.followParentOncePublic();
-    });
+    // ── 681：**删除** 50ms 跟随轮询 ──
+    //
+    // 【真机回归：拖 Qt 窗后面板不跟随 / 调高度面板不跟】旧实现在这里每
+    // 50ms 调 `followParentOnce()`，而它写死 `left = work.left()` ——
+    // 用户把 Qt 窗拖到 x=500 后，400ms 挂起一结束就被拽回 x=0，
+    // 面板也跟着弹回去（观感「拖了没用」）。
+    //
+    // 现在改为**纯事件驱动**：
+    //   - 拖/缩 Qt 窗 → `userWindowMoved` → Dart 把面板平移过去（见下）
+    //   - 拖/缩面板   → Dart 的 WindowListener → `setWindowRect` 驱动 Qt
+    // 谁被拖动，谁就是锚点，另一方跟随。
 
     // ── 679：用户拖动/缩放 Qt 窗 → 回传新矩形（`windowMoved` 帧）──
     //

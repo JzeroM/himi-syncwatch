@@ -557,7 +557,14 @@ void MpvWindow::setWindowRect(int x, int y, int w, int h) {
     splitRect_ = next;
     hasSplitRect_ = true;
     lastFollowRect_ = QRect();  // 让跟随逻辑重新应用一次
-    // 679：程序性移动——不回传 windowMoved
+    // 679/681：程序性移动——不回传 windowMoved。
+    //
+    // 【为什么记录 lastUserRect_ 而不是只靠标志位】`setGeometry` 后
+    // Qt 的 xChanged/yChanged 可能是**异步投递**的（事件循环），那时
+    // applyingProgrammaticGeometry_ 已复位 → 会误判成用户操作回传一次，
+    // 触发 Dart 再移面板 → 抖动。把目标矩形记进 lastUserRect_ 后，
+    // 几何回调里的 `if (g == lastUserRect_) return;` 会把它过滤掉。
+    lastUserRect_ = next;
     applyingProgrammaticGeometry_ = true;
     host_->setGeometry(next);
     applyingProgrammaticGeometry_ = false;

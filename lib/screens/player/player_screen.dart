@@ -3591,6 +3591,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 680：房间解散流程进行中（保持面板态，避免关闭 Qt 后页面跳回播放页布局）。
   bool _roomDestroying = false;
 
+  /// 681：程序性移动面板中（防双向跟随回环）。
+  ///
+  /// `_followQtWindow` 里 `setBounds` 前后置位；WindowListener 的
+  /// move/resize 回调检测到它就跳过（那是响应 Qt 拖动引起的，不该反过来
+  /// 再驱动 Qt）。
+  bool _applyingFollowBounds = false;
+
+  /// 681：Qt 窗当前宽度（驱动 Qt 跟随时保持该宽度不变）。
+  double _lastQtWidth = 0;
+
+  /// 681：面板窗 move/resize 监听（用户拖面板 → 驱动 Qt 跟随）。
+  _RoomSplitWindowListener? _splitWindowListener;
+
   /// 677：房间 Qt 适配器是否已接线（预启动与起播都会触发，防重复摆位）。
   bool _roomQtWired = false;
 
@@ -3786,9 +3799,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       unawaited(_applyRoomSplitLayout(layout));
     };
     // 679：双向跟随——用户拖/缩 Qt 窗 → 面板窗贴到它右侧、等高
+    // 681：记录 Qt 当前宽度（驱动 Qt 跟随时保持不变），并把面板平移过去
     adapter.onWindowMoved = (rect) {
+      final w = (rect['w'] as num?)?.toDouble();
+      if (w != null && w > 0) _lastQtWidth = w;
       unawaited(_followQtWindow(rect));
     };
+    // 681：注册面板窗 move/resize 监听（用户拖面板 → 驱动 Qt 跟随）
+    _attachSplitWindowListener();
     adapter.onFullscreenChanged = (fullscreen) {
       if (!mounted || _disposed) return;
       // 全屏期间暂停跟随（Qt 侧已自行跳过，这里只记账）
@@ -3871,10 +3889,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (maxW != null && maxH != null && maxW > 0 && maxH > 0) {
         // 总宽不超屏：主窗最大宽度被卡死，连最大化按钮也受限
         // （`WM_GETMINMAXINFO.ptMaxTrackSize`），Qt 永远有位置。
-        await windowManager.setMaximumSize(Size(maxW, maxH));
+        //
+        // 681：高度**留余量**（+200）——旧实现 maxH 直接等于工作区高，
+        // 而面板初始高度也是工作区高 → 用户根本没法把面板调高
+        //（真机回归「面板调不了高」）。
+        await windowManager.setMaximumSize(Size(maxW, maxH + 200));
       }
-      // 677：主窗最小尺寸——面板不能拖到 Qt 侧宽度不足（会堆叠）。
-      // 320 + 480 = 800 是并排的最小总宽。
+      // 677/681：主窗最小尺寸——面板不能拖到 Qt 侧宽度不足（会堆叠）。
+      // 高度下限降到 360（与 Qt 侧 kMinHeight 一致），让用户能自由压扁。
       await windowManager.setMinimumSize(
         const Size(RoomPanelLayout.minPanelWidth, RoomPanelLayout.minPanelHeight),
       );
@@ -3888,7 +3910,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         w: (video['w'] as num).round(),
         h: (video['h'] as num).round(),
       );
-      qt.setFollowParent(true);
+      // 681：**不再启用** 50ms 自动托管（`setFollowParent`）——
+      // 它会每 50ms 把 Qt 窗拽回屏幕左缘，用户拖走后立刻弹回。
+      // 双向跟随改为事件驱动：拖 Qt → `windowMoved` 帧 → Dart 移面板；
+      // 拖面板 → Dart 的 WindowListener → `setWindowRect` 驱动 Qt。
       LogService().log('Room', '房间并排已应用: panel=$panelRect');
     } catch (e) {
       LogService().log('Room', '房间并排失败: $e');
@@ -3909,6 +3934,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 1. 拖动**过程中**几何每次变化都回传（Qt 侧已节流 80ms）
   /// 2. 停手后补发一次最终矩形
   /// 3. 本方法只改 Flutter 窗，不回发 Qt 摆位命令（无回环）
+  /// 681：注册面板窗 move/resize 监听（用户拖面板 → 驱动 Qt 跟随）。
+  void _attachSplitWindowListener() {
+    if (_splitWindowListener != null) return;
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    _splitWindowListener = _RoomSplitWindowListener(_onPanelWindowChanged);
+    try {
+      windowManager.addListener(_splitWindowListener!);
+    } catch (e) {
+      LogService().log('Room', '面板窗监听注册失败: $e');
+    }
+  }
+
+  /// 681：注销面板窗监听（dispose 时调用）。
+  void _detachSplitWindowListener() {
+    final l = _splitWindowListener;
+    _splitWindowListener = null;
+    if (l == null) return;
+    try {
+      windowManager.removeListener(l);
+    } catch (_) {}
+  }
+
+  /// 681：Qt 窗被用户拖动/缩放 → Flutter 面板**平移 + 等高**跟随。
+  ///
+  /// 【语义】面板保持**自身宽度**跟着平移（用户选「保持宽度平移」）：
+  /// - `x = Qt.right`（贴 Qt 右侧）
+  /// - `y = Qt.y`、`h = Qt.h`（严格等高）
+  /// - `w` 保持当前宽度，仅当超出屏幕右缘时夹紧
+  ///
+  /// 【为什么不再用「贴屏幕右缘」】旧实现 `panelW = screenW - panelLeft`
+  /// 会让面板在拖动时不断变宽变窄，观感是「面板在抽动」；而且拖动中
+  /// 每次都要 `setMaximumSize` 放开/收紧，容易被 `ptMaxTrackSize` 截断
+  ///（真机回归「拖了没跟随」的直接原因之一）。
+  ///
+  /// 【防回环】`setBounds` 前后置 `_applyingFollowBounds`，
+  /// WindowListener 里检测到该标志就跳过（那是程序自己移的）。
   Future<void> _followQtWindow(Map<String, Object?> rect) async {
     if (!mounted || _disposed) return;
     if (!_roomSplitRequested) return;
@@ -3919,38 +3980,71 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (x == null || y == null || w == null || h == null) return;
     if (w <= 0 || h <= 0) return;
     try {
-      // 屏幕右边缘（逻辑像素，与 window_manager 同坐标系）。
       final view = WidgetsBinding.instance.platformDispatcher.views.first;
       final dpr = view.devicePixelRatio;
       final screenW = view.physicalSize.width / (dpr > 0 ? dpr : 1.0);
+      final cur = await windowManager.getBounds();
       final panelLeft = x + w;
-      var panelW = screenW - panelLeft;
+      // 保持自身宽度；只夹紧到屏幕右缘（不压成缝）
+      var panelW = cur.width;
       if (panelW < RoomPanelLayout.minPanelWidth) {
-        // 空间不够：保持面板当前宽度，只跟随位置与高度（不压成缝）
-        final cur = await windowManager.getBounds();
-        panelW = cur.width;
-        if (panelLeft + panelW > screenW) {
-          panelW = (screenW - panelLeft).clamp(
-            RoomPanelLayout.minPanelWidth,
-            screenW,
-          );
+        panelW = RoomPanelLayout.minPanelWidth;
+      }
+      if (panelLeft + panelW > screenW) {
+        panelW = (screenW - panelLeft).clamp(0.0, panelW);
+        if (panelW < RoomPanelLayout.minPanelWidth) {
+          // 右边放不下面板：贴到屏幕右缘、保持最小宽（允许轻微重叠）
+          panelW = RoomPanelLayout.minPanelWidth;
         }
       }
-      // 【关键】先放开最大尺寸限制，否则 setBounds 会被 ptMaxTrackSize 截断
-      //（真机回归：拖动 Qt 窗时面板宽度卡在旧上限、看起来"没跟随"）。
-      await windowManager.setMaximumSize(Size(screenW, screenW));
-      await windowManager.setBounds(
-        Rect.fromLTWH(panelLeft, y, panelW, h),
-      );
-      // 跟随完成后重新收紧上限（防止用户把面板拉得比可用空间还宽）
-      final maxW = screenW - RoomPanelLayout.minVideoWidth;
-      if (maxW > RoomPanelLayout.minPanelWidth) {
-        await windowManager.setMaximumSize(Size(maxW, screenW));
+      _applyingFollowBounds = true;
+      try {
+        await windowManager.setBounds(
+          Rect.fromLTWH(panelLeft, y, panelW, h),
+        );
+      } finally {
+        _applyingFollowBounds = false;
       }
     } catch (e) {
       LogService().log('Room', '面板跟随 Qt 失败: $e');
     }
   }
+
+  /// 681：用户拖动/缩放 **Flutter 面板窗** → 驱动 Qt 窗平移 + 等高。
+  ///
+  /// 【为什么需要】删掉 50ms 轮询后，「拖面板让 Qt 跟随」必须由事件驱动。
+  /// `window_manager` 的 `onWindowMove/onWindowResized` 提供该事件。
+  ///
+  /// 【防回环】`_applyingFollowBounds` 为 true 时说明是本页在程序性移动
+  /// 面板（响应 Qt 拖动），此时**不能**再反过来驱动 Qt（否则两窗互相推）。
+  void _onPanelWindowChanged() {
+    if (!mounted || _disposed) return;
+    if (!_roomSplitRequested) return;
+    if (_applyingFollowBounds) return;  // 程序性移动，跳过
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive) return;
+    unawaited(_pushPanelRectToQt(qt));
+  }
+
+  Future<void> _pushPanelRectToQt(QtPlayerAdapter qt) async {
+    try {
+      final b = await windowManager.getBounds();
+      // 读取 Qt 当前宽度（保持它不变，只跟随位置与高度）
+      final qtW = _lastQtWidth;
+      if (qtW <= 0) return;
+      final qtX = b.left - qtW;
+      // Qt 与面板等高、同 y
+      qt.setWindowRect(
+        x: qtX.round(),
+        y: b.top.round(),
+        w: qtW.round(),
+        h: b.height.round(),
+      );
+    } catch (e) {
+      LogService().log('Room', '驱动 Qt 跟随失败: $e');
+    }
+  }
+
 
   /// 677：退出房间并排（恢复主窗尺寸/位置 + 关闭跟随）。
   Future<void> _exitRoomSplitLayout() async {
@@ -8698,6 +8792,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 677：退房恢复主窗（并排摆位）——不能等到 Qt 窗关掉才恢复，
     // 否则用户在「已退房但 Qt 还在关」的窗口里看到面板窗只有 380 宽。
     unawaited(_exitRoomSplitLayout());
+    // 681：摘掉面板窗 move/resize 监听
+    _detachSplitWindowListener();
     // 679：释放关闭拦截（否则应用永远关不掉）+ 摘掉退出请求监听
     RoomExitRequest.seq.removeListener(_onRoomExitRequested);
     RoomExitRequest.detach();
@@ -12770,4 +12866,27 @@ class _GlowOrb extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 681：房间并排——面板窗 move/resize 监听。
+///
+/// 【为什么需要】681 删掉了 Qt 侧每 50ms 的「把 Qt 拽回原位」轮询，
+/// 双向跟随改由事件驱动。本类负责「用户拖动/缩放**面板窗**」这一半：
+/// 通知播放页把新矩形下发给 Qt（`setWindowRect`）。
+///
+/// 【防回环】播放页在响应 Qt 拖动时会程序性 `setBounds` 面板，那也会
+/// 触发本监听；播放页用 `_applyingFollowBounds` 标志过滤掉。
+class _RoomSplitWindowListener with WindowListener {
+  _RoomSplitWindowListener(this._onChanged);
+
+  final VoidCallback _onChanged;
+
+  @override
+  void onWindowMove() => _onChanged();
+
+  @override
+  void onWindowResized() => _onChanged();
+
+  @override
+  void onWindowMoved() => _onChanged();
 }

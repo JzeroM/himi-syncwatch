@@ -40,7 +40,10 @@ class RoomPanelLayout {
   static const double minPanelWidth = 320;
 
   /// 房间面板窗最小高度（逻辑像素）——低于此值播报板 + 资源列表都放不下。
-  static const double minPanelHeight = 500;
+  ///
+  /// 681：从 500 降到 360（与 Qt 侧 `kMinHeight` 一致）——旧值太高，
+  /// 用户想把面板压矮时会被卡住（真机回归「面板调不了高/矮」）。
+  static const double minPanelHeight = 360;
 
   /// 计算房间并排布局。
   ///
