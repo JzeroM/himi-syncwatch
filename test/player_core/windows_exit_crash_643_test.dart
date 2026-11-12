@@ -171,20 +171,36 @@ void main() {
       logService = read('lib/services/log_service.dart');
     });
 
-    test('改用 writeAsStringSync + flush', () {
-      expect(logService, contains('writeAsStringSync'));
-      expect(logService, contains('flush: true'));
-      expect(
-        logService,
-        isNot(contains('_runtimeFile?.writeAsString(')),
-        reason: '异步写会在原生闪退时丢失缓冲区',
-      );
+    test('682：落盘改为异步批量（同步 fsync 会卡死 UI 线程）', () {
+      // 【643 → 682 的结论反转】
+      // 643 当时改成 `writeAsStringSync(flush: true)` 是为了「崩溃现场
+      // 必定可取证」。但真机证明：房间拖动窗口时 Qt 每 80ms 回一帧
+      // `windowMoved`，Dart 跟随 + setBounds 连带多次日志 → 主线程
+      // 上排队 fsync → 秒级卡死 → Windows 判定 Application Hang
+      //（「进房间时 / 单人移动播放器窗口时无响应」）。
+      //
+      // 现在：内存缓冲 + 单飞异步 flush。主线程永不做同步 IO。
+      //
+      // 判定前剔除注释行——注释里会提到旧写法（说明为什么改）。
+      final code = logService
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('*');
+          })
+          .join('\n');
+      expect(code, isNot(contains('writeAsStringSync')));
+      expect(code, contains('_runtimeBuffer.add(entry)'));
+      expect(code, contains('_runtimeFlushing'));
+      expect(code, contains('Future<void>.delayed'));
     });
 
     test('文件就绪前的日志先缓存，就绪后补写', () {
-      expect(logService, contains('_pendingRuntimeLines'));
-      expect(logService, contains('_pendingRuntimeLines.add(entry)'));
-      expect(logService, contains('buffered.join'));
+      // 682：启动早期（`_runtimeFile` 还是 null）的日志并入同一缓冲，
+      // 就绪后由 `_initRuntimeFile` 触发一次批量写。
+      expect(logService, contains('_runtimeBuffer'));
+      expect(logService, contains('_runtimeBuffer.add(entry)'));
+      expect(logService, contains('batch.join'));
     });
   });
 }

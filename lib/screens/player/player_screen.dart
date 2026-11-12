@@ -3598,6 +3598,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 再驱动 Qt）。
   bool _applyingFollowBounds = false;
 
+  /// 682：上一次跟随的时间戳（16ms 节流，合并拖动抖动）。
+  DateTime? _lastFollowAt;
+
   /// 681：Qt 窗当前宽度（驱动 Qt 跟随时保持该宽度不变）。
   double _lastQtWidth = 0;
 
@@ -4013,6 +4016,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 【防回环】`setBounds` 前后置 `_applyingFollowBounds`，
   /// WindowListener 里检测到该标志就跳过（那是程序自己移的）。
+  ///
+  /// 【682 真机回归：移动窗口时无响应（Application Hang）】
+  /// 标志只覆盖 `await setBounds` 期间，但 Windows 的
+  /// `WM_MOVE`/`WM_SIZE` 是**异步投递**的——`setBounds` 返回后标志已
+  /// 复位，迟到的事件被当成「用户拖动」→ 再触发一次跟随 → 再移窗口
+  /// → 无限回环。拖动时每秒几十轮，主线程被 IPC + setBounds 打满，
+  /// 最终被系统判定挂起。
+  ///
+  /// 现在加两道闸：
+  ///   1. **目标矩形去重**：与上次程序设置的矩形相同就完全跳过
+  ///   2. **节流**：距上次跟随 <16ms 直接丢弃（合并同一帧内的抖动）
   Future<void> _followQtWindow(Map<String, Object?> rect) async {
     if (!mounted || _disposed) return;
     if (!_roomSplitRequested) return;
@@ -4027,6 +4041,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final dpr = view.devicePixelRatio;
       final screenW = view.physicalSize.width / (dpr > 0 ? dpr : 1.0);
       final cur = await windowManager.getBounds();
+      if (!mounted || _disposed) return;
       final panelLeft = x + w;
       // 保持自身宽度；只夹紧到屏幕右缘（不压成缝）
       var panelW = cur.width;
@@ -4040,11 +4055,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           panelW = RoomPanelLayout.minPanelWidth;
         }
       }
+      final target = Rect.fromLTWH(panelLeft, y, panelW, h);
+      // 闸 1：目标与当前一致 → 已经在位，无需再移（防迟到事件回环）。
+      if ((target.left - cur.left).abs() < 1 &&
+          (target.top - cur.top).abs() < 1 &&
+          (target.width - cur.width).abs() < 1 &&
+          (target.height - cur.height).abs() < 1) {
+        return;
+      }
+      // 闸 2：16ms 内只跟随一次（合并抖动，防 IPC/IO 风暴）。
+      final now = DateTime.now();
+      final last = _lastFollowAt;
+      if (last != null && now.difference(last).inMilliseconds < 16) return;
+      _lastFollowAt = now;
       _applyingFollowBounds = true;
       try {
-        await windowManager.setBounds(
-          Rect.fromLTWH(panelLeft, y, panelW, h),
-        );
+        await windowManager.setBounds(target);
       } finally {
         _applyingFollowBounds = false;
       }
@@ -4076,6 +4102,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final qtW = _lastQtWidth;
       if (qtW <= 0) return;
       final qtX = b.left - qtW;
+      // 682：去重——目标矩形没变就不发命令（防迟到窗口事件回环）。
+      final target = Rect.fromLTWH(
+        qtX.roundToDouble(),
+        b.top.roundToDouble(),
+        qtW.roundToDouble(),
+        b.height.roundToDouble(),
+      );
+      final last = _lastQtRect;
+      if (last != null &&
+          (target.left - last.left).abs() < 1 &&
+          (target.top - last.top).abs() < 1 &&
+          (target.width - last.width).abs() < 1 &&
+          (target.height - last.height).abs() < 1) {
+        return;
+      }
+      _lastQtRect = target;
       // Qt 与面板等高、同 y
       qt.setWindowRect(
         x: qtX.round(),
@@ -4087,6 +4129,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       LogService().log('Room', '驱动 Qt 跟随失败: $e');
     }
   }
+
+  /// 682：上一次下发给 Qt 的矩形（去重，防回环）。
+  Rect? _lastQtRect;
 
 
   /// 677：退出房间并排（恢复主窗尺寸/位置 + 关闭跟随）。

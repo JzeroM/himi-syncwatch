@@ -89,55 +89,57 @@ class WindowsWindowStyle {
 
   /// 定位 Flutter 主窗（本进程 + 类名 + 顶层可见）。
   ///
-  /// 【判据】只认类名会误伤其它 Flutter 应用；只认 pid 可能在 pid 复用后
-  /// 认错。两者组合才唯一（与 Qt 侧 `findParentWindow` 同思路）。
+  /// 【682 真机回归：进房间/移动播放器窗口时无响应（Application Hang）】
+  ///
+  /// 旧实现用 `EnumWindows` + `NativeCallable.isolateLocal` 回调：
+  ///   - `EnumWindows` 会遍历**所有顶层窗口**（含其他进程），只要某个
+  ///     窗口所属线程卡住，枚举就被拖住 → 主线程跟着卡
+  ///   - 回调跨 FFI 边界执行，内部再调 `GetClassNameW` /
+  ///     `GetWindowRect` 等 API，出错风险高
+  ///   - `callback.close()` 在 `finally` 里立即释放，若枚举仍在飞行，
+  ///     回调可能悬空
+  ///
+  /// 现在改用 `FindWindowExW` 按**类名直接查**：不遍历、不回调、
+  /// 不跨 FFI 边界，单次 API 调用即可。类名
+  /// `FLUTTER_RUNNER_WIN32_WINDOW` 是 Flutter runner 注册的，
+  /// 同一时刻本机通常只有一个这样的窗口；再用 pid 复核一次保证唯一。
   static int _findMainWindow() {
     final myPid = pid;
-    var found = 0;
-    // EnumWindows 回调跨 FFI 边界，不能抛异常（会直接终止进程）。
-    final callback = NativeCallable<WNDENUMPROC>.isolateLocal(
-      (int hwnd, int _) {        try {
-          final pidBuf = calloc<Uint32>();
-          try {
-            GetWindowThreadProcessId(hwnd, pidBuf);
-            if (pidBuf.value != myPid) return TRUE;
-          } finally {
-            free(pidBuf);
-          }
-          if (IsWindowVisible(hwnd) == 0) return TRUE;
-          final cls = calloc<Uint16>(256);
-          try {
-            final len = GetClassName(hwnd, cls.cast<Utf16>(), 256);
-            if (len <= 0) return TRUE;
-            if (cls.cast<Utf16>().toDartString() != windowClassName) {
-              return TRUE;
-            }
-          } finally {
-            free(cls);
-          }
-          final rect = calloc<RECT>();
-          try {
-            GetWindowRect(hwnd, rect);
-            final w = rect.ref.right - rect.ref.left;
-            final h = rect.ref.bottom - rect.ref.top;
-            if (w <= 0 || h <= 0) return TRUE;
-          } finally {
-            free(rect);
-          }
-          found = hwnd;
-          return FALSE;  // 找到即停
-        } catch (_) {
-          return TRUE;
-        }
-      },
-      // 异常返回值：TRUE = 继续枚举（回调里抛异常时安全跳过该窗口）
-      exceptionalReturn: TRUE,
-    );
+    final cls = windowClassName.toNativeUtf16();
+    final pidBuf = calloc<Uint32>();
     try {
-      EnumWindows(callback.nativeFunction, 0);
+      // 从桌面顶层窗口开始按类名查找（NULL = 桌面）。
+      var hwnd = FindWindowEx(0, 0, cls, nullptr);
+      while (hwnd != 0) {
+        // pid 复核：防误伤其他 Flutter 应用（pid 复用/多实例）。
+        GetWindowThreadProcessId(hwnd, pidBuf);
+        if (pidBuf.value == myPid &&
+            IsWindowVisible(hwnd) != 0 &&
+            _hasArea(hwnd)) {
+          return hwnd;
+        }
+        hwnd = FindWindowEx(0, hwnd, cls, nullptr);
+      }
+    } catch (_) {
+      // 查找失败不影响房间功能（样式只是观感）。
     } finally {
-      callback.close();
+      free(cls);
+      free(pidBuf);
     }
-    return found;
+    return 0;
+  }
+
+  /// 是否有有效尺寸（跳过 Flutter 的隐藏辅助窗）。
+  static bool _hasArea(int hwnd) {
+    final rect = calloc<RECT>();
+    try {
+      if (GetWindowRect(hwnd, rect) == 0) return false;
+      return rect.ref.right - rect.ref.left > 0 &&
+          rect.ref.bottom - rect.ref.top > 0;
+    } catch (_) {
+      return false;
+    } finally {
+      free(rect);
+    }
   }
 }
