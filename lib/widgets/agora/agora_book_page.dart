@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
 
 class AgoraGuideStep {
@@ -242,19 +244,27 @@ class AgoraBookGuidePage extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: SizedBox.expand(
-                    child: Image.asset(
-                      step.image,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Center(
-                        child: Text(
-                          '请将截图放到:\n${step.image}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: palette.mutedInk,
-                            fontSize: 11,
+                    // 681：按**显示宽度**解码（原图分辨率同步解码会阻塞
+                    // 首帧 → 切声网标签明显掉帧）。
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return assetImage(
+                          context,
+                          step.image,
+                          displayWidth: constraints.maxWidth,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Text(
+                              '请将截图放到:\n${step.image}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: palette.mutedInk,
+                                fontSize: 11,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),

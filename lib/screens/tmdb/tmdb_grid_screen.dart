@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
@@ -75,6 +77,8 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
           semanticLabel: platform.name,
+          // 681：按显示高度 × dpr 解码（logo 是横排图形，宽约为高 2 倍）
+          cacheWidth: cacheWidthFor(context, 26 * 2),
           errorBuilder: (context, error, stackTrace) {
             return Text(platform.name);
           },

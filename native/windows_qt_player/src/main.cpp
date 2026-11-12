@@ -367,8 +367,14 @@ int main(int argc, char* argv[]) {
         // 【671 A2】Windows 前台规则会把新弹出的窗放在 Flutter 窗口
         // 后面（真机回归：「Qt 窗口出现在详情页后面」）——
         // AttachThreadInput 组合拳 + HWND_TOP 强制到最前。
+        //
+        // 682：已置顶（房间并排两窗同层）时改用 HWND_TOPMOST——
+        // `HWND_TOP` 会把窗口从置顶层拽回普通层，导致两窗同层失效
+        //（真机：一个被盖、一个没被盖）。
         HWND h = reinterpret_cast<HWND>(host->winId());
-        ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
+        const bool topmost = (::GetWindowLongPtrW(h, GWL_EXSTYLE) &
+                              WS_EX_TOPMOST) != 0;
+        ::SetWindowPos(h, topmost ? HWND_TOPMOST : HWND_TOP, 0, 0, 0, 0,
                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         const DWORD fgThread =
             ::GetWindowThreadProcessId(::GetForegroundWindow(), nullptr);
@@ -658,7 +664,8 @@ int main(int argc, char* argv[]) {
                              loadedUrl.clear();
                          } else if (type == QLatin1String("startSystemMove")) {
                              // 679：无边框窗口拖动（顶栏拖拽区）
-                             mpv.startSystemMove();                         } else if (type ==
+                             mpv.startSystemMove();
+                         } else if (type ==
                                     QLatin1String("startSystemResize")) {
                              // 679：无边框窗口边缘拉伸（1=左 2=上 4=右 8=下）
                              mpv.startSystemResize(
@@ -671,6 +678,11 @@ int main(int argc, char* argv[]) {
                              // 与全屏互斥，摆位时先退全屏）。
                              mpv.setHostFullscreen(
                                  cmd.value(QLatin1String("fullscreen"))
+                                     .toBool(false));
+                         } else if (type == QLatin1String("setTopmost")) {
+                             // 682：房间并排两窗同层（永不「一半被盖」）。
+                             mpv.setTopmost(
+                                 cmd.value(QLatin1String("topmost"))
                                      .toBool(false));
                          }
                      });

@@ -302,13 +302,17 @@ void main() {
     test('U6 Qt 房间态 playerReady 用 Qt 真实播放态（不被空闲引擎污染）', () {
       // Qt 接管时 `_player` 是空闲引擎（_prepared 恒 false）→ 直接用它
       // 会让占位永远显示，即使 mpv 正在播。
+      //
+      // 682：判据从「position/duration 推断」收敛到显式的 `qt.hasMedia`
+      // ——旧推断在 `stopPlayback()` 回传 `paused:true` 后仍为真，导致
+      // 删空资源后占位文字不显示（真机回归）。
       final body = playerScreen.substring(
         playerScreen.indexOf('qt.pushNativeState(') - 900,
         playerScreen.indexOf('qt.pushNativeState('),
       );
       expect(body, contains("stateJson['playerReady']"));
       expect(body, contains('qt.isAlive'));
-      expect(body, contains('qt.duration'));
+      expect(body, contains('qt.hasMedia'));
     });
   });
 

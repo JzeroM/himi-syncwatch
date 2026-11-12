@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -624,10 +626,13 @@ class _AppIconTile extends StatelessWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(15),
-                    child: Image.asset(
+                    // 681：按显示尺寸（_size=64）解码
+                    child: assetImage(
+                      context,
                       option.asset,
+                      displayWidth: _size,
                       fit: BoxFit.cover,
-                      filterQuality: FilterQuality.medium,
+                      quality: FilterQuality.medium,
                     ),
                   ),
                 ),

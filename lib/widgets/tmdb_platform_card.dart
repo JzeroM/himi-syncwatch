@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tmdb_availability_image.dart';
@@ -67,6 +69,9 @@ class TmdbPlatformCard extends StatelessWidget {
                     height: platform.logoHeight,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
+                    // 681：按显示高度 × dpr 解码（横排 logo 宽约高 2 倍）
+                    cacheWidth:
+                        cacheWidthFor(context, platform.logoHeight * 2),
                     errorBuilder: (context, error, stackTrace) {
                       return _PlatformName(name: platform.name);
                     },

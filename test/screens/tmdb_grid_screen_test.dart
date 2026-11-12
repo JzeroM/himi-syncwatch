@@ -250,8 +250,15 @@ void main() {
     final logo = tester.widget<Image>(
       find.byKey(const ValueKey('tmdbPlatformTitleLogo_9')),
     );
-    expect((logo.image as AssetImage).assetName, endsWith('prime_video.png'));
+    // 681：加了 cacheWidth 后 provider 变成 ResizeImage（内层才是 AssetImage）
+    final provider = logo.image;
+    final asset = provider is ResizeImage
+        ? (provider.imageProvider as AssetImage)
+        : provider as AssetImage;
+    expect(asset.assetName, endsWith('prime_video.png'));
     expect(logo.height, 26);
+    // 681：按显示尺寸解码（高度 26 → 宽约 2 倍，再乘 dpr）
+    expect(provider, isA<ResizeImage>());
     expect(find.text('Prime Video'), findsNothing);
   });
 }

@@ -85,7 +85,13 @@ void main() {
     expect(tester.getCenter(logo).dx, greaterThan(backCenter.dx));
 
     final image = tester.widget<Image>(logo);
-    expect((image.image as AssetImage).assetName, _platform.logoAsset);
+    // 681：加了 cacheWidth 后 provider 变成 ResizeImage（内层才是 AssetImage）
+    final provider = image.image;
+    final asset = provider is ResizeImage
+        ? (provider.imageProvider as AssetImage)
+        : provider as AssetImage;
+    expect(asset.assetName, _platform.logoAsset);
+    expect(provider, isA<ResizeImage>());
     expect(image.fit, BoxFit.contain);
     expect(image.height, 20);
 

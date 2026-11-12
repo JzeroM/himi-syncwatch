@@ -604,14 +604,6 @@ class AndroidNativePlayerHost(
             }
         }
     }
-            // 重新应用全屏布局与视频区收窄（show() 可能把尺寸重置回全屏）。
-            try {
-                applyFullscreen(ctrl)
-                if (lastVideoInsetPx > 0) applyVideoInsetRight(lastVideoInsetPx)
-            } catch (_: Throwable) {
-            }
-        }
-    }
 
     /** 关闭双窗并释放 surface（幂等）。 */
     fun close() {

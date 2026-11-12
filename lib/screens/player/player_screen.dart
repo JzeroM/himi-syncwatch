@@ -3811,6 +3811,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted || _disposed) return;
       // 全屏期间暂停跟随（Qt 侧已自行跳过，这里只记账）
       LogService().log('Room', 'Qt 全屏: $fullscreen');
+      // 682：全屏是「两窗同层」的**唯一例外**——Qt 独占屏幕时面板
+      // 不再置顶（否则面板会飘在全屏视频之上）。
+      unawaited(_applyRoomTopmost(!fullscreen));
     };
     // 房间并排：Qt 算矩形（它有 QScreen，多屏/DPI 都准），Dart 应用面板侧
     unawaited(_enterRoomSplitLayout());
@@ -3864,6 +3867,39 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
+  /// 682：房间并排时两窗同层（永不「一个被盖、一个没被盖」）。
+  ///
+  /// 【问题】房间并排是两个**独立顶层窗**（Qt 视频 + Flutter 面板）。
+  /// 普通 z-order 下用户切到别的软件，可能只盖住其中一个 → 观感像两个
+  /// 不相干的窗口。
+  ///
+  /// 【方案】两窗同时 `SetWindowPos(HWND_TOPMOST)`：要么都压在别的软件
+  /// 之上，要么被另一个**同样置顶**的窗一起盖住，结构上不可能「一半
+  /// 被盖」。
+  ///
+  /// 【全屏例外】用户明确要求「全屏除外」——Qt 全屏时关闭两窗置顶，
+  /// 面板也不会飘在全屏视频上。
+  Future<void> _applyRoomTopmost(bool enabled) async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    if (widget.roomCode == null) return;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    final qtAlive = qt != null && qt.isAlive;
+    if (qtAlive) {
+      qt.setTopmost(enabled);
+    }
+    // 【Qt 已退出时不单独置顶面板】此时并排已不存在（只剩面板一个窗），
+    // 再置顶会让面板挡住用户所有其他软件——与「两窗同层」的初衷相反。
+    final panelTopmost = enabled && qtAlive;
+    try {
+      await windowManager.setAlwaysOnTop(panelTopmost);
+    } catch (e) {
+      LogService().log('Room', '面板窗置顶失败: $e');
+    }
+    LogService().log('Room',
+        '并排两窗同层: ${panelTopmost ? "on" : "off"}'
+        '${qtAlive ? "" : "（Qt 未存活，面板不置顶）"}');
+  }
+
   /// 677：应用 Qt 算好的并排布局（`splitLayout` 帧回调）。
   Future<void> _applyRoomSplitLayout(Map<String, Object?> data) async {
     if (!mounted || _disposed) return;
@@ -3909,6 +3945,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 677：房间模式去掉最大化/最小化按钮（最大化会挤掉 Qt 窗，
       // 最小化会让用户以为房间没了）。关闭 + 拖边缩放保留。
       await WindowsWindowStyle.setRoomChrome(true);
+      // 682：两窗同层——面板与 Qt 视频要么都在上层，要么一起被盖。
+      unawaited(_applyRoomTopmost(true));
       qt.setWindowRect(
         x: (video['x'] as num).round(),
         y: (video['y'] as num).round(),
@@ -4057,6 +4095,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _roomQtWired = false;
     final qt = MpvSessionPlatform.activeQtAdapter;
     qt?.setFollowParent(false);
+    // 682：退房 → 关闭两窗同层（回归普通应用窗口层级）。
+    unawaited(_applyRoomTopmost(false));
     // 677：恢复标题栏按钮（退房后面板窗回归普通应用窗口）
     unawaited(WindowsWindowStyle.setRoomChrome(false));
     final restore = _roomRestoreBounds;
@@ -4399,8 +4439,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 681：Qt 接管时 `_player` 是**空闲引擎**（`_prepared` 恒 false），
       // 直接用会让 Qt 的占位层「请从资源面板选择要播放的内容」永远显示
       // ——即使 mpv 正在播。改用 Qt 的真实播放态判断。
-      stateJson['playerReady'] = qt.isAlive && qt.position >= 0 &&
-          (qt.duration > 0 || qt.state != AdapterPlaybackState.stopped);
+      //
+      // 682：判据收敛到 `hasMedia`——旧实现用
+      // `position >= 0 && (duration > 0 || state != stopped)` 推断，而
+      // `stopPlayback()` 回传的 `paused:true` 会把状态翻成 `paused`
+      // → 删空资源后仍判「有内容」→ 占位文字不显示（真机回归）。
+      stateJson['playerReady'] = qt.isAlive && qt.hasMedia;
       qt.pushNativeState(
         stateJson,
         playUrl: _currentPlayUrl,

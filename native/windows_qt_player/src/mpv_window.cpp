@@ -54,6 +54,19 @@ constexpr int kMinHeight = 360;
 /// 低于此值「季-集」两级缩进 + 播报板就挤不下了。
 constexpr int kMinPanelWidth = 320;
 
+/// 682：进房间并排的初始尺寸上限（逻辑像素）。
+///
+/// 【真机回归：进房间初始窗口太大】旧实现两窗合起来铺满整个工作区
+///（宽 = 工作区宽、高 = 工作区高），观感像被强行最大化。现在按工作区
+/// 缩比居中，4K 屏也不会变成巨幕。
+constexpr int kSplitMaxWidth = 1600;
+
+/// 682：进房间并排初始宽度占比（相对工作区宽，且不超过 kSplitMaxWidth）。
+constexpr double kSplitWidthRatio = 0.82;
+
+/// 682：进房间并排初始高度占比（相对工作区高）。
+constexpr double kSplitHeightRatio = 0.80;
+
 /// 从 mpv 的 `video-out-params` 节点里取字符串字段。
 QString nodeString(const mpv_node& node, const char* key) {
     if (node.format != MPV_FORMAT_NODE_MAP) return QString();
@@ -392,7 +405,17 @@ void MpvWindow::stopPlayback() {
     mpv_command_string(mpv_, "stop");
     positionMs_ = 0;
     durationMs_ = 0;
+    // 682：**必须同时把 mpv 的 `pause` 属性写成 yes**。
+    //
+    // 【真机回归：删除在播资源 → 再播其他资源 → 播放/暂停失效】
+    // 旧实现只改本地镜像 `paused_ = true`，mpv 的 `pause` 属性还是 `no`。
+    // 下一次 `load` 起播后 mpv 在放，QML 读到的 `playerState.paused`
+    //（镜像）却是「暂停」→ `togglePause()` 取反 = 又设 `pause=yes`
+    // → 用户点一下画面反而停住/点了没反应。
+    // 这里把两侧对齐，保证「stop 后 = 真暂停」这个不变量成立。
+    mpv_set_property_string(mpv_, "pause", "yes");
     paused_ = true;
+    hasMedia_ = false;
     // 弹幕轨随媒体一起清掉（否则残留在次字幕轨上）
     setDanmakuAss(QString());
     emit positionChanged(0, 0);
@@ -422,7 +445,22 @@ void MpvWindow::load(const QString& url, const QMap<QString, QString>& headers) 
         lastError_ = QStringLiteral("loadfile 失败: %1")
                          .arg(QString::fromUtf8(mpv_error_string(rc)));
         qWarning().noquote() << "[mpv]" << lastError_;
+        return;
     }
+
+    // 682：**新资源必须显式起播**。
+    //
+    // 【为什么】mpv 的 `pause` 属性是**跨 loadfile 保持**的——上一条媒体被
+    // `stopPlayback()` 置成 `pause=yes` 后，下一次 `loadfile` 会**继承
+    // 暂停态**（画面停在首帧、进度不走）。Dart 侧 `prepare()` 语义是
+    // 「加载即播放」，所以这里必须把两侧同时拉回 playing。
+    hasMedia_ = true;
+    mpv_set_property_string(mpv_, "pause", "no");
+    if (paused_) {
+        paused_ = false;
+        emit pausedChanged(false);
+    }
+    qInfo() << "[mpv] load：新媒体已起播";
 }
 
 void MpvWindow::setPaused(bool paused) {
@@ -594,37 +632,75 @@ void MpvWindow::requestSplitLayout(int panelWidth, int minVideoWidth) {
     if (panelWidth <= 0) panelWidth = 380;
     if (minVideoWidth <= 0) minVideoWidth = 480;
 
+    // 682：**进房间不铺满整屏**（真机回归「初始窗口太大」）。
+    //
+    // 旧实现 videoW + panel = 工作区全宽、高度 = 工作区全高 → 一进房
+    // 整块屏幕被两窗吃满，观感像被强行最大化。改为按工作区缩比居中：
+    //   - 总宽 = min(工作区宽, kSplitMaxWidth)，再乘 kSplitWidthRatio
+    //   - 总高 = 工作区高 × kSplitHeightRatio
+    // 上限 kSplitMaxWidth 保证 4K 屏上不会变成巨幕。
+    const int capW = qMin(work.width(), kSplitMaxWidth);
+    int totalW = qMax(qRound(capW * kSplitWidthRatio),
+                      panelWidth + minVideoWidth);
+    totalW = qMin(totalW, work.width());
+    int totalH = qRound(work.height() * kSplitHeightRatio);
+    totalH = qMax(totalH, kMinHeight);
+    totalH = qMin(totalH, work.height());
+    const int originX = work.left() + (work.width() - totalW) / 2;
+    const int originY = work.top() + (work.height() - totalH) / 2;
+
     int panel = panelWidth;
     // 总宽不超屏：放不下就压缩面板（下限 320 = Dart 侧 setMinimumSize），
     // 仍放不下则放弃并排。
-    if (panel + minVideoWidth > work.width()) {
-        panel = work.width() - minVideoWidth;
+    if (panel + minVideoWidth > totalW) {
+        panel = totalW - minVideoWidth;
     }
-    const int videoW = work.width() - panel;
+    const int videoW = totalW - panel;
     if (panel < kMinPanelWidth || videoW < minVideoWidth) {
         qWarning().noquote() << "[split] 工作区放不下双窗:" << work;
         emit splitLayoutReady(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false);
         return;
     }
-    const int videoX = work.left();
-    const int panelX = work.left() + videoW;
+    const int videoX = originX;
+    const int panelX = originX + videoW;
     // 主窗最大宽度 = 工作区宽 - Qt 最小宽（连最大化按钮一起受限）
     const int maxPanelW = qMax(panel, work.width() - minVideoWidth);
-    qInfo().noquote() << "[split] 并排布局 work=" << work << "panelW=" << panel
-                      << "videoW=" << videoW;
-    emit splitLayoutReady(panelX, work.top(), panel, work.height(), videoX,
-                          work.top(), videoW, work.height(), maxPanelW,
-                          work.height(), true);
+    qInfo().noquote() << "[split] 并排布局 work=" << work
+                      << "origin=" << originX << "," << originY
+                      << "totalW=" << totalW << "totalH=" << totalH
+                      << "panelW=" << panel << "videoW=" << videoW;
+    emit splitLayoutReady(panelX, originY, panel, totalH, videoX, originY,
+                          videoW, totalH, maxPanelW, work.height(), true);
 }
 
 void MpvWindow::raiseToFront() {
     if (host_ == nullptr) return;
     const HWND h = reinterpret_cast<HWND>(host_->winId());
     if (h == nullptr) return;
-    ::SetWindowPos(h, HWND_TOP, 0, 0, 0, 0,
+    // 682：置顶态必须用 HWND_TOPMOST 抬升——`HWND_TOP` 会把窗口从置顶层
+    // 拽回普通层（Win32 语义：插入到**非置顶**组的最前），两窗同层立刻
+    // 失效（面板仍置顶、视频被降级 = 用户反馈的「一个被盖一个没被盖」）。
+    ::SetWindowPos(h, topmost_ ? HWND_TOPMOST : HWND_TOP, 0, 0, 0, 0,
                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     ::SetForegroundWindow(h);
     host_->requestActivate();
+}
+
+/// 682：置顶开关（房间并排时两窗同层，永不「一半被盖」）。
+///
+/// 【为什么用 HWND_TOPMOST 而不是周期性 raise】raise 只能压住「当前已
+/// 存在」的窗口；用户切到别的软件后，那个软件自然会盖住本窗，下次切回
+/// 时才重新抬升。置顶是**持久的层级属性**，与焦点无关，两窗都置顶才能
+/// 保证「要么都在上面、要么被另一个置顶窗一起盖住」。
+void MpvWindow::setTopmost(bool topmost) {
+    if (host_ == nullptr) return;
+    const HWND h = reinterpret_cast<HWND>(host_->winId());
+    if (h == nullptr) return;
+    if (topmost_ == topmost) return;
+    topmost_ = topmost;
+    ::SetWindowPos(h, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    qInfo().noquote() << "[window] 置顶:" << (topmost ? "on" : "off");
 }
 
 void MpvWindow::setWindowVisible(bool visible) {

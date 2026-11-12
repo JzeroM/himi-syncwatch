@@ -67,6 +67,13 @@ class QtPlayerAdapter implements PlayerAdapter {
   List<int> _subtitleTracks = const [];
   bool _disposed = false;
 
+  /// 682：是否已向 Qt 下发过媒体（`prepare` 置位、`unloadMedia` 清零）。
+  ///
+  /// 【为什么需要】Qt 在 `stopPlayback()` 后会回一帧 `paused:true`（清进度
+  /// 用）。没有这个标志时，[`_applyPlayback`] 会把它翻成 `paused` 状态
+  /// → `playerReady` 误判为「有内容」→ Win 房间删空资源后占位文字不显示。
+  bool _hasMedia = false;
+
   final ValueNotifier<int?> _textureIdNotifier = ValueNotifier<int?>(null);
   final StreamController<({AdapterPlaybackState oldValue, AdapterPlaybackState newValue})>
       _stateController = StreamController.broadcast();
@@ -144,6 +151,21 @@ class QtPlayerAdapter implements PlayerAdapter {
     final rate = (data['rate'] as num?)?.toDouble();
     final buffering = data['buffering'] as bool?;
 
+    // 682：**卸载态不接受暂停/播放镜像**。
+    //
+    // 【真机回归：删除在播资源后 Win 占位文字不出现】`unloadMedia()` 把
+    // 状态置 `stopped`，但 Qt 的 `stopPlayback()` 会立刻回一帧
+    // `paused:true`（清进度用）→ 旧实现无条件把它翻成 `paused`
+    // → `playerReady` 判定「有内容」→ 占位层被隐藏，只剩一片黑。
+    // 卸载态下进度/时长仍要清零，但**状态必须保持 stopped**。
+    if (!_hasMedia) {
+      _positionMs = 0;
+      _durationMs = 0;
+      _setMediaStatus(AdapterMediaStatus.unloaded);
+      _setState(AdapterPlaybackState.stopped);
+      return;
+    }
+
     if (pos != null) _positionMs = pos;
     if (dur != null) _durationMs = dur;
     if (rate != null && rate > 0) _playbackRate = rate;
@@ -158,6 +180,14 @@ class QtPlayerAdapter implements PlayerAdapter {
           : AdapterPlaybackState.playing);
     }
   }
+
+  /// 682：是否已加载媒体（`prepare` 后 true、`unloadMedia` 后 false）。
+  ///
+  /// 【用途】Qt 占位层「请从资源面板选择要播放的内容」的判据。旧实现
+  /// 靠 `position >= 0 && (duration > 0 || state != stopped)` 推断——而
+  /// `stopPlayback()` 回传的 `paused:true` 会把状态翻成 `paused`，导致
+  /// 删空资源后仍判定「有内容」→ 占位不显示（真机回归）。
+  bool get hasMedia => _hasMedia && !_disposed;
 
   /// 677：窗口态（全屏）。
   void _applyWindowState(Map<String, Object?> data) {
@@ -180,6 +210,17 @@ class QtPlayerAdapter implements PlayerAdapter {
       'type': 'setHostFullscreen',
       'fullscreen': fullscreen,
     });
+  }
+
+  /// 682：置顶开关（房间并排时与 Flutter 面板窗同层）。
+  ///
+  /// 【为什么需要】并排是两个独立顶层窗。普通 z-order 下用户切到别的
+  /// 软件时可能只盖住其中一个 → 观感「一个被盖、一个没被盖」。
+  /// 两窗同时置顶后要么都在上层，要么被另一个置顶窗一起盖住。
+  /// 全屏时关闭（用户明确例外：全屏独占屏幕）。
+  void setTopmost(bool topmost) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({'type': 'setTopmost', 'topmost': topmost});
   }
 
   /// 677：把播放窗拉回最前。
@@ -214,6 +255,9 @@ class QtPlayerAdapter implements PlayerAdapter {
     _durationMs = 0;
     _bufferedMs = 0;
     _mediaUri = '';
+    // 682：先清标志再置状态——Qt 收到 stop 会回 `paused:true`，
+    // 标志未清时会被 `_applyPlayback` 翻回 `paused`（占位文字消失）。
+    _hasMedia = false;
     _setMediaStatus(AdapterMediaStatus.unloaded);
     _pipe.sendCommandRaw({'type': 'stop'});
     _setState(AdapterPlaybackState.stopped);
@@ -413,6 +457,9 @@ class QtPlayerAdapter implements PlayerAdapter {
       LogService().log('QtPlayer', 'prepare 失败：media 未设置');
       return;
     }
+    // 682：先置「有媒体」再发 load——Qt 起播后会回 `paused:false`，
+    // 标志未置位时会被 `_applyPlayback` 的卸载态分支吞掉。
+    _hasMedia = true;
     _setMediaStatus(AdapterMediaStatus.loading);
     _setState(AdapterPlaybackState.playing);
     // 播放地址与鉴权头通过 IPC 下发（不放在命令行，避免 URL 泄露到

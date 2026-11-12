@@ -9,6 +9,7 @@ import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/utils/asset_image.dart';
 
 /// 声网（Agora RTM）配置页（原侧边栏底部入口，现为独立标签页）。
 class AgoraConfigScreen extends ConsumerStatefulWidget {
@@ -35,6 +36,13 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     _appIdController = TextEditingController(text: config?.appId ?? '');
     _certController = TextEditingController(text: config?.appCertificate ?? '');
     _editing = config?.isConfigured != true;
+    // 681：post-frame 预热 4 张截图——首次切到声网分支时不再同步解码，
+    // 消除切标签的掉帧（原图分辨率解码 4 张约 20~80ms）。
+    precacheAssetImagesAfterFrame(
+      context,
+      agoraGuideSteps.map((s) => s.image),
+      displayWidth: 320, // 书本页宽量级；与渲染侧 LayoutBuilder 同一 cacheWidth 源
+    );
   }
 
   @override
@@ -166,8 +174,12 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                 child: GestureDetector(
                   onTap: () => Navigator.pop(ctx),
                   child: Center(
-                    child: Image.asset(
+                    child: assetImage(
+                      context,
                       imagePath,
+                      // 681：全屏查看用**全屏宽**解码（不复用书本宽度，
+                      // 否则放大后模糊）。
+                      displayWidth: MediaQuery.sizeOf(context).width,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Center(
                         child: Text('图片加载失败',

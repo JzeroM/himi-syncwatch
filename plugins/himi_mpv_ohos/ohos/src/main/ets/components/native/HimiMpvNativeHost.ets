@@ -11,6 +11,8 @@
  */
 
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { window } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 const TAG = 'HimiMpvNativeHost';
 const DOMAIN = 0x0001;
@@ -658,14 +660,15 @@ export class HimiMpvNativeHost {
   refreshSystemBarsHidden(): void {
     const win = this.nativeWindow;
     if (win === null) return;
-    win.setWindowSystemBarEnable([]).catch((e: Object): void => {
+    win.setWindowSystemBarEnable([]).catch((e: BusinessError): void => {
       hilog.warn(DOMAIN, TAG, '转屏后隐藏系统栏失败: %{public}s', String(e));
     });
-    win.setSpecificSystemBarEnabled('status', false).catch((e: Object): void => {
-      hilog.warn(DOMAIN, TAG, '转屏后隐藏状态栏失败: %{public}s', String(e));
-    });
+    win.setSpecificSystemBarEnabled('status', false)
+      .catch((e: BusinessError): void => {
+        hilog.warn(DOMAIN, TAG, '转屏后隐藏状态栏失败: %{public}s', String(e));
+      });
     win.setSpecificSystemBarEnabled('navigationIndicator', false)
-      .catch((e: Object): void => {
+      .catch((e: BusinessError): void => {
         hilog.warn(DOMAIN, TAG, '转屏后隐藏导航条失败: %{public}s', String(e));
       });
   }

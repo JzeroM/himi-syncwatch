@@ -113,6 +113,17 @@ public:
     /// 677：把本窗口拉到最前（Dart 取消退房/点面板时用）。
     Q_INVOKABLE void raiseToFront();
 
+    /// 682：置顶（`HWND_TOPMOST`）开关。
+    ///
+    /// 【为什么需要】房间并排时是两个**独立顶层窗**（Qt 视频 + Flutter
+    /// 面板）。普通 z-order 下用户切到别的软件，可能只盖住其中一个 →
+    /// 观感「一个被盖、一个没被盖」，像两个不相干的窗口。
+    /// 两窗同时置顶后：要么都压在别的软件之上，要么被另一个**同样置顶**
+    /// 的窗一起盖住，永不出现「一半被盖」的割裂态。
+    ///
+    /// 全屏是唯一例外（用户明确要求）：全屏时 Qt 独占屏幕，面板不再置顶。
+    Q_INVOKABLE void setTopmost(bool topmost);
+
     /// 678：临时显示/隐藏宿主窗（房间弹窗期间让位给 Flutter 主窗）。
     ///
     /// 【为什么不用最小化】最小化后 mpv 会停渲染，恢复时要重新起播
@@ -252,6 +263,9 @@ private:
     bool followParentSuspended_ = false;
     QTimer* suspendResumeTimer_ = nullptr;
 
+    /// 682：当前是否置顶（房间并排时与 Flutter 面板窗同层）。
+    bool topmost_ = false;
+
     int insetTop_ = 0;
     int insetBottom_ = 0;
     int lastX_ = -1;
@@ -266,6 +280,16 @@ private:
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
     bool paused_ = true;
+
+    /// 682：当前是否已加载媒体（`stop` 后为 false，`load` 后为 true）。
+    ///
+    /// 【为什么需要】`stopPlayback()` 只把本地镜像 `paused_` 置 true，而
+    /// mpv 的 `pause` 属性仍停在 `no` → 镜像与实际错位。下一次 `load`
+    /// 新资源时 mpv 实际在播、镜像却仍是「暂停」→ QML `togglePause()`
+    /// 取反得到「继续暂停」→ **播放/暂停点了没反应**（真机回归：删除在播
+    /// 资源后再播其他资源）。这里用显式标志把「有没有媒体」与「暂停态」
+    /// 解耦，并在 `load`/`stop` 两头强制对齐 mpv 真实 `pause` 属性。
+    bool hasMedia_ = false;
     bool hdrRequested_ = false;
     bool initialized_ = false;  ///< mpv_initialize 已完成（option→property）
 

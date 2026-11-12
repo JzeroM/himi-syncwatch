@@ -75,11 +75,19 @@ void main() {
       expect(windows, contains('快捷键'));
     });
 
-    test('HarmonyOS 明确写「无变更」（而不是留空）', () {
+    test('HarmonyOS 章节要么写明变更、要么明确写「无变更」（不留空）', () {
       final ohos = _section(notes, 'HarmonyOS');
-      expect(ohos, contains('无变更'));
-      // 指明上次变更版本，方便追溯
-      expect(ohos, contains('1.5.72'));
+      // 【为什么改成二选一】原断言写死「无变更」+「1.5.72」——那是
+      // 1.5.91 时的状态。鸿蒙后来真的有改动（引擎收敛、亮度/比例修复、
+      // 资源图解码），再钉死旧文案会逼着人把真实变更写成「无变更」。
+      //
+      // 真正要守的规则是：**不能留空**——有变更就写清楚，没变更必须
+      // 明说「无变更」并指明上次变更版本（方便用户追溯）。
+      final hasChange = ohos.contains('1.5.92') || ohos.contains('1.5.91');
+      final declaresNoChange =
+          ohos.contains('无变更') && ohos.contains('1.5.72');
+      expect(hasChange || declaresNoChange, isTrue,
+          reason: '鸿蒙章节不能留空：有变更写变更，无变更要明确写「无变更」');
     });
 
     test('每节都给出「遇到问题怎么办」', () {

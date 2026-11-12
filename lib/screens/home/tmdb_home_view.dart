@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
@@ -77,6 +79,18 @@ class _HomeListState extends ConsumerState<_HomeList> {
   void initState() {
     super.initState();
     _lastRefreshEpoch = ref.read(tmdbHomeRefreshEpochProvider);
+    // 681：post-frame 预热 7 张流媒体平台 logo——它们在本页首屏构建，
+    // 原图分辨率同步解码会拖慢首页（`disney_plus.png` 单张 65 KB）。
+    //
+    // 【宽度必须与渲染侧一致】`tmdb_platform_card` 用
+    // `cacheWidthFor(context, logoHeight * 2)`；这里统一传 52
+    //（logoHeight 默认 20~26，取 26 × 2 = 52 覆盖最大档），保证命中
+    // 同一缓存项（不一致会解码两份，预热白做）。
+    precacheAssetImagesAfterFrame(
+      context,
+      tmdbPlatforms.map((p) => p.logoAsset),
+      displayWidth: 52,
+    );
   }
 
   @override
