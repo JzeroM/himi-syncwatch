@@ -188,24 +188,13 @@ ApplicationWindow {
     // ── 播放快捷键（与宿主共用组件）──
     PlayerShortcuts { }
 
-    // 677：Escape 由 C++ 统一拦截（`MpvWindow::escapePressed`）。
-    // 这里接三层语义：收面板 → 退全屏 → 请求退出。
+    // 686：Esc **完全禁用**（用户明确要求「Esc 不做任何动作」）。
     //
-    // 【房间模式】第三层只发 `requestExit`，**不本地 Qt.quit()**——
-    // 由 Dart 弹「解散/离开房间」确认框，确认后才关窗退页。
-    Connections {
-        target: mpvWindow
-        function onEscapePressed() {
-            if (root.panelOpen || root.adjustOpen) {
-                root.closePanels()
-            } else if (mpvWindow.isHostFullscreen()) {
-                mpvWindow.toggleHostFullscreen()
-            } else {
-                pipeServer.sendCommand({"type": "requestExit"})
-                if (!playerState.isRoom) Qt.quit()
-            }
-        }
-    }
+    // 677 时这里有 `Connections { target: mpvWindow; onEscapePressed }`
+    // 三层语义（收面板 → 退全屏 → requestExit + Qt.quit()）。C++ 的
+    // EscapeFilter 已移除，信号不再发射，这段连接一并删除。
+    //
+    // 退出方式：单人点窗口关闭按钮，房间点面板窗 X（有确认框）。
 
     // ── 681：未播放占位（三端统一）──
     //

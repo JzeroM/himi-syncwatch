@@ -1176,7 +1176,15 @@ void main() {
       expect(mainQml, contains('if (panelOpen && panel.title === "字幕") { closePanels(); return }'));
       expect(mainQml, contains('if (adjustOpen) { closePanels(); return }'));
       // 点视频区：有面板→收回；无→切换控件（Flutter _onVideoAreaTap）
-      expect(mainQml, contains('if (root.panelOpen || root.adjustOpen)'));
+      //
+      // 686：这层语义在 `VideoGestures.qml` 的 tapTimer 里（
+      // `root.panelsOpen()` → `root.closePanels()`）。677 时 Esc 连接里
+      // 也有一份同样的判定，Esc 禁用后那份已删除，语义不丢。
+      final gestures =
+          File('native/windows_qt_player/src/qml/VideoGestures.qml')
+              .readAsStringSync();
+      expect(gestures, contains('if (root.panelsOpen())'));
+      expect(gestures, contains('root.closePanels()'));
       expect(mainQml, contains('function closePanels()'));
     });
 

@@ -153,11 +153,11 @@ public:
     /// QML 侧用数字传，避免引入 Qt::Edge 枚举绑定）。
     Q_INVOKABLE void startSystemResize(int edges);
 
-    /// 677：触发 Escape 语义（main.cpp 的事件过滤器调用）。
+    /// 686：Esc 已**完全禁用**（用户明确要求「Esc 不做任何动作」）。
     ///
-    /// 信号不能从类外 emit（虽然 Qt 的 `signals` 是 public，但语义上
-    /// 应由类自己发）——这里提供显式入口。
-    void notifyEscape() { emit escapePressed(); }
+    /// 677 的 `notifyEscape()` / `escapePressed()` 已删除——C++ 侧不再
+    /// 拦截 Esc，QML 侧也不再响应。退出请点关闭按钮（单人）或面板窗 X
+    ///（房间）。
 
     /// 677：父进程（Flutter）pid —— 房间并排跟随用它定位主窗。
     /// 由 main.cpp 从 `--parent-pid` 注入。
@@ -222,15 +222,6 @@ signals:
     /// 切到别的软件时两窗要能一起被盖住。所以只在**激活时联动抬升**，
     /// 不设任何 `HWND_TOPMOST`。
     void raisedToFront();
-
-    /// 677：Escape 按下（**两窗统一入口**）。
-    ///
-    /// 【为什么放 C++】旧实现两窗各挂一份 `Shortcut { sequence: "Escape" }`：
-    /// Overlay 有「收面板→退全屏→退出」三层，Main.qml 却只有
-    /// `requestExit + Qt.quit()`——焦点在宿主窗（点标题栏/视频区）时按
-    /// Esc，**全屏状态下会直接关掉播放器**（真机回归）。
-    /// 改为 C++ 统一拦截后只剩一份三层语义，不会再走错分支。
-    void escapePressed();
 
 private:
     void createVideoWindow();

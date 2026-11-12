@@ -40,8 +40,8 @@ ApplicationWindow {
     // 双击暂停/横滑 seek/点击唤出控件仍然有效。
     VideoGestures { }
 
-    // 677：Escape 已由 C++ 统一拦截（`MpvWindow::escapePressed`），
-    // 本窗**不再**挂 Escape Shortcut。
+    // 686：Esc **完全禁用**——C++ 的 EscapeFilter 与 `escapePressed`
+    // 信号均已删除，本窗也没有 Escape Shortcut。按 Esc 不做任何动作。
     //
     // 【真凶】旧实现这里是 `requestExit + Qt.quit()`，而 Overlay 才有
     // 「收面板→退全屏→退出」三层。焦点落在宿主窗（点标题栏/视频区）

@@ -445,29 +445,16 @@ int main(int argc, char* argv[]) {
 
     // ── 677：Escape 统一拦截（两窗共用一份三层语义）──
     //
-    // 【真凶】旧实现两窗各挂一份 `Shortcut { sequence: "Escape" }`：
-    // Overlay 有「收面板→退全屏→退出」三层，Main.qml 只有
-    // `requestExit + Qt.quit()`。焦点落在宿主窗（点标题栏/视频区）时按
-    // Esc，**全屏状态下会直接关掉播放器**（用户要求「房间模式全屏别出
-    // 问题」，这条必须先堵）。C++ 拦截后只剩一份语义，且 QML 两处
-    // Shortcut 一并删除（防重复触发）。
-    struct EscapeFilter : QObject {
-        MpvWindow* mpv = nullptr;
-        explicit EscapeFilter(MpvWindow* m, QObject* parent)
-            : QObject(parent), mpv(m) {}
-        bool eventFilter(QObject* obj, QEvent* ev) override {
-            Q_UNUSED(obj)
-            if (ev->type() != QEvent::KeyPress) return false;
-            auto* key = static_cast<QKeyEvent*>(ev);
-            if (key->key() != Qt::Key_Escape) return false;
-            // 交给 QML 的三层语义（收面板 → 退全屏 → requestExit）。
-            mpv->notifyEscape();
-            return true;  // 吞掉，防 Qt 默认行为（关窗）
-        }
-    };
-    // parent = &app：随事件循环一起析构，不留悬挂过滤器。
-    auto* escapeFilter = new EscapeFilter(&mpv, &app);
-    app.installEventFilter(escapeFilter);
+    // 【686】Esc **完全禁用**（用户明确要求「Esc 不做任何动作」）。
+    //
+    // 【历史】677 曾用 EscapeFilter 吞掉 Esc 并转发 QML 三层语义
+    //（收面板 → 退全屏 → requestExit + Qt.quit()）。但真机反馈：
+    //   - 房间模式按 Esc 会弹「解散/离开房间」确认，与用户预期不符
+    //   - 单人模式 `if (!playerState.isRoom) Qt.quit()` 会本地立即关窗，
+    //     与同时发出的 `requestExit` 竞争（Dart 侧单人分支也没有处理）
+    //
+    // 现在**移除整个过滤器**：Esc 不再被拦截、不再转发、不再退出。
+    // 需要退出请点关闭按钮（单人）或面板窗 X（房间）。
 
     // ── 状态：Flutter → mpv + QML ──
     QObject::connect(&pipe, &PipeServer::stateReceived, &state,

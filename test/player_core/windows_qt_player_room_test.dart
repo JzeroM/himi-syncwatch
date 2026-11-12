@@ -303,23 +303,47 @@ void main() {
       expect(bottomBar, contains('mpvWindow.hostFullscreen'));
     });
 
-    test('E2 两处 QML Escape Shortcut 已删除，改 C++ 统一拦截', () {
-      // 真凶：Main.qml 的 Esc 是 requestExit+Qt.quit()，全屏下直接退进程
-      expect(mainQml, isNot(contains('sequence: "Escape"')));
-      expect(overlayQml, isNot(contains('sequence: "Escape"')));
-      // C++ 统一拦截 + 信号
-      expect(mpvH, contains('void escapePressed()'));
-      expect(mainCpp, contains('installEventFilter'));
-      expect(mainCpp, contains('Qt::Key_Escape'));
+    test('E2 686：Esc 完全禁用（过滤器与信号链全部移除）', () {
+      // 【结论反转】677 时这里是「两处 QML Shortcut 删除，改 C++ 统一
+      // 拦截」；686 用户明确要求「Esc 不做任何动作」，于是 C++ 的
+      // EscapeFilter、`escapePressed` 信号、Overlay 的三层语义连接
+      // 全部删除。
+      //
+      // 原因（真机）：
+      //   - 房间模式按 Esc 弹「解散/离开房间」确认，不符合预期
+      //   - 单人模式 `if (!playerState.isRoom) Qt.quit()` 本地立即关窗，
+      //     与同时发出的 `requestExit` 竞争
+      //
+      // 判定前剔除注释（注释里会提到旧符号，说明为什么删）。
+      String codeOnly(String s) => s
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('*');
+          })
+          .join('\n');
+
+      expect(codeOnly(mainQml), isNot(contains('sequence: "Escape"')));
+      expect(codeOnly(overlayQml), isNot(contains('sequence: "Escape"')));
+      // C++ 侧不再拦截
+      expect(codeOnly(mpvH), isNot(contains('escapePressed')));
+      expect(codeOnly(mainCpp), isNot(contains('installEventFilter')));
+      expect(codeOnly(mainCpp), isNot(contains('Qt::Key_Escape')));
     });
 
-    test('E3 三层语义保留（收面板 → 退全屏 → 请求退出）', () {
-      final body = _extract(overlayQml, 'function onEscapePressed');
-      expect(body, contains('root.closePanels()'));
-      expect(body, contains('mpvWindow.isHostFullscreen()'));
-      expect(body, contains('requestExit'));
-      // 房间模式不本地 quit（交给 Dart 弹确认框）
-      expect(body, contains('if (!playerState.isRoom) Qt.quit()'));
+    test('E3 686：Esc 不再有任何语义（收面板/退全屏/退出全部取消）', () {
+      String codeOnly(String s) => s
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('*');
+          })
+          .join('\n');
+
+      // 旧三层语义已整段删除
+      expect(codeOnly(overlayQml), isNot(contains('onEscapePressed')));
+      // 退出只保留显式入口：单人点关闭按钮、房间点面板窗 X
+      expect(codeOnly(overlayQml), isNot(contains('Qt.quit()')));
     });
 
     test('E4 退全屏显式回并排矩形（不落回 Qt 记忆的旧位置）', () {

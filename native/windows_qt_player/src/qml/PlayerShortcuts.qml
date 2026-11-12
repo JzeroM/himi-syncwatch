@@ -40,6 +40,6 @@ Item {
     Shortcut { sequence: "F"; onActivated: mpvWindow.toggleHostFullscreen() }
     // 677：F11 与 F 并存（Windows 用户习惯）
     Shortcut { sequence: "F11"; onActivated: mpvWindow.toggleHostFullscreen() }
-    // Escape 由 C++ 统一拦截（`MpvWindow::escapePressed`）——两窗 QML
-    // 的 Escape Shortcut 已删除，避免「焦点在宿主窗时全屏下直接退出」。
+    // 686：Esc 完全禁用——C++ 侧 EscapeFilter / escapePressed 已删除，
+    // 两窗 QML 也都没有 Escape Shortcut。按 Esc 不做任何动作。
 }
