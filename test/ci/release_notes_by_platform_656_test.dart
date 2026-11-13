@@ -2,105 +2,124 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 656：分平台更新说明 + GitHub Release 说明同步。
+/// 发布说明格式与 Release 拼装。
 ///
-/// ## 背景
+/// ## 演进
 ///
-/// 之前 Release 说明只有 `generate_release_notes: true` 生成的 commit 标题
-/// 列表（如「fix(android): 655 删除两项自动检测」）。普通用户看不懂，
-/// 也不知道「这个改动对我有什么影响」。
+/// - **656**：按平台分节（Android / Windows / HarmonyOS 各一章）。原因是
+///   一次发版常常只有部分平台有变更，统一写一段会让人误以为全都变了。
+/// - **697**：改为**不分平台**的单一份。用户反馈「相同功能和修复放一起，
+///   不分平台」——分平台会导致同一功能写三遍，读者还要自己比对哪条适用于
+///   自己；而多数功能其实是全平台共享的。平台差异改用括号注明
+///   （如「（安卓 TV）」）。
 ///
-/// 而且一次发版通常只有部分平台有变更（比如 1.5.76 只改了 Windows 和
-/// Android，鸿蒙无变化）——统一写一段会让人误以为所有端都变了。
+/// ## 现在的要求
 ///
-/// ## 现在
-///
-/// `docs/release_notes_by_platform.md` 按平台分节，`release.yml` 提取
-/// 三个章节拼进 Release body，同时保留自动 commit 列表（给开发者排查）。
+/// 1. 单一份说明，`# 更新说明` 开头，不按平台分章
+/// 2. 标注适用版本，且与 pubspec 一致
+/// 3. 三段固定结构：新增功能 / 优化 / 修复一些已知问题
+/// 4. **简短**：只写「是什么」，不写根因与实现细节
+/// 5. `release.yml` 整份使用，不再按平台标题提取
 void main() {
   const notesPath = 'docs/release_notes_by_platform.md';
   final notes = File(notesPath).readAsStringSync();
   final workflow =
       File('.github/workflows/release.yml').readAsStringSync();
 
-  group('① 文档按平台分节', () {
-    test('三个平台各有独立章节', () {
-      expect(notes, contains('# Android 更新说明'));
-      expect(notes, contains('# Windows 更新说明'));
-      expect(notes, contains('# HarmonyOS 更新说明'));
+  group('① 文档为不分平台的单一份', () {
+    test('以「# 更新说明」开头', () {
+      expect(notes.trimLeft(), startsWith('# 更新说明'),
+          reason: '头部内容会混进 Release，必须直接以标题开头');
     });
 
-    test('每节标注适用版本（避免用户看历史 Release 时混淆）', () {
-      final versions = RegExp(r'> 适用版本：\*\*v([0-9.]+)\*\*')
-          .allMatches(notes)
-          .map((m) => m.group(1))
-          .toList();
-      expect(versions.length, 3, reason: '三个平台各要标一次版本');
-      expect(versions.every((v) => v == versions.first), isTrue,
-          reason: '同一份文档里三个平台版本应一致');
+    test('不再有分平台章节', () {
+      for (final p in const ['Android', 'Windows', 'HarmonyOS']) {
+        expect(notes, isNot(contains('# $p 更新说明')),
+            reason: '697 起改为单一份，不应再有 $p 独立章节');
+      }
     });
 
-    test('文档版本与 pubspec 一致', () {
+    test('标注适用版本，且与 pubspec 一致', () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
       final m = RegExp(r'^version: ([0-9.]+)\+', multiLine: true)
           .firstMatch(pubspec);
       expect(m, isNotNull);
-      expect(notes, contains('**v${m!.group(1)}**'),
+      expect(notes, contains('> 适用版本：**v${m!.group(1)}**'),
           reason: '发版时忘记更新文档版本会在这里被抓住');
     });
   });
 
-  group('② 各平台内容对得上实际改动', () {
-    test('Android 写明「自动回退删除」与三个手动开关', () {
-      final android = _section(notes, 'Android');
-      expect(android, contains('纹理'));
-      expect(android, contains('Surface'));
-      // 三个开关
-      expect(android, contains('视频路径'));
-      expect(android, contains('渲染器'));
-      expect(android, contains('解码方式'));
-      // 迁移说明（用户最关心）
-      expect(android, contains('迁移'));
+  group('② 三段固定结构', () {
+    test('包含「新增功能」', () {
+      expect(notes, contains('## 新增功能'));
     });
 
-    test('Windows 写明 Qt 播放器开关与 HDR 修复', () {
-      final windows = _section(notes, 'Windows');
-      expect(windows, contains('使用 Qt 播放器窗口'));
-      expect(windows, contains('HDR'));
-      expect(windows, contains('默认是关闭的'),
-          reason: '必须明确告知默认关闭，否则用户以为坏了');
-      // 控件清单
-      expect(windows, contains('顶栏'));
-      expect(windows, contains('底栏'));
-      expect(windows, contains('快捷键'));
+    test('包含「优化」', () {
+      expect(notes, contains('## 优化'));
     });
 
-    test('HarmonyOS 章节要么写明变更、要么明确写「无变更」（不留空）', () {
-      final ohos = _section(notes, 'HarmonyOS');
-      // 【为什么改成二选一】原断言写死「无变更」+「1.5.72」——那是
-      // 1.5.91 时的状态。鸿蒙后来真的有改动（引擎收敛、亮度/比例修复、
-      // 资源图解码），再钉死旧文案会逼着人把真实变更写成「无变更」。
-      //
-      // 真正要守的规则是：**不能留空**——有变更就写清楚，没变更必须
-      // 明说「无变更」并指明上次变更版本（方便用户追溯）。
-      final hasChange = ohos.contains('1.5.92') || ohos.contains('1.5.91');
-      final declaresNoChange =
-          ohos.contains('无变更') && ohos.contains('1.5.72');
-      expect(hasChange || declaresNoChange, isTrue,
-          reason: '鸿蒙章节不能留空：有变更写变更，无变更要明确写「无变更」');
+    test('包含「修复一些已知问题」', () {
+      expect(notes, contains('## 修复一些已知问题'));
     });
 
-    test('每节都给出「遇到问题怎么办」', () {
-      final android = _section(notes, 'Android');
-      expect(android, contains('黑屏'),
-          reason: 'Android 必须给黑屏的手动排查步骤');
-      final windows = _section(notes, 'Windows');
-      expect(windows, contains('关掉'),
-          reason: 'Windows 必须说明 Qt 播放器出问题怎么回退');
+    test('三段顺序正确（新增功能 → 优化 → 修复）', () {
+      final a = notes.indexOf('## 新增功能');
+      final b = notes.indexOf('## 优化');
+      final c = notes.indexOf('## 修复一些已知问题');
+      expect(a, greaterThan(-1));
+      expect(b, greaterThan(a));
+      expect(c, greaterThan(b));
+    });
+
+    test('每段都有内容（不留空章节）', () {
+      for (final title in const ['## 新增功能', '## 优化', '## 修复一些已知问题']) {
+        final start = notes.indexOf(title);
+        expect(start, greaterThan(-1));
+        final rest = notes.substring(start + title.length);
+        final nextSection = rest.indexOf('\n## ');
+        final body = nextSection >= 0 ? rest.substring(0, nextSection) : rest;
+        expect(body.trim(), isNotEmpty, reason: '$title 不能为空');
+      }
     });
   });
 
-  group('③ release.yml 正确拼装', () {
+  group('③ 简短原则（697）', () {
+    test('不写根因分析', () {
+      for (final banned in const ['根因', '原因是', '实际是', '此前是']) {
+        expect(notes, isNot(contains(banned)),
+            reason: '发布说明面向用户，不写技术根因（命中「$banned」）');
+      }
+    });
+
+    test('不写实现细节', () {
+      for (final banned in const [
+        'Q_PROPERTY',
+        'sub-remove',
+        'secondary-sid',
+        'isolate',
+        'setState',
+      ]) {
+        expect(notes, isNot(contains(banned)),
+            reason: '不写代码级实现细节（命中「$banned」）');
+      }
+    });
+
+    test('篇幅克制（不超过 40 行）', () {
+      final lineCount = notes.trim().split('\n').length;
+      expect(lineCount, lessThanOrEqualTo(40),
+          reason: '发布说明应简短，当前 $lineCount 行');
+    });
+
+    test('修复项合并概述（不逐条列根因）', () {
+      final start = notes.indexOf('## 修复一些已知问题');
+      final body = notes.substring(start);
+      // 每条修复应是一句话，不出现换行缩进的详细说明
+      expect(body.split('\n').where((l) => l.trim().startsWith('-')).length,
+          greaterThanOrEqualTo(1));
+    });
+  });
+
+  group('④ release.yml 整份使用说明', () {
     test('用 body_path 而非纯自动生成', () {
       expect(workflow, contains('body_path: release-notes.md'));
     });
@@ -109,21 +128,18 @@ void main() {
       expect(workflow, contains('generate_release_notes: true'));
     });
 
-    test('提取三个平台章节（不能把 Android 删掉）', () {
-      // 【实测踩过的坑】最初用 `sed '1,/^---$/d'` 去掉文件头，但文档里
-      // 平台之间也有 `---`，结果 Android 整节被删。改用 awk 按标题匹配。
-      expect(workflow, contains('awk'));
+    test('检测新格式（# 更新说明）时整份使用', () {
+      expect(workflow, contains("grep -q '^# 更新说明'"));
+      expect(workflow, contains(r'cp "$SRC" "$OUT"'));
+    });
+
+    test('兼容旧格式（分平台标题）', () {
+      // 历史 tag 重跑构建时文档仍是旧格式，需能退回按标题提取
       expect(workflow, contains('Android|Windows|HarmonyOS'));
-      expect(
-        workflow,
-        isNot(contains(r"sed -e '1,/^---$/d'")),
-        reason: 'sed 按 --- 删会把 Android 节误删',
-      );
     });
 
     test('提取失败时有兜底（整份拷贝）', () {
       expect(workflow, contains('未能从'));
-      expect(workflow, contains(r'cp "$SRC" "$OUT"'));
     });
 
     test('拼装步骤在 Create Release 之前', () {
@@ -136,36 +152,10 @@ void main() {
     });
   });
 
-  group('④ 实际提取结果验证', () {
-    test('awk 规则能从文档中提取到三个平台标题', () {
-      // 用 Dart 模拟 awk 的匹配规则，确保正则与脚本一致
-      final re = RegExp(r'^# (Android|Windows|HarmonyOS) 更新说明', multiLine: true);
-      final matches = re.allMatches(notes);
-      expect(matches.length, 3);
-    });
-
-    test('文档里不含维护说明（会被发布出去，不该给用户看）', () {
-      // 【踩过的坑】最初把「维护方式」写在文档里，会被 awk 提取进 Release。
-      // 现在维护说明拆到 docs/release_notes_README.md，不参与发布。
+  group('⑤ 不泄露维护说明', () {
+    test('文档里不含维护方式（会被发布出去）', () {
       expect(notes, isNot(contains('维护方式')),
           reason: '维护说明应放 release_notes_README.md');
-      // 第一个标题就是平台章节，没有前置内容
-      final re = RegExp(r'^# (Android|Windows|HarmonyOS) 更新说明', multiLine: true);
-      final firstMatch = re.firstMatch(notes);
-      expect(firstMatch, isNotNull);
-      expect(firstMatch!.start, 0,
-          reason: '文档应以平台标题开头，否则头部内容会混进 Release');
     });
   });
-}
-
-/// 取出某个平台的章节内容（从它的标题到下一个平台标题之前）。
-String _section(String doc, String platform) {
-  final re = RegExp(r'^# (Android|Windows|HarmonyOS) 更新说明', multiLine: true);
-  final matches = re.allMatches(doc).toList();
-  final idx = matches.indexWhere((m) => m.group(1) == platform);
-  expect(idx, greaterThanOrEqualTo(0), reason: '找不到 $platform 章节');
-  final start = matches[idx].start;
-  final end = idx + 1 < matches.length ? matches[idx + 1].start : doc.length;
-  return doc.substring(start, end);
 }

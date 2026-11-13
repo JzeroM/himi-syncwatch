@@ -92,7 +92,12 @@ void main() {
 
     test('.hap 仍走 app_packing_tool 重打包（版本号写入）', () {
       final idx = src.indexOf(r'if [ "$IS_APP" = "1" ]');
-      final block = src.substring(idx, idx + 4000);
+      // 697：minAPIVersion 改为从 build-profile 推导后，该分支前的注释
+      // 变长，原 4000 字符窗口截不到 `--mode hap`。放宽到 8000。
+      final block = src.substring(
+        idx,
+        (idx + 8000).clamp(0, src.length),
+      );
       expect(block, contains('--mode hap'));
       expect(block, contains('--out-path'));
     });

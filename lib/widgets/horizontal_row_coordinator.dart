@@ -11,7 +11,7 @@ import 'package:himi_syncwatch/utils/motion.dart';
 ///
 /// ## 行为
 ///
-/// - 某一栏**开始被用户滚动** → 其余所有已注册的栏 260ms 平滑回正
+/// - 某一栏**开始被用户滚动** → 其余所有已注册的栏 420ms 平滑回正
 /// - 只在 `isScrollingNotifier.value == true`（用户主动滚动/拖动）时
 ///   激活——程序性 `jumpTo`（如详情页选集定位）不会误触发
 /// - 系统开启「减少动画」→ 直接 `jumpTo(0)`（无过渡）
@@ -36,8 +36,20 @@ class HorizontalRowCoordinator {
   /// 打断用户正在滚的那一栏 → 真机现象「前一条还没回正到位，当前栏滑不动」。
   final Set<ScrollController> _restoring = <ScrollController>{};
 
-  /// 回正动画时长（与页面展开动画一致）。
-  static const Duration restoreDuration = Duration(milliseconds: 260);
+  /// 回正动画时长。
+  ///
+  /// 【697：260ms → 420ms，easeOutCubic → easeInOutCubic】
+  ///
+  /// 旧参数（260ms + `easeOutCubic`）体感「起步猛、后面拖」：
+  /// `easeOutCubic` 在 t=0.33 时已完成 70% 位移——用户刚碰到 B 栏，
+  /// A 栏就窜回去大半，视觉冲击强；且 260ms 比页面切换动画（300ms）
+  /// 还快，观感上像「闪一下」。
+  ///
+  /// 改为 420ms + `easeInOutCubic`：两头都有缓冲。
+  /// - 起步慢 → 不抢注意力
+  /// - 中间快 → 420ms 内仍能及时归位
+  /// - 收尾慢 → 落位柔和，不「啪」地停住
+  static const Duration restoreDuration = Duration(milliseconds: 420);
 
   @visibleForTesting
   int get registeredCount => _controllers.length;
@@ -79,7 +91,7 @@ class HorizontalRowCoordinator {
           .animateTo(
             0,
             duration: restoreDuration,
-            curve: Curves.easeOutCubic,
+            curve: Curves.easeInOutCubic,
           )
           .whenComplete(() => _restoring.remove(other));
     }

@@ -12,7 +12,7 @@ import 'package:himi_syncwatch/widgets/horizontal_row_coordinator.dart';
 /// 2. **打开软件首页不在开头** → `PageStorageKey` 会把滚动偏移
 ///    **跨启动持久化**到磁盘；改用页面级 `ScrollController` + 切 tab
 ///    时主动 `jumpTo(0)`
-/// 3. **横向栏错位观感差** → 滚 B 栏时 A 栏 260ms 平滑回正
+/// 3. **横向栏错位观感差** → 滚 B 栏时 A 栏平滑回正（697 起 420ms）
 ///
 /// ## 附带修复「上下滑动不舒服」
 ///
@@ -143,12 +143,16 @@ void main() {
       expect(a.offset, 0);
     });
 
-    test('C2 回正动画 260ms easeOutCubic', () {
+    test('C2 回正动画 420ms easeInOutCubic（697 放缓）', () {
+      // 697：260ms + easeOutCubic 体感「起步猛、后面拖」——
+      // easeOutCubic 在 t=0.33 时已完成 70% 位移，用户刚碰到 B 栏，
+      // A 栏就窜回大半。改为 420ms + easeInOutCubic（两头都有缓冲）。
       expect(HorizontalRowCoordinator.restoreDuration,
-          const Duration(milliseconds: 260));
-      expect(
-          read('lib/widgets/horizontal_row_coordinator.dart'),
-          contains('Curves.easeOutCubic'));
+          const Duration(milliseconds: 420));
+      final src = read('lib/widgets/horizontal_row_coordinator.dart');
+      expect(src, contains('Curves.easeInOutCubic'));
+      // 不得回退到旧的「起步猛」曲线
+      expect(src, isNot(contains('Curves.easeOutCubic')));
     });
 
     test('C3 只在用户主动滚动时激活（程序性 jumpTo 不触发）', () {

@@ -23,6 +23,8 @@ import 'package:himi_syncwatch/widgets/app_toast.dart';
 /// 鸿蒙平板横屏逻辑宽度普遍 1200+，装完直接是 Win 版布局（用户反馈）。
 /// 移动平台（Android / iOS / 鸿蒙，含平板）应始终用手机布局。
 bool get _isDesktopPlatform {
+  final override = MainShell.debugIsDesktopPlatformOverride;
+  if (override != null) return override;
   if (HimiPlatform.isOhos) return false;
   return defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.macOS ||
@@ -38,6 +40,15 @@ bool get _isDesktopPlatform {
 /// 壳层绘制主题色三段渐变背景（各标签页透明以透出）。
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key, required this.shell});
+
+  /// 697：测试用桌面平台覆盖。
+  ///
+  /// 【为什么需要】`flutter test` 的 `defaultTargetPlatform` 默认是
+  /// `android`，而 `debugDefaultTargetPlatformOverride` 必须在测试体内
+  /// 复位（`addTearDown` 晚于框架的 foundation 变量校验）——用它测桌面
+  /// 布局会报「foundation debug variable was changed by the test」。
+  @visibleForTesting
+  static bool? debugIsDesktopPlatformOverride;
 
   final StatefulNavigationShell shell;
 

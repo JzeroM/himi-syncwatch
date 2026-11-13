@@ -1,14 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
+import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/update/update_prompt.dart';
 
-/// 关于子页：版本信息 / 检查更新 / 新版本提醒开关。
+/// 关于子页：版本信息 / 检查更新 / 新版本提醒 / 联系方式 / 开源。
 class AboutSettingsScreen extends ConsumerStatefulWidget {
   const AboutSettingsScreen({super.key});
+
+  /// 项目仓库地址。
+  static const githubUrl = 'https://github.com/JzeroM/himi-syncwatch';
+
+  /// 项目 QQ 群。
+  static const qqGroup = '1041283071';
+
+  /// 联系邮箱。
+  static const email = '2640256446jm@gmail.com';
 
   @override
   ConsumerState<AboutSettingsScreen> createState() =>
@@ -43,6 +55,23 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
       await checkAndPromptUpdate(context, ref, manual: true);
     } finally {
       if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  /// 用系统浏览器/邮件客户端打开链接。
+  ///
+  /// 失败时给 Toast 提示——部分设备没装邮件客户端或浏览器，
+  /// `launchUrl` 会返回 false（不抛异常），静默失败会让用户以为点击无效。
+  Future<void> _open(String url) async {
+    try {
+      final ok = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok && mounted) showAppToast(context, '无法打开：$url');
+    } catch (e) {
+      LogService().log('About', '打开链接失败: $url ($e)');
+      if (mounted) showAppToast(context, '无法打开：$url');
     }
   }
 
@@ -111,6 +140,88 @@ class _AboutSettingsScreenState extends ConsumerState<AboutSettingsScreen> {
                 subtitle: const Text('启动时自动检查，发现新版本时提示（可在提示里选「永不提醒」关闭）'),
                 value: settings.updatePromptEnabled,
                 onChanged: (v) => notifier.update(updatePromptEnabled: v),
+              ),
+            ),
+          ],
+        ),
+        // 697：联系方式（用户反馈渠道）
+        SettingsGroupCard(
+          title: '联系方式',
+          children: [
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => _open(AboutSettingsScreen.githubUrl),
+              child: ListTile(
+                key: const ValueKey('aboutGithub'),
+                leading: const Icon(Icons.code),
+                title: const Text('项目主页'),
+                subtitle: Text(AboutSettingsScreen.githubUrl),
+                trailing: const Icon(Icons.open_in_new, size: 18),
+                onTap: () => _open(AboutSettingsScreen.githubUrl),
+              ),
+            ),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => _open(
+                'mqqapi://card/show_pslcard?src_type=internal&version=1'
+                '&uin=${AboutSettingsScreen.qqGroup}&card_type=group&source=qrcode',
+              ),
+              child: ListTile(
+                key: const ValueKey('aboutQqGroup'),
+                leading: const Icon(Icons.groups_outlined),
+                title: const Text('QQ 群'),
+                subtitle: Text(AboutSettingsScreen.qqGroup),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _open(
+                  'mqqapi://card/show_pslcard?src_type=internal&version=1'
+                  '&uin=${AboutSettingsScreen.qqGroup}&card_type=group&source=qrcode',
+                ),
+              ),
+            ),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => _open('mailto:${AboutSettingsScreen.email}'),
+              child: ListTile(
+                key: const ValueKey('aboutEmail'),
+                leading: const Icon(Icons.mail_outline),
+                title: const Text('邮箱'),
+                subtitle: Text(AboutSettingsScreen.email),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _open('mailto:${AboutSettingsScreen.email}'),
+              ),
+            ),
+          ],
+        ),
+        // 697：开源声明
+        SettingsGroupCard(
+          title: '开源',
+          children: [
+            ListTile(
+              leading: const Icon(Icons.favorite_outline),
+              title: const Text('开源软件'),
+              subtitle: const Text(
+                '本项目开源，欢迎提交 Issue 与 Pull Request。'
+                '基于 Flutter / libmpv / 液态玻璃等开源项目构建',
+              ),
+            ),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'HIMI 私密同步观影',
+                applicationVersion: _version.isEmpty ? null : _version,
+              ),
+              child: ListTile(
+                key: const ValueKey('aboutThirdPartyLicenses'),
+                leading: const Icon(Icons.article_outlined),
+                title: const Text('开源许可'),
+                subtitle: const Text('Flutter 及所有依赖库的许可声明'),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => showLicensePage(
+                  context: context,
+                  applicationName: 'HIMI 私密同步观影',
+                  applicationVersion: _version.isEmpty ? null : _version,
+                ),
               ),
             ),
           ],

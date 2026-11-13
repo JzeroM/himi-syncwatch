@@ -88,6 +88,8 @@ double navOpacity(WidgetTester tester) {
 
 void main() {
   testWidgets('桌面 Dock：收起只剩图标轨，展开显示文字，把手切换', (tester) async {
+    MainShell.debugIsDesktopPlatformOverride = true;
+    addTearDown(() => MainShell.debugIsDesktopPlatformOverride = null);
     await pumpApp(tester, const Size(1280, 720));
 
     // 桌面：无底部胶囊导航，有 Dock 把手；收起态图标轨 72 宽
@@ -132,6 +134,8 @@ void main() {
   });
 
   testWidgets('点导航项切分支且Dock保持展开，手动点把手才收回', (tester) async {
+    MainShell.debugIsDesktopPlatformOverride = true;
+    addTearDown(() => MainShell.debugIsDesktopPlatformOverride = null);
     await pumpApp(tester, const Size(1280, 720));
 
     await tester.tap(find.byKey(const ValueKey('drawerToggle')));
@@ -200,6 +204,8 @@ void main() {
   testWidgets('桌面：切 tab 时源分支退回其首页，回来时在首页（v1.1.243）',
       (tester) async {
     // 桌面宽度：抽屉导航在子页/表单态仍可点（手机底部导航此时已隐藏）
+    MainShell.debugIsDesktopPlatformOverride = true;
+    addTearDown(() => MainShell.debugIsDesktopPlatformOverride = null);
     await pumpApp(tester, const Size(1280, 720));
 
     // 展开抽屉（桌面导航入口）
