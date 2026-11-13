@@ -42,12 +42,20 @@ Rectangle {
     signal seekFinished(real ratio)
     signal skipSegmentClicked()
 
-    /// 692：进度条在本组件坐标系里的矩形（供 Overlay 定位跳过胶囊）。
+    /// 695：进度条 item 引用（供 Overlay 直接 `mapToItem`）。
+    ///
+    /// 【为什么暴露 item 而不是 rect】旧实现让 Overlay 依赖
+    /// `bottomBar.sliderRect`（一个跨 item 的 readonly property）——QML
+    /// 对这种多层属性依赖的刷新时机不可靠：首帧布局完成前求值一次
+    ///（宽度 0），之后可能不再重算 → 胶囊的 `visible` 恒为 false。
+    /// 直接拿 item 引用让 Overlay 自己映射，绑定链更短、更可靠。
+    readonly property Item seekSliderRef: seekSlider
+
+    /// 692/695：进度条在本组件坐标系里的矩形。
     ///
     /// 【必须用 mapToItem】`seekSlider` 在嵌套的
     /// `BottomBar → ColumnLayout → RowLayout` 里，其 `x/y` 是相对**直接
-    /// 父级 RowLayout**——直接用会让 `y` 少算几十像素，胶囊被推到屏幕外
-    ///（真机回归「跳过片头/片尾控件未显示」）。
+    /// 父级 RowLayout**——直接用会让 `y` 少算几十像素，胶囊被推到屏幕外。
     readonly property rect sliderRect: {
         if (seekSlider.width <= 0) return Qt.rect(0, 0, 0, 0)
         var p = seekSlider.mapToItem(root, 0, 0)

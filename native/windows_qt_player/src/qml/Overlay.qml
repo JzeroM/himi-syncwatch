@@ -337,25 +337,31 @@ ApplicationWindow {
         // 裸 `Item` 不绘制、不接收鼠标（QML 默认），所以不需要
         // `enabled: false`——那会连子项的 MouseArea 一起禁用。
 
-        // 定位辅助：进度条在 Overlay 坐标系里的矩形
+        // 定位辅助：进度条在 Overlay 坐标系里的矩形。
+        //
+        // 【695 修正】旧实现多了一层 `p.y <= 0` 的判断，且用中间
+        // `readonly property` 做跨 item 绑定——QML 对这种「属性依赖另一个
+        // item 的属性」的刷新时机不可靠（首帧布局完成前求值一次就不再重算）。
+        // 现在直接用 `seekSlider` 映射，并只判 width（宽度为 0 才说明布局
+        // 未完成）。
         readonly property rect sliderRect: {
-            var r = bottomBar.sliderRect
-            // 布局未完成时 width/y 都是 0 —— 返回空矩形让胶囊不显示
-            if (r.width <= 0 || r.height <= 0) return Qt.rect(0, 0, 0, 0)
-            var p = bottomBar.mapToItem(skipCapsuleLayer, r.x, r.y)
-            if (p.y <= 0) return Qt.rect(0, 0, 0, 0)
-            return Qt.rect(p.x, p.y, r.width, r.height)
+            var slider = bottomBar.seekSliderRef
+            if (!slider || slider.width <= 0) return Qt.rect(0, 0, 0, 0)
+            var p = slider.mapToItem(skipCapsuleLayer, 0, 0)
+            return Qt.rect(p.x, p.y, slider.width, slider.height)
         }
 
         // 片头胶囊（进度条左端上方）
         Rectangle {
             id: skipIntroCapsule
             // 坐标无效（布局未完成）时不显示，避免闪到屏幕角落
+            // 695：**先确保能显示**——只依赖 skipPrompt，不再依赖坐标绑定
+            //（跨 item 的 readonly property 链在 QML 里刷新时机不可靠）。
             visible: playerState.skipPrompt === "intro"
-                     && skipCapsuleLayer.sliderRect.width > 0
-            x: skipCapsuleLayer.sliderRect.x
-            // 贴进度条上沿再往上 8px
-            y: skipCapsuleLayer.sliderRect.y - height - 8
+            // 进度条左端：时间列宽 + 底栏左内边距
+            x: Theme.barPadH + Theme.timeCellWidth
+            // 进度条上沿再往上 8px（底栏高 96，第一行约在 y=16）
+            y: parent.height - Theme.bottomBarHeight - height - 8
             width: introLabel.implicitWidth + 28
             height: 30
             radius: 8
@@ -386,11 +392,9 @@ ApplicationWindow {
         Rectangle {
             id: skipOutroCapsule
             visible: playerState.skipPrompt === "outro"
-                     && skipCapsuleLayer.sliderRect.width > 0
-            // 右端对齐（右边缘与进度条右边缘齐平）
-            x: skipCapsuleLayer.sliderRect.x +
-               skipCapsuleLayer.sliderRect.width - width
-            y: skipCapsuleLayer.sliderRect.y - height - 8
+            // 进度条右端：屏幕宽 - 右内边距 - 时间列宽 - 胶囊宽
+            x: parent.width - Theme.barPadH - Theme.timeCellWidth - width
+            y: parent.height - Theme.bottomBarHeight - height - 8
             width: outroLabel.implicitWidth + 28
             height: 30
             radius: 8

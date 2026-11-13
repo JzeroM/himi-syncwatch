@@ -120,20 +120,21 @@ void main() {
   // B. 胶囊位置（底栏居中）
   // ═══════════════════════════════════════════════════════════════
 
-  group('B 跳过胶囊位置（692 已改为双胶囊）', () {
+  group('B 跳过胶囊位置（695 绝对定位）', () {
     test('B1 片头贴进度条左端上方', () {
       expect(overlayQml, contains('id: skipIntroCapsule'));
-      expect(overlayQml, contains('x: skipCapsuleLayer.sliderRect.x'));
+      expect(overlayQml, contains('x: Theme.barPadH + Theme.timeCellWidth'));
     });
 
     test('B2 片尾贴进度条右端上方', () {
       expect(overlayQml, contains('id: skipOutroCapsule'));
       expect(overlayQml,
-          contains('skipCapsuleLayer.sliderRect.width - width'));
+          contains('x: parent.width - Theme.barPadH - Theme.timeCellWidth - width'));
     });
 
-    test('B3 不遮挡进度条（垂直在进度条上沿之上）', () {
-      expect(overlayQml, contains('sliderRect.y - height - 8'));
+    test('B3 不遮挡底栏（垂直在底栏上方）', () {
+      expect(overlayQml,
+          contains('y: parent.height - Theme.bottomBarHeight - height - 8'));
     });
 
     test('B4 不受 controlsVisible 控制（独立倒计时）', () {

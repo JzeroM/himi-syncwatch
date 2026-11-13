@@ -184,20 +184,20 @@ void main() {
       }
     });
 
-    test('C3 贴在进度条上方（不遮挡进度条）', () {
-      // 定位依赖 BottomBar 暴露的 sliderRect
-      expect(overlayQml, contains('bottomBar.sliderRect'));
-      expect(overlayQml, contains('mapToItem(skipCapsuleLayer'));
-      // 垂直方向：进度条上沿再往上
-      expect(overlayQml, contains('sliderRect.y - height - 8'));
+    test('C3 贴在底栏上方（不遮挡任何控件）', () {
+      // 695：改为绝对定位——跨 item 的 readonly property 绑定在 QML 里
+      // 刷新时机不可靠，胶囊曾因此永不显示。
+      expect(overlayQml,
+          contains('y: parent.height - Theme.bottomBarHeight - height - 8'));
+      expect(overlayQml, isNot(contains('sliderRect.y - height - 8')));
     });
 
     test('C4 片头左对齐、片尾右对齐', () {
-      // 片头 x = 进度条左端
-      expect(overlayQml, contains('x: skipCapsuleLayer.sliderRect.x\n'));
-      // 片尾右边缘与进度条右边缘齐平
+      // 片头：底栏左内边距 + 时间列宽（进度条左端）
+      expect(overlayQml, contains('x: Theme.barPadH + Theme.timeCellWidth'));
+      // 片尾：屏幕宽 - 右内边距 - 时间列宽 - 胶囊宽
       expect(overlayQml,
-          contains('skipCapsuleLayer.sliderRect.width - width'));
+          contains('x: parent.width - Theme.barPadH - Theme.timeCellWidth - width'));
     });
 
     test('C5 不受 controlsVisible 控制（独立倒计时）', () {
@@ -210,25 +210,21 @@ void main() {
       }
     });
 
-    test('C6 sliderRect 用 mapToItem（嵌套布局坐标必须转换）', () {
+    test('C6 BottomBar 暴露 seekSliderRef（供精确定位时用）', () {
       final bottomBar =
           read('native/windows_qt_player/src/qml/BottomBar.qml');
-      expect(bottomBar, contains('readonly property rect sliderRect'));
+      expect(bottomBar, contains('readonly property Item seekSliderRef'));
       expect(bottomBar, contains('id: seekSlider'));
-      // 【关键】seekSlider 在 ColumnLayout → RowLayout 里，x/y 是相对
-      // 直接父级——必须 mapToItem 映射到 BottomBar 根坐标系，否则胶囊
-      // 被推到屏幕外（真机「控件未显示」）。
-      expect(bottomBar, contains('seekSlider.mapToItem(root, 0, 0)'));
-      expect(bottomBar, isNot(contains(
-          'Qt.rect(\n        seekSlider.x, seekSlider.y')));
     });
 
-    test('C8 坐标无效时胶囊不显示（防闪到角落）', () {
+    test('C8 胶囊只依赖 skipPrompt（不再依赖坐标绑定）', () {
+      // 695：坐标绑定曾是「永不显示」的根因——现在 visible 只绑 skipPrompt。
       for (final id in ['skipIntroCapsule', 'skipOutroCapsule']) {
         final idx = overlayQml.indexOf('id: $id');
         final block = overlayQml.substring(
             idx, (idx + 400).clamp(0, overlayQml.length));
-        expect(block, contains('sliderRect.width > 0'));
+        expect(block, contains('visible: playerState.skipPrompt'));
+        expect(block, isNot(contains('sliderRect.width > 0')));
       }
     });
 
