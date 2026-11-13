@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/core/himi_platform.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
@@ -12,11 +15,26 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
+/// 697：是否**真桌面平台**（Windows / macOS / Linux）。
+///
+/// 用于「侧边栏 vs 底部胶囊」的布局判定。
+///
+/// 【为什么不能只看宽度】旧实现是 `width >= 1000` 就上桌面侧边栏——
+/// 鸿蒙平板横屏逻辑宽度普遍 1200+，装完直接是 Win 版布局（用户反馈）。
+/// 移动平台（Android / iOS / 鸿蒙，含平板）应始终用手机布局。
+bool get _isDesktopPlatform {
+  if (HimiPlatform.isOhos) return false;
+  return defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.linux;
+}
+
 /// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
 /// - TV 模式（任意宽度）：顶部横排导航栏（遥控器左右键切换，常驻不隐藏）
-/// - 宽窗口（≥1000px，桌面）：左缘吊绳 + 百叶窗抽屉导航
-/// - 窄窗口（手机/小窗）：浮动玻璃胶囊底部导航，滑到底部时胶囊淡出
+/// - **桌面平台**且宽窗口（≥1000px）：左缘吊绳 + 百叶窗抽屉导航
+/// - 移动平台（含平板）/ 窄窗口：浮动玻璃胶囊底部导航，滑到底部时胶囊淡出
+///
 /// 壳层绘制主题色三段渐变背景（各标签页透明以透出）。
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key, required this.shell});
@@ -46,7 +64,10 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (notification.metrics.axis != Axis.vertical) return false;
     // 仅窄窗口底部胶囊方案使用显隐（TV/桌面无底部导航）
     if (ref.read(settingsProvider).tvMode) return false;
-    if (MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint) {
+    // 697：与 build 里的 isDesktop 判定保持一致（含平台判断），
+    // 否则鸿蒙平板会出现「导航是底部胶囊、但不随滚动显隐」的错位。
+    if (_isDesktopPlatform &&
+        MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint) {
       return false;
     }
     final metrics = notification.metrics;
@@ -185,7 +206,14 @@ class _MainShellState extends ConsumerState<MainShell> {
       child: widget.shell,
     );
 
-    final isDesktop =
+    // 697：桌面布局只给**真桌面平台**。
+    //
+    // 旧实现只看逻辑宽度（>= 1000）——鸿蒙平板横屏逻辑宽度普遍 1200+，
+    // 直接落进桌面侧边栏布局（用户反馈「鸿蒙平板装完是 win 版布局」）。
+    //
+    // 现在按平台判定：只有 Windows / macOS / Linux 才可能用侧边栏；
+    // Android / iOS / 鸿蒙（含平板）一律手机布局（底部胶囊），与手机一致。
+    final isDesktop = _isDesktopPlatform &&
         MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
 
     // TV 模式优先于宽度断点：任意宽度都用顶部横排导航（遥控器友好），
