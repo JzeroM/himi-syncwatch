@@ -193,7 +193,10 @@ public:
     /// 【669：HDR 晚绑定】媒体信息解析完才决定 HDR/HLG 档位，而进程
     /// 为「起播直接弹窗」早已拉起（Flutter 侧 _ensureQtPlayerProcess）。
     /// 流程：先 setHdrMode 再 load，mpv 首帧前应用与启动参数等效。
-    Q_INVOKABLE void setHdrMode(bool hdr, bool hlg);
+    ///
+    /// 697：`dv` = 杜比视界内容 → tone-mapping 用 `bt.2390` + `hybrid`
+    ///（DV 动态元数据用 clip 会丢高光、暗部发灰）。
+    Q_INVOKABLE void setHdrMode(bool hdr, bool hlg, bool dv = false);
 
     /// 【672】活跃轨道在同类型组内的序号（0 起；无 = -1）——面板 id =
     /// 序号 + 1（与 Flutter「Emby 索引 + 1」约定一致），供选中态回填。
@@ -339,6 +342,11 @@ private:
     /// 解耦，并在 `load`/`stop` 两头强制对齐 mpv 真实 `pause` 属性。
     bool hasMedia_ = false;
     bool hdrRequested_ = false;
+
+    /// 697：当前媒体是否为杜比视界内容。
+    ///
+    /// DV 动态元数据需要 `bt.2390` + `hybrid` 色调映射（`clip` 会丢高光）。
+    bool dvContent_ = false;
     bool initialized_ = false;  ///< mpv_initialize 已完成（option→property）
 
     QString outPrimaries_;

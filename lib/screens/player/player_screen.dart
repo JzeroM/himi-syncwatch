@@ -495,7 +495,12 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// Dolby Vision 内容输出色彩空间策略（纯函数，便于单测）。
   ///
-  /// DV 内容恒走 mdk（LLDV：mdk 解析并处理 DV 元数据，输出 SDR/HDR10）。
+  /// 【697 修正过时描述】原文写「DV 内容恒走 mdk」——那是 681 引擎收敛
+  /// 前的路由逻辑，现已不存在：安卓手机 / 鸿蒙 / Windows 都只有 MPV。
+  /// 本方法现在只被 **MDK 适配器**（安卓 TV 可选内核）调用；
+  /// MPV 引擎的 DV 走 `mpv_player_adapter` 的 `dvContent` 分支
+  /// （`gpu-next` 内置 libplacebo 消费 DV 元数据做动态映射）。
+  ///
   /// 输出目标由 `Player.set(ColorSpace)` 决定；全局 `videoout.hdr` 恒 0
   /// （=0 时不覆盖 set），故本策略生效。
   ///
@@ -2449,9 +2454,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final player = _player;
     if (player is! MpvPlayerAdapter) return;
     final stream = _embyVideoStream;
-    player.hdrContent =
-        _hdrContent || stream?.isHDR == true || stream?.isDolbyVision == true;
+    // 697：DV 单独标记——tone-mapping 策略与普通 HDR10 不同
+    //（DV 动态元数据需要 bt.2390 + hybrid，见 mpv_player_adapter 注释）。
+    final isDv = stream?.isDolbyVision == true;
+    player.hdrContent = _hdrContent || stream?.isHDR == true || isDv;
     player.hlgContent = _isHlgContent;
+    player.dvContent = isDv;
   }
 
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。
@@ -3677,6 +3685,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     required String url,
     required bool hdr,
     required bool hlg,
+    /// 697：杜比视界内容（Qt 侧 tone-mapping 用 bt.2390 + hybrid）。
+    bool dv = false,
     required Map<String, String> headers,
     int startMs = 0,
     Future<QtMediaTarget?> Function(int episodeIndex)? resolveEpisode,
@@ -3696,7 +3706,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     LogService().log('Player', 'Qt 播放器已接管播放');
     // 669 B2：HDR 晚绑定——先切档再 load（mpv 首帧前应用与启动参数等效）。
-    adapter.setHdrMode(hdr: hdr, hlg: hlg);
+    adapter.setHdrMode(hdr: hdr, hlg: hlg, dv: dv);
     // 播放地址与鉴权头通过 IPC 下发（不放命令行：URL 会在任务管理器
     // 可见，且 Emby URL 可能超过命令行长度限制）
     adapter.media = url;
@@ -5014,6 +5024,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           url: streamUrl,
           hdr: mpv?.isHdrContent ?? false,
           hlg: mpv?.isHlgContent ?? false,
+          dv: mpv?.isDvContent ?? false,
           headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
           startMs: startMs,
           // 664：会话阶段的切集/切版本解析（纯数据闭包：捕获服务实例
@@ -5234,6 +5245,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           url: playUrl,
           hdr: mpv?.isHdrContent ?? false,
           hlg: mpv?.isHlgContent ?? false,
+          dv: mpv?.isDvContent ?? false,
           headers: token.isNotEmpty ? {'X-Emby-Token': token} : const {},
           startMs: (position * 1000).round(),
         );

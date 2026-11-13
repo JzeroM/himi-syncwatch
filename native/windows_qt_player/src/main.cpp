@@ -582,7 +582,8 @@ int main(int argc, char* argv[]) {
                              // 弹窗），媒体信息解析完先切 HDR 档再 load。
                              mpv.setHdrMode(
                                  cmd.value(QLatin1String("hdr")).toBool(),
-                                 cmd.value(QLatin1String("hlg")).toBool());
+                                 cmd.value(QLatin1String("hlg")).toBool(),
+                                 cmd.value(QLatin1String("dv")).toBool());
                          } else if (type == QLatin1String("selectAudio")) {
                              // 664：切轨命令此前无人处理（两头都断）。
                              // id = Emby 索引 + 1（与 SelectAudio 约定一致），

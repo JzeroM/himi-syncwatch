@@ -25,6 +25,7 @@ class HimiMpvAndroidSession implements MpvSession {
     required this.nativeUi,
     required this.hdr,
     required this.hlg,
+    this.dv = false,
     required String vo,
   }) : _voOverride = vo;
 
@@ -41,6 +42,12 @@ class HimiMpvAndroidSession implements MpvSession {
   final bool nativeUi;
   final bool hdr;
   final bool hlg;
+
+  /// 697：杜比视界内容。
+  ///
+  /// DV 动态元数据需要 `bt.2390` + `hybrid` 色调映射（`clip` 会丢高光）。
+  /// 仅在 `gpu-next` + Vulkan 后端下 libplacebo 才能处理 DV 元数据。
+  final bool dv;
 
   final StreamController<Map<Object?, Object?>> _events =
       StreamController<Map<Object?, Object?>>.broadcast();
@@ -130,6 +137,8 @@ class HimiMpvAndroidSession implements MpvSession {
     bool nativeUi = false,
     bool hdr = false,
     bool hlg = false,
+    /// 697：杜比视界内容（决定 tone-mapping 策略）。
+    bool dv = false,
     /// 655：渲染器由设置决定（'gpu-next' / 'gpu'）；纹理路径恒为 'gpu'。
     String vo = 'gpu-next',
   }) async {
@@ -141,6 +150,7 @@ class HimiMpvAndroidSession implements MpvSession {
       nativeUi: nativeUi,
       hdr: hdr,
       hlg: hlg,
+      dv: dv,
       vo: vo,
     );
     await session._start();
@@ -515,7 +525,10 @@ class HimiMpvAndroidSession implements MpvSession {
         'target-prim': 'bt.2020',
         'target-trc': hlg ? 'hlg' : 'pq',
         'hdr-compute-peak': 'auto',
-        'tone-mapping': 'clip',
+        // 697：DV 用感知映射（bt.2390 + hybrid），普通 HDR10 保持 clip。
+        // DV 是动态元数据，clip 按单一峰值硬裁切会丢高光、暗部发灰。
+        'tone-mapping': dv ? 'bt.2390' : 'clip',
+        if (dv) 'tone-mapping-mode': 'hybrid',
       },
       // 639：老 GPU 无法 HDR 直出 → 对 HDR 内容做 SDR tone mapping，
       // 避免直接输出导致过曝/发灰。

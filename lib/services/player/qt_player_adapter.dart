@@ -601,10 +601,16 @@ class QtPlayerAdapter implements PlayerAdapter {
   ///
   /// 时序约定：**先 setHdrMode 再 prepare(load)**——mpv 首帧前应用
   /// 与启动参数等效（Qt 侧 `MpvWindow::setHdrMode`）。
-  void setHdrMode({required bool hdr, required bool hlg}) {
+  void setHdrMode({
+    required bool hdr,
+    required bool hlg,
+    /// 697：杜比视界内容 → Qt 侧 tone-mapping 用 bt.2390 + hybrid。
+    bool dv = false,
+  }) {
     if (_disposed) return;
-    _pipe.sendCommandRaw({'type': 'setHdrMode', 'hdr': hdr, 'hlg': hlg});
-    LogService().log('QtPlayer', 'setHdrMode hdr=$hdr hlg=$hlg');
+    _pipe.sendCommandRaw(
+        {'type': 'setHdrMode', 'hdr': hdr, 'hlg': hlg, 'dv': dv});
+    LogService().log('QtPlayer', 'setHdrMode hdr=$hdr hlg=$hlg dv=$dv');
   }
 
   @override

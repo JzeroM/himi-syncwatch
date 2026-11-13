@@ -75,6 +75,8 @@ class HimiMpvPlayer implements MpvSession {
     bool nativeUi = false,
     bool hdr = false,
     bool hlg = false,
+    /// 697：杜比视界内容（决定 tone-mapping 策略）。
+    bool dv = false,
   }) async {
     final raw = await _methods.invokeMethod<Object?>('create', {
       'width': width,
@@ -84,6 +86,7 @@ class HimiMpvPlayer implements MpvSession {
       'nativeUi': nativeUi,
       'hdr': hdr,
       'hlg': hlg,
+      'dv': dv,
     });
     if (raw == null) {
       throw StateError('mpv create failed');

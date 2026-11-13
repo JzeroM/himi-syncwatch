@@ -198,6 +198,28 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 656：当前媒体是否 HLG（只读，供 Qt 播放器启动时传参）。
   bool get isHlgContent => _hlgContentForMedia;
 
+  /// 697：当前媒体是否为杜比视界内容。
+  ///
+  /// 【为什么要单独标记】DV 的 tone-mapping 需求与普通 HDR10 不同：
+  /// - **HDR10**：静态元数据（整片一个峰值），`clip` 硬裁切影响有限
+  /// - **DV**：动态元数据（逐场景峰值），必须用 `bt.2390` 感知映射 +
+  ///   `hybrid` 模式，否则高光细节大量丢失、暗部发灰
+  ///
+  /// 【处理链路】DV 元数据由 FFmpeg 解析（安卓侧有
+  /// `android-mediacodec-dovi.patch` 补丁），`gpu-next` 内置的
+  /// libplacebo 消费它做动态映射。**不要额外加 `vf=libplacebo`**——
+  /// 那是把 HDR 转 SDR 的滤镜方案（media_kit 用 Flutter 纹理时的妥协），
+  /// 我们三平台都是直出，加 vf 会自废 HDR 直出能力。
+  bool _dvContentForMedia = false;
+  set dvContent(bool value) {
+    if (_dvContentForMedia == value) return;
+    _dvContentForMedia = value;
+    unawaited(_refreshHdrOutputForCurrentSession());
+  }
+
+  /// 697：当前媒体是否杜比视界（只读）。
+  bool get isDvContent => _dvContentForMedia;
+
   /// SDR 纹理链路不可用时强制原生 Surface。
   bool _forceNativeSurface = false;
   set forceNativeSurface(bool value) => _forceNativeSurface = value;
@@ -433,13 +455,21 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     final player = _player;
     if (player == null) return;
     _targetTrc = enabled ? (_hlgContentForMedia ? 'hlg' : 'pq') : 'auto';
+    // 697：DV 用感知映射（bt.2390 + hybrid），普通 HDR10 保持 clip。
+    //
+    // 【为什么 DV 不能继续用 clip】DV 是**动态元数据**（逐场景峰值），
+    // `clip` 按单一峰值硬裁切 → 高光细节丢失、暗部发灰。`bt.2390`
+    // 是感知映射曲线，`hybrid` 模式同时考虑亮度与色彩，是 DV 的
+    // 标准做法（与 media_kit 路径的 `tonemapping=bt.2390` 一致）。
+    final toneMapping = _dvContentForMedia ? 'bt.2390' : 'clip';
     final props = enabled
         ? <String, String>{
             'target-colorspace-hint': 'yes',
             'target-prim': 'bt.2020',
             'target-trc': _hlgContentForMedia ? 'hlg' : 'pq',
             'hdr-compute-peak': 'auto',
-            'tone-mapping': 'clip',
+            'tone-mapping': toneMapping,
+            if (_dvContentForMedia) 'tone-mapping-mode': 'hybrid',
             if (defaultTargetPlatform == TargetPlatform.windows)
               'd3d11-output-format': 'rgb10_a2',
           }
@@ -447,6 +477,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
             'target-colorspace-hint': 'no',
             'target-prim': 'auto',
             'target-trc': 'auto',
+            // SDR 输出时 DV 内容同样用感知映射（避免降级观感发灰）
+            if (_dvContentForMedia) 'tone-mapping': toneMapping,
+            if (_dvContentForMedia) 'tone-mapping-mode': 'hybrid',
             if (defaultTargetPlatform == TargetPlatform.windows)
               'd3d11-output-format': 'auto',
           };
@@ -561,6 +594,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         nativeUi: nativeUiRequested,
         hdr: decision.hdrOutput,
         hlg: decision.hdrOutput && _hlgContentForMedia,
+        // 697：DV 内容传给原生层，决定 tone-mapping 策略
+        //（bt.2390 + hybrid，而非 clip）。
+        dv: _dvContentForMedia,
         // 655：渲染器由设置决定（Android Surface 路径）。
         vo: AppSettings.resolveMpvVo(
           renderer: _mpvRenderer,

@@ -331,7 +331,15 @@ void MpvWindow::applyHdrOptions(bool hdr, bool hlg) {
         setMpvString("target-trc", hlg ? QStringLiteral("hlg")
                                       : QStringLiteral("pq"));
         setMpvString("hdr-compute-peak", QStringLiteral("auto"));
-        setMpvString("tone-mapping", QStringLiteral("clip"));
+        // 697：DV 用感知映射（bt.2390 + hybrid），普通 HDR10 保持 clip。
+        // DV 是动态元数据，clip 按单一峰值硬裁切会丢高光、暗部发灰。
+        // Windows 走 D3D11，libplacebo 的 DV 处理（compute shader）可用。
+        setMpvString("tone-mapping",
+                     dvContent_ ? QStringLiteral("bt.2390")
+                                : QStringLiteral("clip"));
+        if (dvContent_) {
+            setMpvString("tone-mapping-mode", QStringLiteral("hybrid"));
+        }
     } else {
         setMpvString("d3d11-output-format", QStringLiteral("auto"));
         setMpvString("target-colorspace-hint", QStringLiteral("no"));
@@ -352,9 +360,11 @@ void MpvWindow::setMpvString(const char* name, const QString& value) {
     }
 }
 
-void MpvWindow::setHdrMode(bool hdr, bool hlg) {
-    qInfo().noquote() << "[hdr] setHdrMode hdr=" << hdr << "hlg=" << hlg;
+void MpvWindow::setHdrMode(bool hdr, bool hlg, bool dv) {
+    qInfo().noquote() << "[hdr] setHdrMode hdr=" << hdr << "hlg=" << hlg
+                      << "dv=" << dv;
     hdrRequested_ = hdr;
+    dvContent_ = dv;
     applyHdrOptions(hdr, hlg);
 }
 

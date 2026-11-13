@@ -94,7 +94,9 @@ void main() {
           contains('setMpvString("target-colorspace-hint", QStringLiteral("yes"))'));
       expect(mpvCpp,
           contains('setMpvString("target-prim", QStringLiteral("bt.2020"))'));
-      expect(mpvCpp, contains('void MpvWindow::setHdrMode(bool hdr, bool hlg)'));
+      // 697：签名增加 dv（杜比视界 → tone-mapping 用 bt.2390 + hybrid）
+      expect(mpvCpp,
+          contains('void MpvWindow::setHdrMode(bool hdr, bool hlg, bool dv)'));
     });
 
     test('HDR 判据读 video-out-params（不是 video-params）', () {
@@ -1451,9 +1453,10 @@ void main() {
 
     test('B2 HDR 晚绑定（先 setHdrMode 再 load）', () {
       expect(qtAdapter, contains("'type': 'setHdrMode'"));
-      expect(mpvH2, contains('Q_INVOKABLE void setHdrMode(bool hdr, bool hlg)'));
+      expect(mpvH2,
+          contains('Q_INVOKABLE void setHdrMode(bool hdr, bool hlg, bool dv'));
       expect(mainCpp2, contains('QLatin1String("setHdrMode")'));
-      expect(screen, contains('adapter.setHdrMode(hdr: hdr, hlg: hlg)'));
+      expect(screen, contains('adapter.setHdrMode(hdr: hdr, hlg: hlg, dv: dv)'));
     });
 
     test('B4 回退兜底（失败恢复 UI + 未交接关孤儿窗）', () {

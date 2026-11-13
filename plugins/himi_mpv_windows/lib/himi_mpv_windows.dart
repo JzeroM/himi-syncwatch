@@ -19,6 +19,8 @@ export 'himi_mpv_windows_surface_view.dart';
 Map<String, String> buildWindowsMpvOptions({
   required bool hdr,
   required bool hlg,
+  /// 697：杜比视界内容（决定 tone-mapping 策略）。
+  bool dv = false,
 }) =>
     <String, String>{
       'vo': 'gpu-next',
@@ -48,7 +50,10 @@ Map<String, String> buildWindowsMpvOptions({
         'target-prim': 'bt.2020',
         'target-trc': hlg ? 'hlg' : 'pq',
         'hdr-compute-peak': 'auto',
-        'tone-mapping': 'clip',
+        // 697：DV 用感知映射（bt.2390 + hybrid），普通 HDR10 保持 clip。
+        // Windows 走 D3D11，libplacebo 的 DV 处理（compute shader）可用。
+        'tone-mapping': dv ? 'bt.2390' : 'clip',
+        if (dv) 'tone-mapping-mode': 'hybrid',
       },
     };
 

@@ -25,6 +25,8 @@ class MpvSessionPlatform {
     required bool nativeSurface,
     required bool hdr,
     required bool hlg,
+    /// 697：杜比视界内容（决定 tone-mapping 策略）。
+    bool dv = false,
     bool nativeUi = false,
     /// 655：Android Surface 路径的渲染器（'gpu-next' / 'gpu'），由设置决定。
     /// 其它平台忽略此参数（各自在插件内部固定）。
@@ -39,6 +41,7 @@ class MpvSessionPlatform {
         nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
+        dv: dv,
       );
     }
     if (Platform.isAndroid) {
@@ -50,6 +53,7 @@ class MpvSessionPlatform {
         nativeUi: nativeUi,
         hdr: hdr,
         hlg: hlg,
+        dv: dv,
         vo: vo,
       );
     }

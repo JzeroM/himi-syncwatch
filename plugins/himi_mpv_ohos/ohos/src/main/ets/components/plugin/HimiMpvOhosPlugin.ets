@@ -780,6 +780,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     const nativeSurface = this.boolArg(args, 'nativeSurface', false);
     const hdrRequested = this.boolArg(args, 'hdr', false);
     const hlg = this.boolArg(args, 'hlg', false);
+    // 697：杜比视界内容（决定 tone-mapping 策略）
+    const dv = this.boolArg(args, 'dv', false);
     const hdr = hdrRequested && nativeSurface;
 
     const session = new MpvSession();
@@ -788,8 +790,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     // 平台视图模式下没有 Flutter 纹理 id，返回一个稳定标识供上层记录。
     session.textureId = nativeSurface ? 0 : -1;
     hilog.info(DOMAIN, TAG,
-      'create request: nativeSurface=%{public}s hdrRequested=%{public}s hlg=%{public}s',
-      `${nativeSurface}`, `${hdrRequested}`, `${hlg}`);
+      'create request: nativeSurface=%{public}s hdrRequested=%{public}s hlg=%{public}s dv=%{public}s',
+      `${nativeSurface}`, `${hdrRequested}`, `${hlg}`, `${dv}`);
 
     // 顺序与 mpv-arkts Player.ets 完全一致（真机验证可播，不可调换）：
     //   1) JSBind 回调最先注册：initialize() 启动 mpv 事件线程，事件派发走
@@ -815,8 +817,15 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
         session.lib.setOptionString('target-prim', 'bt.2020');
         session.lib.setOptionString('target-trc', hlg ? 'hlg' : 'pq');
         session.lib.setOptionString('hdr-compute-peak', 'auto');
-        session.lib.setOptionString('tone-mapping', 'clip');
-        hilog.info(DOMAIN, TAG, 'HDR 输出: %{public}s', hlg ? 'HLG' : 'HDR10');
+        // 697：DV 用感知映射（bt.2390 + hybrid），普通 HDR10 保持 clip。
+        // 鸿蒙已是 gpu-api=vulkan + gpu-context=ohosvk，
+        // libplacebo 的 DV 动态元数据处理（compute shader）可用。
+        session.lib.setOptionString('tone-mapping', dv ? 'bt.2390' : 'clip');
+        if (dv) {
+          session.lib.setOptionString('tone-mapping-mode', 'hybrid');
+        }
+        hilog.info(DOMAIN, TAG, 'HDR 输出: %{public}s (dv=%{public}s)',
+          hlg ? 'HLG' : 'HDR10', dv ? 'true' : 'false');
       }
       // 硬解渲染档位（standard/performance/extreme，v1.2.82）：
       // 由 Dart 侧从设置传入，未传时用 performance 默认。
