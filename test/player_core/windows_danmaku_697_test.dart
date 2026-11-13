@@ -161,7 +161,18 @@ void main() {
     });
 
     test('4.3 暂停时冻结（不空转）', () {
-      expect(codeOnly(layer), contains('running: root.enabled && root.playing'));
+      expect(codeOnly(layer),
+          contains('running: root.danmakuEnabled && root.playing'));
+    });
+
+    test('4.5 不与 Item 的 FINAL 属性冲突（否则 QML 加载即失败）', () {
+      // `Item` 的 enabled / opacity 等是 FINAL 属性，重定义会报
+      // 「Cannot override FINAL property」→ Overlay 整个加载失败。
+      expect(codeOnly(layer), isNot(contains('property bool enabled')));
+      expect(codeOnly(layer), isNot(contains('property real opacity')));
+      // 用独立属性名
+      expect(codeOnly(layer), contains('property bool danmakuEnabled'));
+      expect(codeOnly(layer), contains('property real danmakuOpacity'));
     });
 
     test('4.4 中间状态不触发 QML 通知（性能）', () {

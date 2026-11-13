@@ -266,17 +266,19 @@ ApplicationWindow {
         id: danmakuLayer
         anchors.fill: parent
         z: 1
-        items: playerState.danmakuItems
+        danmakuItems: playerState.danmakuItems
         positionMs: playerState.positionMs
         // 属性是 `paused`（无 playing）；取反得到「播放中」
         playing: !playerState.paused
-        enabled: root.danmakuOn
+        danmakuEnabled: root.danmakuOn
         fontSizeScale: playerState.danmakuFontSize
         speed: playerState.danmakuSpeed
         opacity: playerState.danmakuOpacity
         scrollRows: playerState.danmakuScrollRows
         topRows: playerState.danmakuTopRows
         bottomRows: playerState.danmakuBottomRows
+        // 不透明度用独立属性传入（不用父级 opacity，避免与子项相乘两次）
+        danmakuOpacity: playerState.danmakuOpacity
     }
 
     // ── 底栏（渐变玻璃条）──

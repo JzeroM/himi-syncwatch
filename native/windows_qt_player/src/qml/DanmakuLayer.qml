@@ -55,19 +55,26 @@ Item {
     id: root
 
     /// 弹幕数据（`playerState.danmakuItems`）。
-    property var items: []
+    property var danmakuItems: []
     /// 播放位置（毫秒）。
     property real positionMs: 0
     /// 是否正在播放（暂停时冻结）。
     property bool playing: false
-    /// 总开关。
-    property bool enabled: true
+    /// 弹幕总开关。
+    ///
+    /// 【为什么不叫 `enabled`】`Item.enabled` 是 FINAL 属性（控制鼠标事件
+    /// 接收），重定义会报 `Cannot override FINAL property`。
+    property bool danmakuEnabled: true
     /// 字号倍率（`danmakuFontSize`，Flutter 默认 0.5）。
     property real fontSizeScale: 0.5
     /// 滚动速度倍率（`danmakuSpeed`，Flutter 默认 0.7）。
     property real speed: 0.7
-    /// 不透明度（0.1~1.0）。
-    property real opacity: 1.0
+    /// 弹幕不透明度（0.1~1.0）。
+    ///
+    /// 【为什么不直接用 `Item.opacity`】父级 `opacity` 会与子项 `opacity`
+    /// 相乘。若外部设父级、子项再乘一次，弹幕会过淡。这里用独立属性，
+    /// 由子项统一应用（`Item.opacity` 保持默认 1.0）。
+    property real danmakuOpacity: 1.0
     /// 滚动行数上限（用户设置）。
     property int scrollRows: 30
     /// 顶部行数。
@@ -128,7 +135,7 @@ Item {
         _state.flying = []
         tick()
     }
-    onItemsChanged: tick()
+    onDanmakuItemsChanged: tick()
     Component.onCompleted: tick()
 
     /// 估算文本宽度（逐字复刻 Flutter `DanmakuTimeline.estimateTextWidth`）。
@@ -174,8 +181,8 @@ Item {
     function syncFlying(pos, travelMs) {
         var list = _state.flying
         var changed = false
-        for (var i = 0; i < items.length; i++) {
-            var it = items[i]
+        for (var i = 0; i < danmakuItems.length; i++) {
+            var it = danmakuItems[i]
             var k = keyOf(it)
             var seen = false
             for (var j = 0; j < list.length; j++) {
@@ -265,7 +272,7 @@ Item {
 
     /// 单帧更新：同步飞行缓存 → 分配行号 → 计算渲染项。
     function tick() {
-        if (!enabled || opacity <= 0) {
+        if (!danmakuEnabled || danmakuOpacity <= 0) {
             if (frameItems.length > 0) frameItems = []
             return
         }
@@ -308,7 +315,7 @@ Item {
     /// 帧驱动：只在播放中推进（暂停冻结，对应安卓 `paused` 逻辑）。
     Timer {
         interval: root.frameIntervalMs
-        running: root.enabled && root.playing && root.visible
+        running: root.danmakuEnabled && root.playing && root.visible
         repeat: true
         onTriggered: root.tick()
     }
@@ -356,7 +363,7 @@ Item {
             styleColor: "#8A000000"
 
             // 顶/底淡入淡出；滚动不做淡变（进出屏幕边缘本就自然）
-            opacity: root.opacity * (isFixed
+            opacity: root.danmakuOpacity * (isFixed
                 ? root.fixedFade(item ? item.progress : 1.0) : 1.0)
         }
     }
