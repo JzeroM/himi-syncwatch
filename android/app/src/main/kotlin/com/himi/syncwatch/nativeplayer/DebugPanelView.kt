@@ -230,8 +230,9 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
             )
             addRow(
                 "峰值",
+                // mpv 的 sig-peak 是 max_luma/100 的倍数，×100 才是 nits
                 if (state.videoParamsSigPeak > 0) {
-                    "${state.videoParamsSigPeak.toInt()} nits"
+                    "${(state.videoParamsSigPeak * 100).toInt()} nits"
                 } else {
                     "-"
                 },
@@ -266,7 +267,10 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
                 "${fmt.orDash(state.targetPrim)} / ${fmt.orDash(state.targetTrc)}",
                 if (fmt.isHdrOutput(state.targetTrc)) fmt.SEV_GOOD else fmt.SEV_NORMAL,
             )
-            val isDv = state.doviProfile > 0
+            // 【697 真机回归：P5 显示「非 DV 内容」】mpv 的
+            // dolby-vision-profile 在自建 libmpv 上可能读不到（恒 0），
+            // 必须用 Emby 元数据（dvContent）兜底。
+            val isDv = state.doviProfile > 0 || state.dvContent
             val mappingMode =
                 if (state.toneMappingMode.isEmpty()) "" else " (${state.toneMappingMode})"
             addRow(
@@ -284,8 +288,17 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
         // ── 杜比视界 ──
         addGroup(KEY_DV, "杜比视界", highlighted = true)
         if (!isCollapsed(KEY_DV)) {
-            val isDv = state.doviProfile > 0
-            addRow("Profile", fmt.dvProfileText(state.doviProfile, state.doviLevel))
+            val isDv = state.doviProfile > 0 || state.dvContent
+            addRow(
+                "Profile",
+                if (state.doviProfile > 0) {
+                    fmt.dvProfileText(state.doviProfile, state.doviLevel)
+                } else if (state.dvContent) {
+                    "DV（Profile 未知 · Emby 元数据）"
+                } else {
+                    fmt.dvProfileText(0, 0)
+                },
+            )
             if (isDv) {
                 addRow(
                     "识别",

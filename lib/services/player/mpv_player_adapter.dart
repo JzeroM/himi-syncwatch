@@ -302,8 +302,73 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   VideoColorInfo? get colorInfo => _colorInfo;
 
   /// 697：最近一次直读的 mpv 调试属性（HDR/DV 相关）。
+  ///
+  /// 【必须随轮询刷新】旧实现只在调试面板采集时赋值，而原生 UI 的状态
+  /// 推送（`buildNativePlayerState`）从 `_debugProps` 取值 → 面板没开时
+  /// 这些字段恒为空（真机截图：`目标`/`映射`/`编码`/`gpu-api` 全空）。
   Map<String, String> _debugProps = const {};
   Map<String, String> get debugProps => _debugProps;
+
+  /// 697：最近一次实际下发的 `target-prim`（`_debugProps` 为空时兜底）。
+  String? _targetPrim;
+
+  /// 697：最近一次实际下发的 `tone-mapping`（同上）。
+  String? _targetToneMapping;
+
+  /// 697：Emby 元数据声明的杜比视界 Profile（0 = 非 DV / 未知）。
+  ///
+  /// mpv 的 `current-tracks/video/dolby-vision-profile` 在部分构建
+  /// （鸿蒙/安卓自建 libmpv）读不到，此时用 Emby 的静态声明兜底，
+  /// 避免面板把 P5 显示成「非 DV 内容」。
+  int _embyDoviProfile = 0;
+  int get embyDoviProfile => _embyDoviProfile;
+  set embyDoviProfile(int value) => _embyDoviProfile = value;
+
+  /// 697：原生 UI 需要的输出/管线属性清单。
+  ///
+  /// 与 [VideoColorInfo.propertyNames]（输入色彩）分开：这些是「我们怎么
+  /// 渲染的」，不需要 1s 级刷新，2s 一次足够。
+  static const _nativeDebugPropertyNames = <String>[
+    ...VideoColorInfo.propertyNames,
+    'target-prim',
+    'target-trc',
+    'target-peak',
+    'tone-mapping',
+    'tone-mapping-mode',
+    'hdr-compute-peak',
+    'gpu-api',
+    'gpu-context',
+    'video-format',
+    'hwdec-current',
+    'estimated-vf-fps',
+    'frame-drop-count',
+    'decoder-frame-drop-count',
+  ];
+
+  /// 697：低频刷新 [_debugProps]（原生 UI 状态推送的数据源）。
+  ///
+  /// 【为什么必须自动跑】旧实现只在调试面板采集时赋值，而
+  /// `buildNativePlayerState()` 从这里取值 → 面板没开时
+  /// `目标`/`映射`/`编码`/`gpu-api` 恒为空（真机截图实证）。
+  ///
+  /// 2s 一次：14 次跨进程属性读，频率再高没有收益。
+  void _startNativeDebugRefresh() {
+    _nativeDebugTimer?.cancel();
+    _nativeDebugTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_disposed || _player == null) return;
+      unawaited(readDebugProperties(_nativeDebugPropertyNames));
+    });
+    // 立即跑一次，避免起播后前 2s 面板空白
+    unawaited(readDebugProperties(_nativeDebugPropertyNames));
+  }
+
+  void _stopNativeDebugRefresh() {
+    _nativeDebugTimer?.cancel();
+    _nativeDebugTimer = null;
+  }
+
+  Timer? _nativeDebugTimer;
 
   /// 697：调试面板——读取 mpv 实时属性（异步直读，非缓存）。
   ///
@@ -327,8 +392,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 697：缓存最近一次结果——原生 UI 状态下发时复用，避免重复 IPC，
     // 也保证「Flutter 面板」与「原生面板」显示同一份数据。
     _debugProps = out;
-    final vp = out['video-params'];
-    if (vp != null) _colorInfo = VideoColorInfo.tryParse(vp);
+    // 标量子属性优先（鸿蒙/安卓可读），整块 JSON 只在 NODE 可读时兜底
+    _colorInfo = VideoColorInfo.fromProperties(out) ??
+        (out['video-params'] != null
+            ? VideoColorInfo.tryParse(out['video-params'])
+            : null);
     return out;
   }
 
@@ -528,6 +596,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
             if (defaultTargetPlatform == TargetPlatform.windows)
               'd3d11-output-format': 'auto',
           };
+    // 记录实际下发的值——原生 UI 在调试面板未开启时靠它兜底显示
+    //（否则 `目标` / `映射` 两行恒为空）。
+    _targetPrim = props['target-prim'];
+    _targetToneMapping = props['tone-mapping'];
     for (final entry in props.entries) {
       try {
         await player.setProperty(entry.key, entry.value);
@@ -765,6 +837,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 可能完全不送达（表现为纹理有了但时长/分辨率永远为空 → 无限转圈）。
     // 轮询与事件流并行，谁先到用谁，互相补齐。
     _startPolling();
+    // 697：原生 UI 的输出/管线属性（2s 低频）——面板未开启也要跑，
+    // 否则 `buildNativePlayerState` 的相关字段恒为空。
+    _startNativeDebugRefresh();
   }
 
   /// 轮询定时器（事件流失效时的兜底数据源）。
@@ -2312,11 +2387,16 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       videoParamsSigPeak: _colorInfo?.sigPeak ?? 0,
       videoParamsBitDepth: _colorInfo?.bitDepth ?? 0,
       videoParamsPixelFormat: _colorInfo?.pixelFormat ?? '',
-      doviProfile: _colorInfo?.doviProfile ?? 0,
+      // DV Profile：mpv 优先（逐场景真实值），读不到用 Emby 静态声明
+      doviProfile: (_colorInfo?.doviProfile ?? 0) > 0
+          ? _colorInfo!.doviProfile
+          : _embyDoviProfile,
       doviLevel: _colorInfo?.doviLevel ?? 0,
       dvContent: _dvContentForMedia,
-      targetPrim: _debugProps['target-prim'] ?? '',
-      toneMapping: _debugProps['tone-mapping'] ?? '',
+      // 【必须有兜底】`_debugProps` 在面板未开启时可能为空，
+      // 直接用会显示空字符串（真机截图：目标/映射/编码全空）。
+      targetPrim: _debugProps['target-prim'] ?? _targetPrim ?? '',
+      toneMapping: _debugProps['tone-mapping'] ?? _targetToneMapping ?? '',
       toneMappingMode: _debugProps['tone-mapping-mode'] ?? '',
       hdrComputePeak: _debugProps['hdr-compute-peak'] ?? '',
       gpuApi: _debugProps['gpu-api'] ?? '',
@@ -2522,6 +2602,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     _disposed = true;
     _pollTimer?.cancel();
     _pollTimer = null;
+    _stopNativeDebugRefresh();
     try {
       await _rawSub?.cancel();
     } catch (_) {}

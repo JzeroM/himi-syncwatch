@@ -378,15 +378,24 @@ void main() {
     test('8.2 适配器填充 HDR/DV 指标', () {
       expect(adapterDart, contains('videoParamsPrimaries: _colorInfo?.primaries'));
       expect(adapterDart, contains('videoParamsGamma: _colorInfo?.gamma'));
-      expect(adapterDart, contains('doviProfile: _colorInfo?.doviProfile'));
+      // DV Profile：mpv 优先，读不到用 Emby 兜底（697 真机回归）
+      expect(adapterDart, contains('_embyDoviProfile'));
       expect(adapterDart, contains('dvContent: _dvContentForMedia'));
-      expect(adapterDart, contains("targetPrim: _debugProps['target-prim']"));
-      expect(adapterDart, contains("toneMapping: _debugProps['tone-mapping']"));
+      // target-prim / tone-mapping 必须有状态兜底（面板未开启时
+      // `_debugProps` 可能为空 → 真机显示空字符串）
+      expect(adapterDart, contains("_debugProps['target-prim'] ?? _targetPrim"));
+      expect(
+        adapterDart,
+        contains("_debugProps['tone-mapping'] ?? _targetToneMapping"),
+      );
     });
 
-    test('8.3 readDebugProperties 缓存 video-params 解析结果', () {
-      expect(adapterDart, contains('Future<Map<String, String>> readDebugProperties'));
-      expect(adapterDart, contains('_colorInfo = VideoColorInfo.tryParse(vp)'));
+    test('8.3 readDebugProperties 缓存色彩解析结果', () {
+      expect(adapterDart,
+          contains('Future<Map<String, String>> readDebugProperties'));
+      // 标量子属性优先（鸿蒙/安卓可读），NODE JSON 只兜底
+      expect(adapterDart, contains('VideoColorInfo.fromProperties(out)'));
+      expect(adapterDart, contains('VideoColorInfo.tryParse'));
       expect(adapterDart, contains('Map<String, String> get debugProps'));
       expect(adapterDart, contains('VideoColorInfo? get colorInfo'));
     });

@@ -30,9 +30,13 @@ class DebugMetricsCollector {
   final MpvPlayerAdapter _adapter;
 
   /// mpv 实时属性清单（只读这些，避免无谓 IPC）。
+  ///
+  /// 【697 真机回归：鸿蒙 P5 显示「非 DV 内容」】色彩元数据必须走
+  /// **标量子属性**——鸿蒙的 mpv 封装只支持 number/bool/string，
+  /// 整块 `video-params`（NODE）读出来是空串。
   static const _mpvPropertyNames = <String>[
-    // 输入色彩（片源真相）
-    'video-params',
+    // 输入色彩（片源真相）——标量子属性，三端通用
+    ...VideoColorInfo.propertyNames,
     // 输出色彩（实际渲染）
     'target-prim',
     'target-trc',
@@ -65,7 +69,9 @@ class DebugMetricsCollector {
     required double speed,
   }) async {
     final props = await _adapter.readDebugProperties(_mpvPropertyNames);
-    final videoParams = VideoColorInfo.tryParse(props['video-params']);
+    // 标量路径优先；整块 JSON 只在 NODE 可读的平台（Windows）兜底。
+    final videoParams = VideoColorInfo.fromProperties(props) ??
+        VideoColorInfo.tryParse(props['video-params']);
 
     return DebugMetrics([
       _playbackGroup(
@@ -157,8 +163,12 @@ class DebugMetricsCollector {
           '${v.bitDepth}bit · ${v.pixelFormat.isEmpty ? "-" : v.pixelFormat}',
         ),
         DebugMetricRow('分辨率', '${v.width}×${v.height}'),
+        // mpv 的 sig-peak 是 max_luma/100 的倍数，必须 ×100 才是 nits
         if (v.sigPeak > 0)
-          DebugMetricRow('信号峰值', '${v.sigPeak.toStringAsFixed(0)} nits'),
+          DebugMetricRow(
+            '信号峰值',
+            '${v.sigPeakNits.toStringAsFixed(0)} nits',
+          ),
         if (v.maxLuma > 0)
           DebugMetricRow(
             '亮度范围',
@@ -195,7 +205,8 @@ class DebugMetricsCollector {
 
     // 输出是否真的在 HDR：target-trc 为 pq/hlg
     final isHdrOut = targetTrc == 'pq' || targetTrc == 'hlg';
-    final isDv = input?.isDolbyVision ?? false;
+    // DV 判定必须带 Emby 兜底（mpv 的 profile 可能读不到）
+    final isDv = (input?.isDolbyVision ?? false) || _adapter.isDvContent;
     // DV 应使用 bt.2390 + hybrid（697 修复点）
     final dvMappingOk = !isDv || toneMapping == 'bt.2390';
 
@@ -236,25 +247,37 @@ class DebugMetricsCollector {
   // ── 杜比视界诊断 ────────────────────────────────────────────
 
   DebugMetricGroup _dvGroup(VideoColorInfo? v) {
-    if (v == null || !v.isDolbyVision) {
+    // 【697 真机回归：P5 显示「非 DV 内容」】不能只看 mpv 的
+    // dolby-vision-profile——鸿蒙读不到该属性（恒 0）。Emby 元数据
+    // （`dvContent`）是可靠兜底：Emby 说 DV，它就是 DV。
+    final mpvProfile = v?.doviProfile ?? 0;
+    final embyProfile = _adapter.embyDoviProfile;
+    final isDv = mpvProfile > 0 || _adapter.isDvContent;
+    if (!isDv) {
       return const DebugMetricGroup(
         title: '杜比视界',
         rows: [DebugMetricRow('状态', '非 DV 内容')],
       );
     }
-    final profile = v.doviProfile;
+    // mpv 优先（逐场景真实值），读不到用 Emby 的静态声明
+    final profile = mpvProfile > 0 ? mpvProfile : embyProfile;
+    final profileFromEmby = mpvProfile <= 0 && embyProfile > 0;
     // P5 是单层 IPT 色彩，libplacebo 必须处理元数据才能正确显示
     final isP5 = profile == 5;
+    final level = v?.doviLevel ?? 0;
     return DebugMetricGroup(
       title: '杜比视界',
       highlight: true,
       rows: [
         DebugMetricRow(
           'Profile',
-          '${v.doviLabel}${isP5 ? '（单层 IPT）' : ''}',
+          profile > 0
+              ? 'P$profile${isP5 ? '（单层 IPT）' : ''}'
+                  '${profileFromEmby ? ' · Emby 元数据' : ''}'
+              : 'DV（Profile 未知）',
           severity: Severity.good,
         ),
-        if (v.doviLevel > 0) DebugMetricRow('Level', '${v.doviLevel}'),
+        if (level > 0) DebugMetricRow('Level', '$level'),
         DebugMetricRow(
           '识别状态',
           _adapter.isDvContent ? '已识别为 DV' : '未识别（按普通 HDR 处理）',

@@ -32,6 +32,25 @@ A value of type 'Tristate' can't be assigned to a variable of type 'bool'
 - `scripts/build_ohos_local.sh` 已内置 `trap`：构建结束（成功或失败）自动
   还原 `package_config.json` 并清 `build/test_cache`
 
+### mpv 属性字段名必须查源码，不能凭印象
+
+697 真机回归：面板把杜比 P5 显示成「非 DV 内容」。根因是凭空写了
+`video-params` 里不存在的 `dovi-profile` 字段。事实是：
+
+| 想读 | 错误写法 | 正确路径 |
+|---|---|---|
+| DV Profile | `video-params/dovi-profile` | `current-tracks/video/dolby-vision-profile` |
+| DV Level | `video-params/dovi-level` | `current-tracks/video/dolby-vision-level` |
+| 信号峰值 | 直接当 nits | `video-params/sig-peak` 是 `max_luma/100` 的**倍数**，×100 才是 nits |
+
+**更隐蔽的坑**：测试会「通过」——因为断言的是自己的错误假设
+（`jsonEncode({'dovi-profile': 5})` 当然能解析出 5）。防法是把 mpv
+真实字段表固化进 `test/services/mpv_field_names_697_test.dart`。
+
+**鸿蒙限制**：`MpvLib` 只暴露 `getProperty`(number) / `getPropertyBool`
+/ `getPropertyString`，**不支持 NODE**——整块 `video-params` 读出来是
+空串。必须走**标量子属性**路径（`video-params/primaries` 这种）。
+
 ### QML 的 `font.pixelSize` 只接受整数
 
 写 `font.pixelSize: 10.5`（想对齐 Flutter 的 10.5px）不会「四舍五入」，

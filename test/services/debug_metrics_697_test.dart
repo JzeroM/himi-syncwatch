@@ -5,6 +5,18 @@ import 'package:himi_syncwatch/services/debug/debug_metrics.dart';
 
 /// 697：播放调试面板的数据模型（`DebugMetrics` / `VideoColorInfo`）。
 ///
+/// ## 注意：`tryParse` 与 `fromProperties` 是两条路径
+///
+/// - `tryParse`：解析整块 `video-params` JSON（**仅 NODE 可读的平台**，
+///   即 Windows 的 media_kit）
+/// - `fromProperties`：读标量子属性（**鸿蒙/安卓主路径**，因为它们的
+///   mpv 封装不支持 NODE）
+///
+/// 【697 真机回归】`video-params` 里**没有** `dovi-profile` 字段——
+/// DV 在 `current-tracks/video` 下。所以 `tryParse` 里解析
+/// `dovi-profile` 只是为兼容历史 JSON 形态，真实数据走
+/// `fromProperties`。字段名硬校验见 `mpv_field_names_697_test.dart`。
+///
 /// ## 为什么单独测模型
 ///
 /// 面板的价值在于**准确显示 HDR/DV 参数**。模型解析错一个字段，
@@ -36,23 +48,26 @@ void main() {
       expect(v.height, 2160);
       expect(v.primaries, 'bt.2020');
       expect(v.gamma, 'pq');
+      // mpv 的 sig-peak 是 max_luma/100 的倍数（不是 nits）
       expect(v.sigPeak, 1000.0);
+      expect(v.sigPeakNits, 100000.0); // ×100
       expect(v.isHdr, isTrue);
       expect(v.isHlg, isFalse);
       expect(v.isDolbyVision, isFalse);
       expect(v.bitDepth, 10);
     });
 
-    test('1.2 杜比视界 P8', () {
-      final v = VideoColorInfo.tryParse(jsonEncode({
-        'pixelformat': 'yuv420p10',
-        'w': 3840,
-        'h': 2160,
-        'primaries': 'bt.2020',
-        'gamma': 'pq',
-        'dovi-profile': 8,
-        'dovi-level': 6,
-      }));
+    test('1.2 杜比视界 P8（标量路径）', () {
+      // DV 在 current-tracks/video 下，不在 video-params（mpv 源码实证）
+      final v = VideoColorInfo.fromProperties(const {
+        'video-params/pixelformat': 'yuv420p10',
+        'video-params/w': '3840',
+        'video-params/h': '2160',
+        'video-params/primaries': 'bt.2020',
+        'video-params/gamma': 'pq',
+        'current-tracks/video/dolby-vision-profile': '8',
+        'current-tracks/video/dolby-vision-level': '6',
+      });
 
       expect(v!.isDolbyVision, isTrue);
       expect(v.doviProfile, 8);
@@ -60,17 +75,30 @@ void main() {
       expect(v.doviLabel, 'P8');
     });
 
-    test('1.3 杜比视界 P5', () {
-      final v = VideoColorInfo.tryParse(jsonEncode({
-        'pixelformat': 'yuv420p10',
-        'primaries': 'bt.2020',
-        'gamma': 'pq',
-        'dovi-profile': 5,
-      }));
+    test('1.3 杜比视界 P5（标量路径）', () {
+      final v = VideoColorInfo.fromProperties(const {
+        'video-params/pixelformat': 'yuv420p10',
+        'video-params/primaries': 'bt.2020',
+        'video-params/gamma': 'pq',
+        'current-tracks/video/dolby-vision-profile': '5',
+      });
 
       expect(v!.isDolbyVision, isTrue);
       expect(v.doviProfile, 5);
       expect(v.doviLabel, 'P5');
+    });
+
+    test('1.3b tryParse 不再解析不存在的 dovi-profile', () {
+      // 回归锁定：mpv 的 video-params 里没有 dovi-profile，
+      // 即使 JSON 里塞了也不该被采信（防止再把错误假设写回去）。
+      final v = VideoColorInfo.tryParse(jsonEncode({
+        'primaries': 'bt.2020',
+        'gamma': 'pq',
+        'dovi-profile': 8,
+      }));
+      expect(v, isNotNull);
+      expect(v!.doviProfile, 0, reason: 'tryParse 不得解析 dovi-profile');
+      expect(v.isDolbyVision, isFalse);
     });
 
     test('1.4 HLG 内容', () {

@@ -174,9 +174,10 @@ export struct DebugPanel {
           severity: DebugSeverity.NORMAL,
         },
         {
+          // mpv 的 sig-peak 是 max_luma/100 的倍数，必须 ×100 才是 nits
           label: '峰值',
           value: s.videoParamsSigPeak > 0
-            ? `${Math.round(s.videoParamsSigPeak)} nits`
+            ? `${Math.round(s.videoParamsSigPeak * 100)} nits`
             : '-',
           severity: DebugSeverity.NORMAL,
         },
@@ -196,7 +197,10 @@ export struct DebugPanel {
     });
 
     // ── HDR 输出 ──
-    const isDv: boolean = s.doviProfile > 0;
+    // 【697 真机回归：P5 显示「非 DV 内容」】鸿蒙读不到
+    // `current-tracks/video/dolby-vision-profile`（mpv 封装不支持 NODE
+    // 子属性访问的部分构建），必须用 Emby 元数据兜底。
+    const isDv: boolean = s.doviProfile > 0 || s.dvContent;
     const mappingMode: string =
       s.toneMappingMode.length > 0 ? ` (${s.toneMappingMode})` : '';
     groups.push({
@@ -235,7 +239,9 @@ export struct DebugPanel {
     const dvRows: DebugRowSpec[] = [
       {
         label: 'Profile',
-        value: dvProfileText(s.doviProfile, s.doviLevel),
+        value: s.doviProfile > 0
+          ? dvProfileText(s.doviProfile, s.doviLevel)
+          : (s.dvContent ? 'DV（Profile 未知 · Emby 元数据）' : dvProfileText(0, 0)),
         severity: DebugSeverity.NORMAL,
       },
     ];

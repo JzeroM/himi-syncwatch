@@ -100,18 +100,25 @@ enum Severity { normal, good, warn, error }
 ///
 /// ## 为什么单独抽出来
 ///
-/// `video-params` 是 mpv 暴露**片源**色彩信息的唯一可靠来源：
-/// ```json
-/// {
-///   "pixelformat": "yuv420p10",
-///   "w": 3840, "h": 2160,
-///   "primaries": "bt.2020",
-///   "gamma": "pq",
-///   "sig-peak": 1000.0,
-///   "min-luma": 0.0001, "max-luma": 1000.0,
-///   "dovi-profile": 8, "dovi-level": 6
-/// }
+/// ## 数据来源（必须按 mpv 源码为准）
+///
+/// 色彩元数据来自 `video-params`，DV Profile/Level 来自
+/// **`current-tracks/video`**（不是 `video-params`！）：
+///
 /// ```
+/// video-params/primaries            → "bt.2020"
+/// video-params/gamma                → "pq"
+/// video-params/sig-peak             → 5.0  ← 归一化，×100 = nits
+/// video-params/pixelformat          → "yuv420p10"
+/// current-tracks/video/dolby-vision-profile → 5 / 8
+/// current-tracks/video/dolby-vision-level   → 6
+/// ```
+///
+/// 【697 真机回归：鸿蒙 P5 显示「非 DV 内容」】两个错误假设：
+/// 1. `video-params` 里**没有** `dovi-profile` 字段（mpv `cmd.c`
+///    `property_imgparams` 的字段表里不存在）→ 恒解析出 0
+/// 2. `sig-peak` 是 `max_luma / MP_REF_WHITE(100)` 的**倍数**，不是 nits
+///    → 5 实际是 500 nits，直接显示会差 100 倍
 ///
 /// 注意与 `video-out-params`（**输出**信息）区分：HDR 排查必须同时看
 /// 输入和输出，否则无法判断「是片源没识别」还是「映射错了」。
@@ -140,13 +147,19 @@ class VideoColorInfo {
   /// 输入 transfer（`pq` / `hlg` / `bt.1886`）。
   final String gamma;
 
-  /// 信号峰值（nits）。HDR10 静态元数据里的 MaxCLL/MaxFALL。
+  /// 信号峰值，**归一化倍数**（mpv `sig-peak` = `max_luma / 100`）。
+  ///
+  /// 显示 nits 请用 [sigPeakNits]。
   final double sigPeak;
 
   final double minLuma;
   final double maxLuma;
 
   /// 杜比视界 Profile（5 / 7 / 8 / 8.4）；0 = 非 DV。
+  ///
+  /// 来源：`current-tracks/video/dolby-vision-profile`。
+  /// mpv 读不到时为 0，此时应回退 Emby 元数据（见
+  /// `DebugMetricsCollector` 的 Emby 兜底）。
   final int doviProfile;
 
   /// 杜比视界 Level（决定最大码率/分辨率）。
@@ -154,6 +167,12 @@ class VideoColorInfo {
 
   /// 原始 JSON（排查时可能需要未解析字段）。
   final Map<String, Object?> raw;
+
+  /// 信号峰值（nits）。
+  ///
+  /// mpv 的 `sig-peak` 是 `max_luma / MP_REF_WHITE`（MP_REF_WHITE = 100）
+  /// 的**归一化倍数**，不是绝对亮度。5 → 500 nits。
+  double get sigPeakNits => sigPeak * 100;
 
   /// 是否杜比视界内容。
   bool get isDolbyVision => doviProfile > 0;
@@ -179,7 +198,64 @@ class VideoColorInfo {
     return 'P$doviProfile';
   }
 
+  /// 从 mpv 的**标量子属性**构建（697 起的推荐路径）。
+  ///
+  /// 【为什么不用 JSON】鸿蒙的 mpv 封装只暴露 `getProperty`(number) /
+  /// `getPropertyBool` / `getPropertyString`，**不支持 NODE**——
+  /// `video-params` 整块读出来是空串。改读标量子属性后三端同构。
+  ///
+  /// [props] 的键就是 mpv 属性路径（见 [propertyNames]）。
+  /// 全部缺失时返回 null（尚未起播）。
+  static VideoColorInfo? fromProperties(Map<String, String> props) {
+    if (props.isEmpty) return null;
+    final primaries = props['video-params/primaries'] ?? '';
+    final gamma = props['video-params/gamma'] ?? '';
+    final pixelFormat = props['video-params/pixelformat'] ?? '';
+    if (primaries.isEmpty &&
+        gamma.isEmpty &&
+        pixelFormat.isEmpty &&
+        (props['video-params/w'] ?? '').isEmpty) {
+      return null;
+    }
+    double d(String k) => double.tryParse(props[k] ?? '') ?? 0;
+    int i(String k) => int.tryParse(props[k] ?? '') ?? 0;
+    return VideoColorInfo(
+      pixelFormat: pixelFormat,
+      width: i('video-params/w'),
+      height: i('video-params/h'),
+      primaries: primaries,
+      gamma: gamma,
+      sigPeak: d('video-params/sig-peak'),
+      minLuma: d('video-params/min-luma'),
+      maxLuma: d('video-params/max-luma'),
+      // DV 在 current-tracks/video 下，不在 video-params（mpv 源码实证）
+      doviProfile: i('current-tracks/video/dolby-vision-profile'),
+      doviLevel: i('current-tracks/video/dolby-vision-level'),
+      raw: props,
+    );
+  }
+
+  /// 需要读取的 mpv 属性路径（**标量**，三端通用）。
+  ///
+  /// 这张表是「mpv 到底暴露了什么」的唯一真相源：加字段前必须先在
+  /// mpv 源码 `player/command.c` 里核实，不能凭印象写。
+  static const propertyNames = <String>[
+    'video-params/primaries',
+    'video-params/gamma',
+    'video-params/sig-peak',
+    'video-params/pixelformat',
+    'video-params/w',
+    'video-params/h',
+    'video-params/min-luma',
+    'video-params/max-luma',
+    'current-tracks/video/dolby-vision-profile',
+    'current-tracks/video/dolby-vision-level',
+  ];
+
   /// 从 mpv `video-params` JSON 字符串解析；失败返回 null。
+  ///
+  /// 【保留原因】Windows 走 media_kit，NODE 可读；且 `_parseVideoParams`
+  /// 的事件通道本来就是 JSON。标量路径是鸿蒙/安卓的主路径。
   static VideoColorInfo? tryParse(Object? raw) {
     if (raw is! String || raw.isEmpty) return null;
     try {
@@ -197,8 +273,9 @@ class VideoColorInfo {
         sigPeak: d('sig-peak'),
         minLuma: d('min-luma'),
         maxLuma: d('max-luma'),
-        doviProfile: i('dovi-profile'),
-        doviLevel: i('dovi-level'),
+        // 【不要在这里解析 dovi-profile】mpv 的 `video-params` 里**没有**
+        // 这个字段（DV 在 `current-tracks/video` 下）。697 曾凭空写它，
+        // 导致鸿蒙把 P5 显示成「非 DV 内容」。DV 走 [fromProperties]。
         raw: m,
       );
     } catch (_) {

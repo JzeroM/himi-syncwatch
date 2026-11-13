@@ -83,8 +83,14 @@ Rectangle {
     }
 
     /// 是否杜比视界内容。
+    /// 是否 DV 内容。
+    ///
+    /// 【必须用 dvContent 兜底】`doviProfile` 来自 mpv 的
+    /// `current-tracks/video/dolby-vision-profile`，部分构建读不到（恒 0）。
+    /// `dvContent` 来自 Emby 元数据，可靠——只看 profile 会把 P5 显示成
+    /// 「非 DV 内容」（真机回归）。
     function isDv() {
-        return playerState.doviProfile > 0
+        return playerState.doviProfile > 0 || playerState.dvContent
     }
 
     /// 当前渲染后端是否支持 DV 元数据（libplacebo compute shader）。
@@ -134,8 +140,10 @@ Rectangle {
                     + (playerState.videoParamsGamma || "-"))
         row("位深", playerState.videoParamsBitDepth + "bit · "
                     + (playerState.videoParamsPixelFormat || "-"))
+        // mpv 的 sig-peak 是 max_luma/100 的倍数，必须 ×100 才是 nits
         row("峰值", playerState.videoParamsSigPeak > 0
-                    ? playerState.videoParamsSigPeak.toFixed(0) + " nits" : "-")
+                    ? (playerState.videoParamsSigPeak * 100).toFixed(0) + " nits"
+                    : "-")
         row("编码", playerState.videoFormat || "-")
         row("硬解", playerState.hwdecCurrent || "-")
 
@@ -150,12 +158,13 @@ Rectangle {
         row("峰值计算", playerState.hdrComputePeak || "-")
 
         sec("杜比视界")
-        row("Profile", root.isDv()
+        row("Profile", playerState.doviProfile > 0
                        ? "P" + playerState.doviProfile
                          + (playerState.doviProfile === 5 ? "（单层 IPT）" : "")
                          + (playerState.doviLevel > 0
                             ? " L" + playerState.doviLevel : "")
-                       : "非 DV 内容")
+                       : (playerState.dvContent
+                          ? "DV（Profile 未知 · Emby 元数据）" : "非 DV 内容"))
         if (root.isDv()) {
             row("识别", playerState.dvContent ? "已识别为 DV"
                                               : "未识别（按普通 HDR 处理）")
@@ -357,8 +366,10 @@ Rectangle {
             DebugRow {
                 visible: !root.isCollapsed("input")
                 label: "峰值"
+                // sig-peak 是归一化倍数（×100 = nits）
                 value: playerState.videoParamsSigPeak > 0
-                       ? playerState.videoParamsSigPeak.toFixed(0) + " nits"
+                       ? (playerState.videoParamsSigPeak * 100).toFixed(0)
+                         + " nits"
                        : "-"
             }
             DebugRow {
@@ -423,13 +434,15 @@ Rectangle {
             DebugRow {
                 visible: !root.isCollapsed("dv")
                 label: "Profile"
-                value: root.isDv()
+                value: playerState.doviProfile > 0
                        ? "P" + playerState.doviProfile
                          + (playerState.doviProfile === 5
                             ? "（单层 IPT）" : "")
                          + (playerState.doviLevel > 0
                             ? " L" + playerState.doviLevel : "")
-                       : "非 DV 内容"
+                       : (playerState.dvContent
+                          ? "DV（Profile 未知 · Emby 元数据）"
+                          : "非 DV 内容")
             }
             DebugRow {
                 visible: !root.isCollapsed("dv") && root.isDv()

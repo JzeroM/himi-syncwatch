@@ -2516,6 +2516,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     player.hdrContent = _hdrContent || stream?.isHDR == true || isDv;
     player.hlgContent = _isHlgContent;
     player.dvContent = isDv;
+    // 697：Emby 的 DV Profile 兜底——鸿蒙/安卓的 mpv 读不到
+    // `current-tracks/video/dolby-vision-profile`，此时用 Emby 的静态
+    // 声明，否则面板会把 P5 显示成「非 DV 内容」（真机回归）。
+    player.embyDoviProfile = _embyDoviProfileFrom(stream);
+  }
+
+  /// 从 Emby 的 `ExtendedVideoSubType` 解析 DV Profile 数字。
+  ///
+  /// 取值来自 Emby 实际返回：`DoviProfile50` / `DoviProfile76` /
+  /// `DoviProfile81` / `DoviProfile84`（与 `hdrLabel` 同一套映射）。
+  static int _embyDoviProfileFrom(MediaStream? stream) {
+    final sub = stream?.extendedVideoSubType ?? '';
+    if (sub.contains('Profile50')) return 5;
+    if (sub.contains('Profile76')) return 7;
+    if (sub.contains('Profile81')) return 8;
+    if (sub.contains('Profile84')) return 8;
+    return 0;
   }
 
   /// 当前活跃音轨的编码名（小写），取不到返回 ''。

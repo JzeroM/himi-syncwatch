@@ -957,12 +957,44 @@ class HimiMpvAndroidSession implements MpvSession {
         'external': track.isExternal,
       };
 
+  /// 输入色彩元数据（mpv `video-params` 的**标量子属性**）。
+  ///
+  /// 【697 真机回归】旧实现是**伪造**的——只拼 `{'w','h'}`，导致
+  /// `primaries`/`gamma`/`sig-peak` 全部缺失，HDR/DV 排查拿不到片源真相。
+  ///
+  /// 现在读真实子属性（标量，media_kit 的 getProperty 直接支持）。
+  /// DV Profile 不在这里（它在 `current-tracks/video` 下，见 Dart 侧
+  /// 统一的 `readDebugProperties` 路径）。
   @override
   Future<String?> getVideoParams() async {
-    final w = _player?.state.width;
-    final h = _player?.state.height;
+    final player = _player;
+    if (player == null) return null;
+    final w = player.state.width;
+    final h = player.state.height;
     if (w == null || h == null || w <= 0 || h <= 0) return null;
-    return jsonEncode(<String, dynamic>{'w': w, 'h': h});
+
+    final map = <String, dynamic>{'w': w, 'h': h};
+    // 逐项读取，缺失就跳过（不同 mpv 版本/片源字段可用性不同）
+    for (final entry in <String, String>{
+      'primaries': 'video-params/primaries',
+      'gamma': 'video-params/gamma',
+      'sig-peak': 'video-params/sig-peak',
+      'pixelformat': 'video-params/pixelformat',
+      'min-luma': 'video-params/min-luma',
+      'max-luma': 'video-params/max-luma',
+    }.entries) {
+      final v = await getProperty(entry.value);
+      if (v != null && v.isNotEmpty) {
+        // sig-peak / min-luma / max-luma 是浮点，其余是字符串
+        if (entry.key.endsWith('luma') || entry.key == 'sig-peak') {
+          final d = double.tryParse(v);
+          if (d != null) map[entry.key] = d;
+        } else {
+          map[entry.key] = v;
+        }
+      }
+    }
+    return jsonEncode(map);
   }
 
   @override

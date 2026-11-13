@@ -106,11 +106,12 @@ void main() {
     });
 
     test('3.4 DV P5 是单层 IPT（后端不支持必偏色）', () {
-      final v = VideoColorInfo.tryParse(jsonEncode({
-        'primaries': 'bt.2020',
-        'gamma': 'pq',
-        'dovi-profile': 5,
-      }))!;
+      // DV 在 current-tracks/video 下（mpv 源码实证，不在 video-params）
+      final v = VideoColorInfo.fromProperties(const {
+        'video-params/primaries': 'bt.2020',
+        'video-params/gamma': 'pq',
+        'current-tracks/video/dolby-vision-profile': '5',
+      })!;
       expect(v.isDolbyVision, isTrue);
       expect(v.doviProfile, 5);
       // 安卓 OpenGL 后端 → 必须报 P5 风险
@@ -118,12 +119,12 @@ void main() {
     });
 
     test('3.5 DV P8 是兼容层（HDR10 基线 + RPU）', () {
-      final v = VideoColorInfo.tryParse(jsonEncode({
-        'primaries': 'bt.2020',
-        'gamma': 'pq',
-        'dovi-profile': 8,
-        'dovi-level': 6,
-      }))!;
+      final v = VideoColorInfo.fromProperties(const {
+        'video-params/primaries': 'bt.2020',
+        'video-params/gamma': 'pq',
+        'current-tracks/video/dolby-vision-profile': '8',
+        'current-tracks/video/dolby-vision-level': '6',
+      })!;
       expect(v.isDolbyVision, isTrue);
       expect(v.doviProfile, 8);
       expect(v.doviLevel, 6);
