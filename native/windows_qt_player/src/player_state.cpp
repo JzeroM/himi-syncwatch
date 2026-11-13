@@ -226,7 +226,17 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     selectedAudioId_ = static_cast<int>(readInt64(json, "selectedAudioId", selectedAudioId_));
     selectedSubtitleId_ = static_cast<int>(readInt64(json, "selectedSubtitleId", selectedSubtitleId_));
     const QString sp = readString(json, "skipPrompt");
-    if (json.contains(QLatin1String("skipPrompt"))) skipPrompt_ = sp;
+    // 693：**必须走 `assign` 置 dirty**。
+    //
+    // 【真机回归：跳过片头/片尾胶囊完全不显示】此前是裸赋值
+    // `skipPrompt_ = sp`——不置 `dirty`，函数末尾的 `if (dirty) emit
+    // changed()` 就不发射。QML 的 `playerState.skipPrompt` 绑定**永不
+    // 重新求值**，胶囊的 `visible` 条件形同虚设。
+    //
+    // 这是全文件唯一漏掉 `assign` 的字段（其它都有独立 setter + emit）。
+    if (json.contains(QLatin1String("skipPrompt"))) {
+        dirty |= assign(skipPrompt_, sp);
+    }
 
     if (dirty) emit changed();
 }

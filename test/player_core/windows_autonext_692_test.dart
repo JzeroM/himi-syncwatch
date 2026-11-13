@@ -237,4 +237,47 @@ void main() {
       expect(overlayQml, contains('playerState.canControl'));
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════
+  // D. 693：skipPrompt 必须置 dirty（否则 QML 绑定永不刷新）
+  // ═══════════════════════════════════════════════════════════════
+
+  group('D skipPrompt 信号发射', () {
+    test('D1 skipPrompt 走 assign 置 dirty', () {
+      final src = read('native/windows_qt_player/src/player_state.cpp');
+      // 【真机根因】裸赋值 `skipPrompt_ = sp` 不置 dirty →
+      // `if (dirty) emit changed()` 不发射 → QML 的
+      // `playerState.skipPrompt` 绑定永不重新求值 → 胶囊不显示。
+      expect(src, contains('dirty |= assign(skipPrompt_, sp)'));
+    });
+
+    test('D2 不得有裸赋值 skipPrompt_ = sp', () {
+      final src = read('native/windows_qt_player/src/player_state.cpp');
+      // 剔除注释后判定
+      final code = src
+          .split('\n')
+          .where((l) {
+            final t = l.trimLeft();
+            return !t.startsWith('//') && !t.startsWith('*');
+          })
+          .join('\n');
+      expect(code, isNot(contains('skipPrompt_ = sp')));
+    });
+
+    test('D3 applyJson 末尾按 dirty 发射 changed', () {
+      final src = read('native/windows_qt_player/src/player_state.cpp');
+      final idx = src.indexOf('dirty |= assign(skipPrompt_, sp)');
+      expect(idx, greaterThan(0));
+      final after = src.substring(idx, idx + 300);
+      expect(after, contains('if (dirty) emit changed()'));
+    });
+
+    test('D4 QML 绑定依赖 skipPrompt 属性通知', () {
+      final stateH = read('native/windows_qt_player/src/player_state.h');
+      expect(stateH, contains('Q_PROPERTY(QString skipPrompt READ skipPrompt NOTIFY changed)'));
+      // 胶囊 visible 直接绑该属性
+      expect(overlayQml, contains('playerState.skipPrompt === "intro"'));
+      expect(overlayQml, contains('playerState.skipPrompt === "outro"'));
+    });
+  });
 }
