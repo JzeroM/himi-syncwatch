@@ -824,17 +824,22 @@ jobs:
           : > "$OUT"
           SRC=docs/release_notes_by_platform.md
           if [ -f "$SRC" ]; then
-            # 只提取三个平台章节（维护说明在 docs/release_notes_README.md，
-            # 不参与发布）。
+            # 697：发布说明改为**不分平台**的单一份（相同功能/修复合并成
+            # 一条，平台差异用括号注明）。此前按 `# Android|Windows|
+            # HarmonyOS 更新说明` 三个章节提取，现在整份直接使用。
             #
-            # 不能用 `sed '1,/^---$/d'`——文档里平台之间也有 `---`，
-            # 那样会把 Android 整节删掉（实测踩过）。
-            awk '
-              /^# (Android|Windows|HarmonyOS) 更新说明/ { started = 1 }
-              started { print }
-            ' "$SRC" >> "$OUT"
+            # 兼容旧格式：若文档仍是分平台章节（历史 tag 重跑构建），
+            # 退回按标题提取。
+            if grep -q '^# 更新说明' "$SRC"; then
+              cp "$SRC" "$OUT"
+            else
+              awk '
+                /^# (Android|Windows|HarmonyOS) 更新说明/ { started = 1 }
+                started { print }
+              ' "$SRC" >> "$OUT"
+            fi
             if [ ! -s "$OUT" ]; then
-              echo "::warning::未能从 $SRC 提取平台章节，改为整份拷贝"
+              echo "::warning::未能从 $SRC 提取说明，改为整份拷贝"
               cp "$SRC" "$OUT"
             fi
           else

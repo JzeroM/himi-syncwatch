@@ -116,12 +116,62 @@ if [ -f "$TMP/new/resources/rawfile/MaterialIcons-Regular.otf" ]; then
   cp -a "$TMP/new/resources/rawfile/MaterialIcons-Regular.otf" "$WORK/resources/rawfile/MaterialIcons-Regular.otf"
 fi
 
-python3 - "$WORK/module.json" "$WORK/pack.info" "$VERSION_NAME" "$VERSION_CODE" <<'PY'
+python3 - "$WORK/module.json" "$WORK/pack.info" "$VERSION_NAME" "$VERSION_CODE" "$ROOT/ohos/build-profile.json5" <<'PY'
 import json
 import sys
 
 module_path, pack_path, version_name, version_code = sys.argv[1:5]
 code = int(version_code)
+
+# 697：minAPIVersion 必须跟随 build-profile.json5 的 compatibleSdkVersion，
+# 不能写死。
+#
+# 此前硬编码 260000026（API 26），即使把 compatibleSdkVersion 降到
+# 6.1.1(24)，重打包后的 HAP 里 minAPIVersion 仍是 26 → 设备侧依然报
+# 「应用不匹配当前系统版本」。这个脚本是 HAP 的最终产出方，必须与
+# build-profile 保持同源。
+#
+# compatibleSdkVersion 支持两种写法：
+#   - "26.0.0"        （API ≥ 26，纯版本号）
+#   - "6.1.1(24)"     （API ≤ 25，系统版本号 + (API号)）
+#
+# 编码规则（已用 hvigor 原生输出反推验证）：
+#   主版本 + 次版本(2位) + 补丁(2位) + API(3位)
+#   6.1.1(24)  → 6|01|01|024 → 60101024
+#   26.0.0(26) → 26|00|00|026 → 260000026
+def encode_api(ver_str, api):
+    parts = [int(x) for x in ver_str.split('.')[:3]]
+    while len(parts) < 3:
+        parts.append(0)
+    major, minor, patch = parts
+    return int(f'{major}{minor:02d}{patch:02d}{api:03d}')
+
+def parse_compatible(profile_path):
+    """返回 (version_str, api) 二元组。"""
+    import re
+    try:
+        with open(profile_path, encoding='utf-8') as f:
+            text = f.read()
+    except OSError:
+        return ('26.0.0', 26)
+    # 去掉行注释，避免匹配到注释里的示例值
+    text = re.sub(r'//[^\n]*', '', text)
+    m = re.search(r'"compatibleSdkVersion"\s*:\s*"([^"]+)"', text)
+    if not m:
+        return ('26.0.0', 26)
+    raw = m.group(1).strip()
+    paren = re.search(r'\((\d+)\)', raw)
+    if paren:
+        ver = raw[:paren.start()].strip()
+        return (ver, int(paren.group(1)))
+    head = raw.split('.')[0]
+    return (raw, int(head) if head.isdigit() else 26)
+
+compat_ver, compat_api = parse_compatible(
+    sys.argv[5] if len(sys.argv) > 5 else ''
+)
+compatible_api = encode_api(compat_ver, compat_api)
+target_api = 260000026  # targetSdkVersion 保持 26（官方要求）
 
 with open(module_path, encoding='utf-8') as f:
     module = json.load(f)
@@ -129,8 +179,8 @@ app = module['app']
 app['versionName'] = version_name
 app['versionCode'] = code
 app['vendor'] = 'himi-syncwatch'
-app['minAPIVersion'] = 260000026
-app['targetAPIVersion'] = 260000026
+app['minAPIVersion'] = compatible_api
+app['targetAPIVersion'] = target_api
 app['minPatchAPIVersion'] = 0
 app['targetPatchAPIVersion'] = 0
 app['minMinorAPIVersion'] = 0
