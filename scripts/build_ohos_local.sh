@@ -35,6 +35,17 @@ if [ -d "$HOS_SDK_DEFAULT" ]; then
       fi
     done
   fi
+  # hvigorw —— Flutter-OH 的 `assembleHap` 直接 `exec hvigorw`；缺失时
+  # 只报 `ProcessException: Failed to find "hvigorw" in the search path`，
+  # 看不出该去哪找（DevEco 把它放在 bin/ 与 hvigor/bin/ 两处）。
+  if ! command -v hvigorw >/dev/null 2>&1; then
+    for candidate in "$HOS_SDK_DEFAULT/bin" "$HOS_SDK_DEFAULT/hvigor/bin"; do
+      if [ -x "$candidate/hvigorw" ]; then
+        export PATH="$candidate:$PATH"
+        break
+      fi
+    done
+  fi
   # SDK 根
   if [ -z "${OHOS_BASE_SDK_HOME:-}" ] && [ -d "$HOS_SDK_DEFAULT/sdk" ]; then
     export OHOS_BASE_SDK_HOME="$HOS_SDK_DEFAULT/sdk"
@@ -54,6 +65,11 @@ if ! flutter --version 2>/dev/null | grep -qi ohos; then
 fi
 
 # 自举失败时给出可操作的提示，而不是让下游抛晦涩错误。
+command -v hvigorw >/dev/null 2>&1 || {
+  echo "缺少 hvigorw：Flutter-OH 的 assembleHap 直接调用它。" >&2
+  echo "  请把 DevEco 的 bin（如 ~/harmonyos-clt/bin）加入 PATH" >&2
+  exit 1
+}
 command -v npm >/dev/null 2>&1 || {
   echo "缺少 npm：hvigor 需要它安装插件。" >&2
   echo "  请把 DevEco 的 node/bin（如 ~/harmonyos-clt/tool/node/bin）加入 PATH" >&2

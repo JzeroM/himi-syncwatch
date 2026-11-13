@@ -40,6 +40,7 @@ A value of type 'Tristate' can't be assigned to a variable of type 'bool'
 |---|---|---|
 | `npm` | `~/harmonyos-clt/tool/node/bin` | `ProcessException: Failed to find "npm"`（栈全是 flutter_tools 内部帧） |
 | `java` | `~/.local/jdk-17.0.21+9-jre/bin` 或 DevEco JDK | `Error Code: 00308018 / spawn java ENOENT` |
+| `hvigorw` | `~/harmonyos-clt/bin` 或 `~/harmonyos-clt/hvigor/bin` | `ProcessException: Failed to find "hvigorw"`（`assembleHap` 直接 exec 它） |
 | SDK 根 | `~/harmonyos-clt/sdk` | `ohos_pack.sh` 直接退出 |
 
 `OHOS_BASE_SDK_HOME` 与 `DEVECO_SDK_HOME` 需**同时**设置。
