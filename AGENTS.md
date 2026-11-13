@@ -32,6 +32,17 @@ A value of type 'Tristate' can't be assigned to a variable of type 'bool'
 - `scripts/build_ohos_local.sh` 已内置 `trap`：构建结束（成功或失败）自动
   还原 `package_config.json` 并清 `build/test_cache`
 
+### QML 的 `font.pixelSize` 只接受整数
+
+写 `font.pixelSize: 10.5`（想对齐 Flutter 的 10.5px）不会「四舍五入」，
+而是报：
+
+    Invalid property assignment: int expected
+
+后果不是字号不准，而是**整个 Overlay.qml 加载失败** → Windows Qt 播放窗
+启动即回退到 Flutter 内置窗口。CI 的「QML 冒烟自检」能抓到，但装机前
+就该避免：需要小数时用整数近似。
+
 ### 鸿蒙本地构建所需工具链
 
 `scripts/build_ohos_local.sh` 会自动探测，但需知道这些位置：
