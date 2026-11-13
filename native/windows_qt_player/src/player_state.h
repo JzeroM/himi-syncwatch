@@ -65,6 +65,11 @@ class PlayerState : public QObject {
     Q_PROPERTY(double danmakuFontSize READ danmakuFontSize NOTIFY changed)
     Q_PROPERTY(double danmakuOpacity READ danmakuOpacity NOTIFY changed)
 
+    // ── 弹幕行数（697，QML 自绘层用；对齐 Flutter AppSettings）──
+    Q_PROPERTY(int danmakuScrollRows READ danmakuScrollRows NOTIFY changed)
+    Q_PROPERTY(int danmakuTopRows READ danmakuTopRows NOTIFY changed)
+    Q_PROPERTY(int danmakuBottomRows READ danmakuBottomRows NOTIFY changed)
+
     // ── 屏幕锁定（662，照 Flutter 左缘锁钮）──
     Q_PROPERTY(bool locked READ locked NOTIFY changed)
 
@@ -190,6 +195,11 @@ public:
     double danmakuFontSize() const { return danmakuFontSize_; }
     double danmakuOpacity() const { return danmakuOpacity_; }
 
+    // 弹幕行数（697，QML 自绘层用）
+    int danmakuScrollRows() const { return danmakuScrollRows_; }
+    int danmakuTopRows() const { return danmakuTopRows_; }
+    int danmakuBottomRows() const { return danmakuBottomRows_; }
+
     bool locked() const { return locked_; }
 
     /// 弹幕项（{timeMs, text, mode, color}；ASS 旁路渲染用）。
@@ -311,6 +321,11 @@ private:
     double danmakuSpeed_ = 0.7;
     double danmakuFontSize_ = 0.5;
     double danmakuOpacity_ = 1.0;
+
+    // 弹幕行数（697，对齐 Flutter AppSettings 默认：滚动 30 / 顶 4 / 底 4）
+    int danmakuScrollRows_ = 30;
+    int danmakuTopRows_ = 4;
+    int danmakuBottomRows_ = 4;
 
     bool locked_ = false;
 

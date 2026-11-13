@@ -218,6 +218,16 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
                     readDouble(json, "danmakuFontSize", danmakuFontSize_));
     dirty |= assign(danmakuOpacity_,
                     readDouble(json, "danmakuOpacity", danmakuOpacity_));
+    // 697：弹幕行数（QML 自绘层用；对齐 Flutter AppSettings）
+    dirty |= assign(danmakuScrollRows_,
+                    static_cast<int>(readInt64(json, "danmakuScrollRows",
+                                               danmakuScrollRows_)));
+    dirty |= assign(danmakuTopRows_,
+                    static_cast<int>(readInt64(json, "danmakuTopRows",
+                                               danmakuTopRows_)));
+    dirty |= assign(danmakuBottomRows_,
+                    static_cast<int>(readInt64(json, "danmakuBottomRows",
+                                               danmakuBottomRows_)));
 
     // ── 轨道 ──
     const QJsonValue tracks = json.value(QLatin1String("tracks"));

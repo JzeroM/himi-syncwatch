@@ -61,8 +61,12 @@ ApplicationWindow {
     property string gestureIcon: ""
     property string notice: ""
 
-    // 弹幕开关本地态（ASS 重生成随开关增减弹幕行；遮罩常驻）
-    property bool danmakuOn: true
+    // 弹幕开关本地态。
+    //
+    // 【697】改为跟随 `playerState.danmakuEnabled`（Dart 侧由用户设置
+    // `danmakuDefaultOn` 决定）。此前恒为 true，导致用户关掉弹幕后重进
+    // 播放器又变成开（QML 初值没跟设置同步）。
+    property bool danmakuOn: playerState.danmakuEnabled
 
     // 672：滑杆选中态（"" / "volume" / "brightness"）——选中后窗口任意
     // 位置滚轮调节该滑杆；悬停胶囊滚轮直接调该胶囊（BottomBar 内）。
@@ -252,6 +256,29 @@ ApplicationWindow {
         onVideoFitClicked: root.cycleVideoFitLocal()
     }
 
+    // ── 697：弹幕层（QML 自绘，替代原 ASS 旁路）──
+    //
+    // 位置：视频之上、控件之下（z=1）。弹幕不拦截鼠标。
+    //
+    // 【为什么不再用 ASS】详见 DanmakuLayer.qml 顶部注释——ASS 会导致
+    // 开关弹幕卡视频、HDR 下弹幕过曝、与字幕设置耦合。
+    DanmakuLayer {
+        id: danmakuLayer
+        anchors.fill: parent
+        z: 1
+        items: playerState.danmakuItems
+        positionMs: playerState.positionMs
+        // 属性是 `paused`（无 playing）；取反得到「播放中」
+        playing: !playerState.paused
+        enabled: root.danmakuOn
+        fontSizeScale: playerState.danmakuFontSize
+        speed: playerState.danmakuSpeed
+        opacity: playerState.danmakuOpacity
+        scrollRows: playerState.danmakuScrollRows
+        topRows: playerState.danmakuTopRows
+        bottomRows: playerState.danmakuBottomRows
+    }
+
     // ── 底栏（渐变玻璃条）──
     BottomBar {
         id: bottomBar
@@ -275,12 +302,8 @@ ApplicationWindow {
         onDanmakuClicked: {
             danmakuOn = !danmakuOn
             root.patchState("danmakuEnabled", danmakuOn)
-            // 676：签名同步置位（开关只重建一次，不再被 onChanged 重复触发）
-            root.danmakuStyleSig = root.danmakuOn + "|"
-                    + playerState.danmakuFontSize + "|"
-                    + playerState.danmakuSpeed + "|"
-                    + playerState.danmakuOpacity
-            danmakuBuildTimer.restart()
+            // 697：开关只切本地态 + 通知 Dart，**不再重建 ASS 轨道**。
+            // 自绘层由 `enabled` 属性驱动，开关不触碰 mpv 管线 → 视频不卡。
             pipeServer.sendCommand({"type": "toggleDanmaku"})
         }
         onVersionClicked: root.openVersionPanel()
@@ -838,127 +861,6 @@ ApplicationWindow {
                 root.showNotice("所有剧集播放完毕")
             }
         }
-    }
-
-    // ── 弹幕 ASS 旁路（弹幕行 + 渐变遮罩同轨；开关只增减弹幕行）──
-    Timer {
-        id: danmakuBuildTimer
-        interval: 600
-        onTriggered: root.buildDanmakuAss()
-    }
-    Connections {
-        target: playerState
-        function onDanmakuChanged() { danmakuBuildTimer.restart() }
-    }
-    // 【676】显示调节的弹幕三键（大小/速度/透明度）变化即重建 ASS。
-    // 旧实现只有新弹幕到达（onDanmakuChanged）才重建 → 拖滑杆"没有任何
-    // 反应"（675 的速度/透明度渲染逻辑因此也从未激活）。用签名比对，
-    // 避免 20Hz 状态推送把 ASS 重建刷爆。
-    property string danmakuStyleSig: ""
-    Connections {
-        target: playerState
-        function onChanged() {
-            var sig = root.danmakuOn + "|" + playerState.danmakuFontSize
-                    + "|" + playerState.danmakuSpeed
-                    + "|" + playerState.danmakuOpacity
-            if (sig === root.danmakuStyleSig) return
-            root.danmakuStyleSig = sig
-            danmakuBuildTimer.restart()
-        }
-    }
-
-    function assTime(sec) {
-        var h = Math.floor(sec / 3600)
-        var m = Math.floor((sec % 3600) / 60)
-        var s = sec - h * 3600 - m * 60
-        function pad(n, w) {
-            var t = n.toString()
-            while (t.length < w) t = "0" + t
-            return t
-        }
-        return h + ":" + pad(m, 2) + ":" + pad(Math.floor(s), 2)
-                 + "." + pad(Math.floor((s % 1) * 100), 2)
-    }
-
-    function assColor(hex) {
-        var c = (hex || "#FFFFFF").replace("#", "")
-        if (c.length < 6) c = "FFFFFF"
-        return "&H00" + c.substring(4, 6) + c.substring(2, 4)
-                 + c.substring(0, 2)
-    }
-
-    function buildDanmakuAss() {
-        var items = danmakuOn ? playerState.danmakuItems : []
-        var W = 1280, H = 720
-        var fs = Math.round(28 * playerState.danmakuFontSize)
-        var lines = []
-        lines.push("[Script Info]")
-        lines.push("ScriptType: v4.00+")
-        lines.push("PlayResX: " + W)
-        lines.push("PlayResY: " + H)
-        lines.push("")
-        lines.push("[V4+ Styles]")
-        lines.push("Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding")
-        lines.push("Style: Danmaku, sans-serif, " + fs + ", &H00FFFFFF, &H00000000, &H7F000000, 0, 0, 0, 0, 100, 100, 0, 0, 1, 1, 0, 5, 0, 0, 0")
-
-        lines.push("")
-        lines.push("[Events]")
-        lines.push("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
-
-        var rows = Math.max(4, Math.floor((H - 80) / (fs + 6)))
-        // 【675 E】速度 → 飞过时长（speed 越大越快）；透明度 → ASS alpha
-        var speed = Math.max(0.5, playerState.danmakuSpeed)
-        var opacity = Math.max(0.1, Math.min(1.0, playerState.danmakuOpacity))
-        var alphaTag = "\\alpha&H"
-                + ("0" + Math.round((1 - opacity) * 255).toString(16)).slice(-2)
-                + "&"
-        // 【675 E】防叠行：每行/每槽「最早可用时刻」，来弹幕优先取
-        // 空闲槽，同槽必有间隔——不再叠成一坨。
-        var rowFreeAt = [], topFreeAt = [], botFreeAt = []
-        for (var r = 0; r < rows; r++) rowFreeAt.push(0)
-        for (var r = 0; r < 3; r++) { topFreeAt.push(0); botFreeAt.push(0) }
-        function pickSlot(freeArr, t0) {
-            var best = 0
-            for (var k = 0; k < freeArr.length; k++) {
-                if (freeArr[k] <= t0) return k
-                if (freeArr[k] < freeArr[best]) best = k
-            }
-            return best
-        }
-        var sorted = items.slice().sort(function (a, b) {
-            return a.timeMs - b.timeMs
-        })
-        for (var i = 0; i < sorted.length; i++) {
-            var it = sorted[i]
-            var t0 = it.timeMs / 1000
-            var body = (it.text || "").replace(/\\\\/g, "\\")
-                                     .replace(/\{/g, "(")
-                                     .replace(/\}/g, ")")
-                                     .replace(/\n/g, " ")
-            var col = assColor(it.color) + alphaTag
-            var dur = (it.mode === "scroll") ? (8.0 / speed) : 4
-            var eff2
-            if (it.mode === "top") {
-                var slotT = pickSlot(topFreeAt, t0)
-                topFreeAt[slotT] = t0 + 4
-                eff2 = "{\\an8\\pos(" + Math.round(W / 2) + ","
-                        + (30 + slotT * (fs + 6)) + ")\\c" + col + "}"
-            } else if (it.mode === "bottom") {
-                var slotB = pickSlot(botFreeAt, t0)
-                botFreeAt[slotB] = t0 + 4
-                eff2 = "{\\an2\\pos(" + Math.round(W / 2) + ","
-                        + ((H - 30) - slotB * (fs + 6)) + ")\\c" + col + "}"
-            } else {
-                var slotS = pickSlot(rowFreeAt, t0)
-                rowFreeAt[slotS] = t0 + dur * 0.55
-                var y2 = 20 + slotS * (fs + 6)
-                eff2 = "{\\move(" + (W + 120) + "," + y2 + "," + -120 + "," + y2
-                        + ")\\c" + col + "}"
-            }
-            lines.push("Dialogue: 0," + assTime(t0) + "," + assTime(t0 + dur)
-                        + ",Danmaku,,0,0,0,," + eff2 + body)
-        }
-        mpvWindow.setDanmakuAss(lines.join("\n"))
     }
 
     // ── 面板内容（内容/标题对齐 Flutter）──

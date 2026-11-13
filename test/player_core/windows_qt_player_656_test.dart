@@ -1222,13 +1222,18 @@ void main() {
       expect(mainQml, contains('所有剧集播放完毕'));
     });
 
-    test('弹幕 ASS 旁路（secondary-sid 双字幕轨）', () {
-      expect(mpvCpp, contains('setDanmakuAss'));
-      expect(mpvCpp, contains('secondary-sid'));
-      expect(mpvCpp, contains('sub-add'));
-      expect(mainQml, contains('buildDanmakuAss'));
-      expect(mainQml, contains('onDanmakuChanged'));
+    test('弹幕改为 QML 自绘（697：弃用 ASS 旁路）', () {
+      // 697：ASS 方案会导致开关弹幕卡视频 / HDR 过曝 / 字幕设置耦合，
+      // 已改为独立 QML 浮层自绘（算法对齐安卓 DanmakuLayerView）。
+      final overlayQml = read('$dir/src/qml/Overlay.qml');
+      final layerQml = read('$dir/src/qml/DanmakuLayer.qml');
+      expect(overlayQml, contains('DanmakuLayer {'));
+      expect(layerQml, contains('syncFlying'));
+      expect(layerQml, contains('laneOf'));
+      // 弹幕数据仍走 danmakuItems 状态字段
       expect(stateH, contains('Q_PROPERTY(QVariantList danmakuItems'));
+      // Overlay 不再生成 ASS
+      expect(overlayQml, isNot(contains('buildDanmakuAss')));
     });
 
     test('跳过片头/片尾胶囊（片段字段 + skipSegmentClicked）', () {
@@ -1276,9 +1281,9 @@ void main() {
     test('ASS 渐变遮罩已退役（669：玻璃条自画渐变，防顶/底双重压暗）', () {
       expect(mainQml, isNot(contains('pushScrim')));
       expect(mainQml, isNot(contains('Style: Scrim')));
-      // 弹幕开关只增减弹幕行（重生成，不藏轨）
-      expect(mainQml, contains('danmakuOn ? playerState.danmakuItems : []'));
-      expect(mainQml, contains('danmakuBuildTimer.restart()'));
+      // 697：弹幕改自绘，不再生成 ASS 行（开关只切本地 enabled）
+      expect(mainQml, isNot(contains('danmakuBuildTimer')));
+      expect(mainQml, contains('danmakuOn = !danmakuOn'));
     });
 
     test('液态玻璃材质（渐变玻璃条/玻璃卡/玻璃滑杆）', () {
@@ -1817,10 +1822,15 @@ void main() {
     });
 
     test('E 弹幕增强（速度/透明度生效 + 防叠行）', () {
-      expect(overlay8, contains('pickSlot'));
-      expect(overlay8, contains('alphaTag'));
-      expect(overlay8, contains('8.0 / speed'));
-      expect(overlay8, contains('items.slice().sort'));
+      // 697：弹幕改 QML 自绘后，速度/透明度/防叠行逻辑迁到 DanmakuLayer.qml
+      final layerQml = read('$dir/src/qml/DanmakuLayer.qml');
+      expect(layerQml, contains('scrollBaseMs'));
+      expect(layerQml, contains('speed'));
+      expect(layerQml, contains('opacity'));
+      // 防叠行：满槽丢弃（不叠）
+      expect(layerQml, contains('picked = -1'));
+      // 按时间升序分配
+      expect(layerQml, contains('sort(function (a, b)'));
     });
 
     test('F 电影隐藏上下切集（episodeCount > 1）', () {
@@ -1926,14 +1936,16 @@ void main() {
       expect(mpvCpp9, contains('name.startsWith(QLatin1String("sub-"))'));
     });
 
-    test('E 弹幕大小/速度/透明度变化即重建 ASS', () {
-      expect(overlay9, contains('property string danmakuStyleSig'));
-      expect(overlay9, contains('if (sig === root.danmakuStyleSig) return'));
-      expect(overlay9, contains('root.danmakuStyleSig = sig'));
-      // 三值都进签名
-      expect(overlay9, contains('playerState.danmakuFontSize'));
-      expect(overlay9, contains('playerState.danmakuSpeed'));
-      expect(overlay9, contains('playerState.danmakuOpacity'));
+    test('E 弹幕大小/速度/透明度即时生效（697：自绘层直接绑定）', () {
+      // 697：改自绘后不再需要「重建 ASS」——三个值直接绑定到 DanmakuLayer，
+      // QML 属性变化即时重算，无重建开销。
+      final layerQml = read('$dir/src/qml/DanmakuLayer.qml');
+      expect(overlay9, contains('fontSizeScale: playerState.danmakuFontSize'));
+      expect(overlay9, contains('speed: playerState.danmakuSpeed'));
+      expect(overlay9, contains('opacity: playerState.danmakuOpacity'));
+      // 字号/速度变化会触发行容量重算（laneSig）
+      expect(layerQml, contains('onLaneSigChanged'));
+      expect(layerQml, contains('fontSize'));
     });
 
     test('F 关主窗口 → Qt 跟随退出（双保险）', () {
