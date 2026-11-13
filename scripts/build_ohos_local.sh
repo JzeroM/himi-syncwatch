@@ -85,6 +85,55 @@ BUILD_NUMBER="$(printf '%s' "$VERSION_LINE" | sed -n 's/.*+\([0-9][0-9]*\).*/\1/
 [ -n "$VERSION_NAME" ] && [ -n "$BUILD_NUMBER" ] || { echo "无法解析 pubspec 版本" >&2; exit 1; }
 VERSION_CODE="${OHOS_LOCAL_VERSION_CODE:-$BUILD_NUMBER}"
 
+# ── SDK 串用防护（697）────────────────────────────────────────────
+#
+# 【问题】Flutter-OH SDK 的 `pub get` 会把 `.dart_tool/package_config.json`
+# 里的 `flutter` 指向 `flutter_ohos`。之后用 stock Flutter 跑
+# `flutter test` / `flutter analyze` 会报一堆
+# `The getter 'hasSelectedState' isn't defined for the type 'SemanticsFlags'`
+# ——看起来像代码坏了，实际只是 SDK 串了（两套引擎的 dart:ui 不兼容）。
+#
+# 【对策】构建前备份该文件，退出时（无论成功失败）还原。
+# 被鸿蒙 SDK 编译过的 `build/test_cache` 同样会让 stock 测试报诡异编译
+# 错误，一并清掉。
+PKG_CONFIG=".dart_tool/package_config.json"
+PKG_BACKUP=""
+STAGING=""
+if [ -f "$PKG_CONFIG" ]; then
+  PKG_BACKUP="$(mktemp "${TMPDIR:-/tmp}/himi-pkgconfig.XXXXXX")"
+  cp "$PKG_CONFIG" "$PKG_BACKUP"
+fi
+
+restore_stock_sdk() {
+  [ -n "$PKG_BACKUP" ] || return 0
+  [ -f "$PKG_BACKUP" ] || return 0
+  if cmp -s "$PKG_CONFIG" "$PKG_BACKUP" 2>/dev/null; then
+    # 没被改写（例如 hvigor 全程命中缓存），无需还原
+    rm -f "$PKG_BACKUP"
+    return 0
+  fi
+  cp "$PKG_BACKUP" "$PKG_CONFIG"
+  rm -f "$PKG_BACKUP"
+  rm -rf build/test_cache
+  {
+    echo ""
+    echo "已还原 .dart_tool/package_config.json 到构建前状态。"
+    echo "（Flutter-OH 会把它指向 flutter_ohos，导致 stock SDK 跑测试报"
+    echo "  SemanticsFlags 之类的编译错误——那不是代码问题）"
+    # pubspec 若在构建期间被改过，还原的解析结果会缺新依赖，提示重跑
+    if [ -f pubspec.yaml ] && [ pubspec.yaml -nt "$PKG_CONFIG" ]; then
+      echo "注意：pubspec.yaml 比依赖解析结果新，请用 stock Flutter 重跑"
+      echo "      flutter pub get"
+    fi
+  } >&2
+}
+
+cleanup() {
+  [ -n "$STAGING" ] && rm -rf "$STAGING"
+  restore_stock_sdk
+}
+trap cleanup EXIT
+
 flutter pub get
 
 build_hap() {
@@ -141,7 +190,6 @@ APP_INPUT="ohos/build/outputs/default/ohos-default-unsigned.app"
 OUT_DIR="$ROOT/dist/ohos/local"
 mkdir -p "$OUT_DIR"
 STAGING="$(mktemp -d "$OUT_DIR/.staging.XXXXXX")"
-trap 'rm -rf "$STAGING"' EXIT
 
 sign_one() {
   local input="$1" ext="$2"

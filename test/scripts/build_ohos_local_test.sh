@@ -81,5 +81,68 @@ else
 fi
 
 echo ""
+echo "== SDK 串用防护（697）=="
+
+# 源码层面：必须有备份 + trap + 还原
+assert_contains "备份 package_config" "$CONTENT" 'PKG_CONFIG='
+assert_contains "退出时还原" "$CONTENT" 'restore_stock_sdk'
+assert_contains "trap 注册" "$CONTENT" 'trap cleanup EXIT'
+assert_contains "清 test_cache" "$CONTENT" 'build/test_cache'
+
+# ── 行为验证：在临时仓库里模拟「鸿蒙 SDK 改写 → trap 还原」 ──
+# 只截取脚本里的还原逻辑（不跑真实构建），验证它真的能把文件改回去。
+TMP_REPO="$(mktemp -d)"
+trap 'rm -rf "$TMP_REPO"' EXIT
+
+mkdir -p "$TMP_REPO/.dart_tool"
+cat > "$TMP_REPO/.dart_tool/package_config.json" <<'JSON'
+{"packages":[{"name":"flutter","rootUri":"file:///home/mojito/flutter/packages/flutter"}]}
+JSON
+cp "$TMP_REPO/.dart_tool/package_config.json" "$TMP_REPO/original.json"
+
+# 提取 restore_stock_sdk 相关代码块，在临时仓库里执行
+{
+  echo 'set -euo pipefail'
+  echo 'cd "$1"'
+  # 取从 PKG_CONFIG= 到 trap cleanup EXIT 之间的代码
+  sed -n '/^PKG_CONFIG="\.dart_tool\/package_config\.json"$/,/^trap cleanup EXIT$/p' "$SCRIPT"
+  # 模拟鸿蒙 SDK 改写
+  echo 'python3 - <<PY'
+  echo 'import json'
+  echo 'p=".dart_tool/package_config.json"'
+  echo 'd=json.load(open(p))'
+  echo 'for x in d["packages"]:'
+  echo '    if x["name"]=="flutter":'
+  echo '        x["rootUri"]="file:///home/mojito/flutter_ohos/packages/flutter"'
+  echo 'json.dump(d, open(p,"w"))'
+  echo 'PY'
+  echo 'exit 0'
+} > "$TMP_REPO/run.sh"
+
+if bash "$TMP_REPO/run.sh" "$TMP_REPO" >/dev/null 2>&1; then
+  RESTORED="$(cat "$TMP_REPO/.dart_tool/package_config.json")"
+  if [ "$RESTORED" = "$(cat "$TMP_REPO/original.json")" ]; then
+    echo "  ✅ 退出后自动还原 package_config.json"
+    PASS=$((PASS+1))
+  else
+    echo "  ❌ 退出后未还原 package_config.json"
+    echo "     实际: $RESTORED"
+    FAIL=$((FAIL+1))
+  fi
+else
+  echo "  ❌ 还原逻辑执行失败"
+  FAIL=$((FAIL+1))
+fi
+
+# 未被改写时不应产生副作用（备份文件要清掉）
+if [ -z "$(find "$TMP_REPO" -maxdepth 1 -name 'himi-pkgconfig.*' 2>/dev/null)" ]; then
+  echo "  ✅ 备份临时文件已清理"
+  PASS=$((PASS+1))
+else
+  echo "  ❌ 备份临时文件残留"
+  FAIL=$((FAIL+1))
+fi
+
+echo ""
 echo "通过 $PASS 项，失败 $FAIL 项"
 [ "$FAIL" -eq 0 ] || exit 1
