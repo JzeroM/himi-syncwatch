@@ -280,4 +280,36 @@ void main() {
       expect(overlayQml, contains('playerState.skipPrompt === "outro"'));
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════
+  // E. 694：第四道门禁 _videoFrameReady（Qt 接管时恒 false）
+  // ═══════════════════════════════════════════════════════════════
+
+  group('E 画面就绪门禁', () {
+    test('E1 Qt 接管时 _videoFrameReady 读 Qt 的 hasMedia', () {
+      // 【真机根因】旧实现读 `_player.firstFrameReady`——Windows Qt 接管
+      // 时 `_player` 是空闲引擎，`firstFramePending` 恒 true →
+      // `firstFrameReady` 恒 false → `_evaluateSkipPrompt` 在这里 return。
+      final start = playerScreen.indexOf('bool get _videoFrameReady');
+      expect(start, greaterThan(0));
+      final block = playerScreen.substring(start, start + 900);
+      expect(block, contains('MpvSessionPlatform.activeQtAdapter'));
+      expect(block, contains('qt.hasMedia'));
+      expect(block, contains('TargetPlatform.windows'));
+    });
+
+    test('E2 非 Windows 仍用 firstFrameReady（行为不变）', () {
+      final start = playerScreen.indexOf('bool get _videoFrameReady');
+      final block = playerScreen.substring(start, start + 900);
+      expect(block, contains('player is MpvPlayerAdapter ? player.firstFrameReady'));
+    });
+
+    test('E3 _evaluateSkipPrompt 仍保留该门禁', () {
+      final start = playerScreen.indexOf('void _evaluateSkipPrompt(');
+      final block = playerScreen.substring(start, start + 1500);
+      // 694：门禁保留，但加了诊断日志（`_logSkipGate`）
+      expect(block, contains('if (!_videoFrameReady)'));
+      expect(block, contains("_logSkipGate('frame not ready'"));
+    });
+  });
 }

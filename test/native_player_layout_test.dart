@@ -1245,7 +1245,9 @@ void main() {
           contains('if (s.skipPrompt.length > 0 && this.skipPrompt.length === 0)'));
       expect(ohosView, contains('host.setControlsVisible(true);'));
       // 画面就绪门禁：positionMs<=0 不评估（切集后不抢跑）。
-      expect(screen, contains('if (positionMs <= 0) return;'));
+      // 694：门禁保留，但加了诊断日志（`_logSkipGate`）
+      expect(screen, contains('if (positionMs <= 0)'));
+      expect(screen, contains("_logSkipGate('position=0'"));
     });
 
     test('弹幕默认速度 0.7 全链一致（构造/fromJson 迁移/恢复默认/原生兜底）', () {
@@ -2121,7 +2123,9 @@ void main() {
           contains('if (state.videoParams != null || hasVideoFrame(state) || state.idleActive)'));
       // 跳过提示门禁：首帧未出不弹提示。
       expect(adapter588, contains('bool get firstFrameReady => !firstFramePending.value;'));
-      expect(screen588, contains('if (!_videoFrameReady) return;'));
+      // 694：门禁保留，但加了诊断日志；且 Qt 接管时改读 hasMedia
+      expect(screen588, contains('if (!_videoFrameReady)'));
+      expect(screen588, contains("_logSkipGate('frame not ready'"));
     });
 
     test('缓冲位：位置已推进也算在出帧（鸿蒙 cache-time 常读不到）', () {

@@ -7693,8 +7693,49 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 只对 mpv 适配器有精确判据（[MpvPlayerAdapter.firstFrameReady]）；
   /// 其他内核/尚未就绪时按「已出」放行，避免门禁误伤。
   bool get _videoFrameReady {
+    // 694：**Qt 接管时必须读 Qt 的真实状态**。
+    //
+    // 旧实现读 `_player.firstFrameReady`——Windows Qt 接管时 `_player` 是
+    // 从未起播的空闲引擎，`firstFramePending` 恒 true → 恒返回 false →
+    // `_evaluateSkipPrompt` 在这里 return，跳过提示永不显示
+    //（这是第四道漏改的门禁，前三道：playing / 抑制解除 / dirty）。
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      final qt = MpvSessionPlatform.activeQtAdapter;
+      if (qt != null && qt.isAlive) {
+        // Qt 侧没有「首帧」概念，用「已加载媒体」等价判断。
+        return qt.hasMedia;
+      }
+    }
     final player = _player;
     return player is MpvPlayerAdapter ? player.firstFrameReady : true;
+  }
+
+  /// 694：跳过提示门禁诊断（节流：同一原因 5 秒内只记一次）。
+  ///
+  /// 【为什么需要】这个功能连续多版不生效，而链路有 7 道门禁——逐个人工
+  /// 猜测效率太低。真机日志能直接指出卡在哪一道。
+  String _lastSkipGateReason = '';
+  DateTime? _lastSkipGateAt;
+
+  void _logSkipGate(String reason, int positionMs) {
+    final now = DateTime.now();
+    if (_lastSkipGateReason == reason &&
+        _lastSkipGateAt != null &&
+        now.difference(_lastSkipGateAt!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastSkipGateReason = reason;
+    _lastSkipGateAt = now;
+    LogService().log(
+      'SkipPrompt',
+      '门禁拦截: $reason | pos=${positionMs}ms '
+          'segments=${_skipSegments.length} '
+          'engine=${_reportEngine.state.name} '
+          'frameReady=$_videoFrameReady '
+          'suppressed=$_skipPromptSuppressed '
+          'switching=$_isSwitchingMedia '
+          'feature=$_segmentFeatureEnabled',
+    );
   }
 
   void _evaluateSkipPrompt(int positionMs) {
@@ -7702,6 +7743,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       suppressed: _skipPromptSuppressed,
       switchingMedia: _isSwitchingMedia,
     )) {
+      _logSkipGate('suppressed/switching', positionMs);
       return;
     }
     // 588：已显示的提示每 tick 校验是否仍有效（位置仍在片段内）。
@@ -7716,6 +7758,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 下面的 `evaluate` → 真机「Qt 播放器跳过片头片尾控件从不显示」。
     final playing = _reportEngine.state == AdapterPlaybackState.playing;
     if (!playing) {
+      _logSkipGate('not playing', positionMs);
       _skipPromptPlaybackWatch.stop();
       return;
     }
@@ -7725,11 +7768,24 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 画面就绪门禁（真机回归：切集后立马弹跳过片头）：起播已上报 playing
     // 但位置仍为 0（首帧未出/解码未起）时不放行提示——计时照常（3 秒
     // gate 从真正起播算），等位置回读 >0（视频加载出来）才显示。
-    if (positionMs <= 0) return;
+    if (positionMs <= 0) {
+      _logSkipGate('position=0', positionMs);
+      return;
+    }
     // 588：首帧未出（有视频轨但解码器还在起热）时不弹提示。此时进度可能
     // 已被音频推进，但用户看到的仍是黑屏/转圈，弹「跳过片头」时机不对。
-    if (!_videoFrameReady) return;
-    if (!_segmentFeatureEnabled || _skipSegments.isEmpty) return;
+    if (!_videoFrameReady) {
+      _logSkipGate('frame not ready', positionMs);
+      return;
+    }
+    if (!_segmentFeatureEnabled) {
+      _logSkipGate('feature disabled', positionMs);
+      return;
+    }
+    if (_skipSegments.isEmpty) {
+      _logSkipGate('no segments', positionMs);
+      return;
+    }
     final insideIntro = _skipSegments.any(
       (segment) =>
           segment.type == MediaSegmentType.intro &&
@@ -7753,7 +7809,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: true,
       segments: _skipSegments,
     );
-    if (segment == null || !mounted) return;
+    if (segment == null) {
+      // 694：evaluate 没命中——记录关键参数（位置/段列表/已处理集合）
+      _logSkipGate('evaluate miss', positionMs);
+      return;
+    }
+    if (!mounted) return;
+    LogService().log('SkipPrompt',
+        '命中片段: ${segment.type.name} ${segment.startMs}-${segment.endMs}ms '
+        'pos=${positionMs}ms auto=$_autoSkipSegmentEnabled');
     if (_autoSkipSegmentEnabled) {
       _autoSkipSegment(segment);
       return;
