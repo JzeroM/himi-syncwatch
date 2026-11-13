@@ -35,7 +35,9 @@ Item {
         width: row.labelWidth
         text: row.label
         color: "#61FFFFFF"
-        font.pixelSize: 10.5
+        // 【必须是整数】QML 的 `font.pixelSize` 类型是 int，写 10.5 会报
+        // 「Invalid property assignment: int expected」→ 整个 Overlay 加载失败。
+        font.pixelSize: 11
         elide: Text.ElideRight
     }
 
@@ -46,7 +48,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: row.value
         color: row.severityColor(row.severity)
-        font.pixelSize: 10.5
+        font.pixelSize: 11
         elide: Text.ElideRight
     }
 

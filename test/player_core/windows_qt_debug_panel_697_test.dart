@@ -94,6 +94,19 @@ void main() {
       expect(panelQml, contains('&& !playerState.locked'));
     });
 
+    test('1.4b font.pixelSize 必须是整数（10.5 → Overlay 加载失败）', () {
+      // QML 的 `font.pixelSize` 类型是 int；写 10.5 会报
+      // 「Invalid property assignment: int expected」，
+      // 且**整个 Overlay 加载失败** → 装机后启动即回退。
+      for (final src in [panelQml, debugRowQml, groupHeaderQml]) {
+        expect(
+          RegExp(r'pixelSize:\s*\d+\.\d+').hasMatch(src),
+          isFalse,
+          reason: 'font.pixelSize 不接受小数',
+        );
+      }
+    });
+
     test('1.5 关闭按钮不破坏 shown 绑定', () {
       // 直接写 shown = false 会打断绑定，导致设置里重开无效
       expect(panelQml, contains('root.dismissed = true'));

@@ -352,7 +352,9 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
         row.addView(arrow)
         val label = TextView(context).apply {
             text = title
-            setTextColor(if (highlighted) ACCENT_GREEN else 0xB3FFFFFF)
+            // 【必须 .toInt()】0xB3FFFFFF > Int.MAX_VALUE，Kotlin 会推断成
+            // Long → `setTextColor` 匹配不到重载（编译失败）。
+            setTextColor(if (highlighted) ACCENT_GREEN else 0xB3FFFFFF.toInt())
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             typeface = Typeface.DEFAULT_BOLD
         }
