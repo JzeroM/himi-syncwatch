@@ -2066,10 +2066,19 @@ void main() {
           reason: '转圈必须先于顶/底栏添加（Flutter 转圈在控件层之下）');
     });
 
-    test('鸿蒙调试面板含 canvas= 画布尺寸行', () {
-      expect(ohosViewFile, contains('canvas='));
-      expect(ohosViewFile, contains('private diagLine()'));
-      expect(ohosViewFile, contains('host.canvasWidth'));
+    test('鸿蒙调试面板含画布尺寸行', () {
+      // 697：诊断行从「底栏两行 diagLine」升级为独立可拖动面板
+      // （`DebugPanel.ets`）。画布尺寸仍取宿主实测值——这是验证
+      // 「mpv 画布 = 屏幕物理像素」的唯一可靠口径。
+      final ohosDebugPanel = File(
+        'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
+        'DebugPanel.ets',
+      ).readAsStringSync();
+      expect(ohosDebugPanel, contains("label: '画布'"));
+      expect(ohosDebugPanel, contains('this.host.canvasWidth'));
+      expect(ohosDebugPanel, contains('this.host.canvasHeight'));
+      // 旧实现已移除
+      expect(ohosViewFile, isNot(contains('private diagLine()')));
     });
   });
 

@@ -100,7 +100,8 @@ import 'package:himi_syncwatch/screens/player/widgets/glass_slider_theme.dart';
 import 'package:himi_syncwatch/screens/player/widgets/subtitle_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/audio_track_menu_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/version_menu_panel.dart';
-import 'package:himi_syncwatch/screens/player/widgets/sync_debug_panel.dart';
+import 'package:himi_syncwatch/services/debug/debug_metrics_collector.dart';
+import 'package:himi_syncwatch/widgets/debug/playback_debug_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/fvp_surface_view.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_kernel_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/player_top_bar.dart';
@@ -1119,19 +1120,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// null = 未取得/非 Android（回退 MediaQuery×dpr）。
   Size? _displayPhysical;
 
-  /// 实际生效的渲染目标尺寸取证（调试面板：原生尺寸 → 夹紧后尺寸；
-  /// 未夹紧时两段相同）。夹紧仅在 SurfaceView 档 + HDR + 开关开时生效。
-  String get _renderTargetDesc {
-    final native = _videoNativeSize;
-    if (native == null) return '-';
-    final n = '${native.width.toInt()}x${native.height.toInt()}';
-    // 夹紧仅 SurfaceView 档生效（纹理档恒原生）
-    if (!_usesSurfaceView) return n;
-    final clamped = _clampedRenderSize(native);
-    if (clamped == null) return n;
-    return '$n → ${clamped.width.toInt()}x${clamped.height.toInt()}';
-  }
-
   /// 截帧取证结果（面板展示，null = 未截过）。
   String? _snapshotInfo;
   DateTime? _lastSnapshotAt;
@@ -1339,6 +1327,86 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 当前播放倍速（单人模式；初始取设置持久值，换集/重载后恢复）。
   double _speed = 1.0;
+
+  /// 697：调试面板指标采集器。
+  ///
+  /// 【为什么按需创建】引擎切换时 `_player` 会换成新实例，采集器持有
+  /// 旧实例会导致指标永远停在切换前。这里每次 `_player` 变化时重建。
+  DebugMetricsCollector? _debugCollector;
+  MpvPlayerAdapter? _debugCollectorOwner;
+
+  /// 取（或按当前引擎重建）调试采集器。
+  ///
+  /// 只有 MPV 引擎支持（其余引擎的 `readDebugProperties` 不可用）；
+  /// 非 MPV 时返回 null，面板显示「非 MPV 引擎」。
+  DebugMetricsCollector? get _debugMetricsCollector {
+    final p = _player;
+    if (p is! MpvPlayerAdapter) return null;
+    if (identical(_debugCollectorOwner, p)) return _debugCollector;
+    _debugCollectorOwner = p;
+    _debugCollector = DebugMetricsCollector(adapter: p);
+    return _debugCollector;
+  }
+
+  /// 697：Qt 会话的调试指标采集（1s 一次，由会话定时器驱动）。
+  ///
+  /// 只采集 HDR/DV 相关的 mpv 属性并转成 `NativePlayerState` 的 JSON
+  /// 补丁——Qt 侧 `applyJson` 会解析这些字段并驱动 `DebugPanel.qml`。
+  ///
+  /// 【为什么不用 DebugMetricsCollector】那个是给 Flutter 面板的
+  /// 「分组 + 文本」结构；Qt 需要的是**扁平 JSON 字段**。两者数据源相同
+  ///（都读 mpv 属性），但形态不同，这里直接组装补丁更省一次转换。
+  Future<Map<String, Object?>?> _collectQtDebugMetrics() async {
+    final p = _player;
+    if (p is! MpvPlayerAdapter) return null;
+    // 直读 mpv 实时属性（含 video-params → HDR/DV 输入信息）
+    final props = await p.readDebugProperties(const [
+      'video-params',
+      'target-prim',
+      'target-trc',
+      'tone-mapping',
+      'tone-mapping-mode',
+      'hdr-compute-peak',
+      'current-vo',
+      'gpu-api',
+      'gpu-context',
+      'estimated-vf-fps',
+      'frame-drop-count',
+      'decoder-frame-drop-count',
+      'hwdec-current',
+      'video-format',
+    ]);
+    final info = p.colorInfo;
+    return <String, Object?>{
+      'videoParamsPrimaries': info?.primaries ?? '',
+      'videoParamsGamma': info?.gamma ?? '',
+      'videoParamsSigPeak': info?.sigPeak ?? 0,
+      'videoParamsBitDepth': info?.bitDepth ?? 0,
+      'videoParamsPixelFormat': info?.pixelFormat ?? '',
+      'doviProfile': info?.doviProfile ?? 0,
+      'doviLevel': info?.doviLevel ?? 0,
+      'dvContent': p.isDvContent,
+      'targetPrim': props['target-prim'] ?? '',
+      'targetTrc': props['target-trc'] ?? p.mpvTargetTrc,
+      'toneMapping': props['tone-mapping'] ?? '',
+      'toneMappingMode': props['tone-mapping-mode'] ?? '',
+      'hdrComputePeak': props['hdr-compute-peak'] ?? '',
+      'currentVo': props['current-vo'] ?? p.mpvCurrentVo ?? '',
+      'gpuApi': props['gpu-api'] ?? '',
+      'gpuContext': props['gpu-context'] ?? p.mpvGpuContext ?? '',
+      'estimatedVfFps':
+          double.tryParse(props['estimated-vf-fps'] ?? '') ?? 0,
+      'frameDropCount': int.tryParse(props['frame-drop-count'] ?? '') ?? 0,
+      'decoderFrameDropCount':
+          int.tryParse(props['decoder-frame-drop-count'] ?? '') ?? 0,
+      'hwdecCurrent': props['hwdec-current'] ?? '',
+      'videoFormat': props['video-format'] ?? '',
+      'hdrOutput': p.hdrOutputActive,
+      // 页面 pop 后 Qt 侧只有这条补丁在推，缓冲进度必须跟着走
+      //（否则面板显示冻结在接管瞬间的值）。
+      'bufferedMs': p.buffered(),
+    };
+  }
 
   /// 手机版长按临时 2× 倍速：按住生效、松手恢复 [_speed]（不落盘）。
   bool _speedBoostActive = false;
@@ -1598,11 +1666,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _roomSyncInitializing = false;
 
-  // 同步调试面板
-  String _syncRtmChannel = '-';
-  String _syncRtmStatus = '未连接';
-  String _syncMetadataTestResult = '-'; // 自检结果
-  String _voStatus = '-'; // 视频输出驱动
+  // 697：播放调试面板
   String _videoResolution = '-'; // 视频分辨率
   String _hdrType = 'SDR'; // HDR 类型标签
   /// 内容是否为 HDR（闩锁，一旦判定不回退）：用于 HDR 输出与诊断
@@ -1650,11 +1714,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   String _audioCodecName = '-';
   int _audioBitrate = 0;
   String _stereoDownmix = '关';
-  String _actualVideoDecoders = '-';
 
   /// mdk `video.decoder` 属性原值，字段名与内容不符，如实单列展示
   String _mdkRawDecoder = '-';
-  String _audioBackend = '-';
 
   /// 上次写入 mdk 的 `audio.avfilter` 值，用于去重（诊断每秒回调）。
   String? _lastAudioFilter;
@@ -1730,7 +1792,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     try {
       if (mounted) {
         setState(() {
-          _voStatus = 'fvp/libmdk';
         });
       }
     } catch (_) {}
@@ -1792,12 +1853,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 这类与解码器无关的值）。配置项以 videoDecoders 为准；mdk 原值
       // 单独一行如实展示，它与实际解码器的偏差本身就是有用的证据。
       final mdkRawDecoder = _player.getProperty('video.decoder') ?? '-';
-      final actualDecoders = _player.videoDecoders.join(',');
 
       // 降混设置
       final dm = ref.read(settingsProvider).stereoDownmix ? '开' : '关';
-      final ab = AppSettings.effectiveAudioRenderer(
-          ref.read(settingsProvider).audioRenderer);
 
       // 平台预选解码器：签名未变则跳过，避免每个采样周期跨 MethodChannel
       _maybeProbeCodecs(vCodec, vWidth, vHeight, dovi, aCodec);
@@ -1826,9 +1884,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _audioCodecName = aCodec;
         _audioBitrate = aBitrate > 0 ? (aBitrate / 1000).round() : 0;
         _stereoDownmix = dm;
-        _actualVideoDecoders = actualDecoders;
         _mdkRawDecoder = mdkRawDecoder;
-        _audioBackend = ab;
         _diagSummary = _diag.summary();
       });
     } catch (e) {
@@ -3108,71 +3164,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return _effectiveVideoOutput();
   }
 
-  /// MPV 请求的视频路径（原生可能回退，需和实际路径分开显示）。
-  String get _mpvRequestedVideoPath {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvRequestedVideoOutput;
-    }
-    return _effectiveVideoOutput();
-  }
-
-  bool? get _mpvNativeSurface {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvUsesNativeSurface;
-    }
-    return null;
-  }
-
-  bool get _mpvSurfaceAttached {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvSurfaceAttached;
-    }
-    return false;
-  }
-
-  String? get _mpvSurfaceId {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvSurfaceId;
-    }
-    return null;
-  }
-
-  String? get _mpvSurfaceError {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvSurfaceError;
-    }
-    return null;
-  }
-
-  String? get _mpvVoConfigured {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvVoConfigured;
-    }
-    return null;
-  }
-
-  bool? get _mpvDisplayHdr {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvDisplayHdr;
-    }
-    return null;
-  }
-
-  String get _mpvTargetTrc {
-    if (_currentEngine == PlayerEngine.mpv && _player is MpvPlayerAdapter) {
-      return (_player as MpvPlayerAdapter).mpvTargetTrc;
-    }
-    return '-';
-  }
-
-  /// 调试面板 HDR 直出状态：只对 MPV 有效。
-  String get _mpvHdrDirectStatus {
-    if (_currentEngine != PlayerEngine.mpv || _player is! MpvPlayerAdapter) {
-      return '-（非 MPV）';
-    }
-    return (_player as MpvPlayerAdapter).mpvHdrOutputStatus;
-  }
-
   /// 当前档位是否走 SurfaceView 平台视图通道（普通档或直写档）。
   bool get _usesSurfaceView =>
       AppSettings.isSurfaceViewMode(_effectiveVideoOutput());
@@ -3755,6 +3746,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         unawaited(_safePopPlayerPage());
       },
     );
+    // 697：注入调试指标采集（会话每 1s 采集 mpv 属性推给 Qt 面板）。
+    session.collectDebugMetrics = _collectQtDebugMetrics;
+    // 面板关着就不采集（省掉每秒 14 次跨进程属性读取）
+    session.isDebugEnabled = () =>
+        ref.read(settingsProvider).showSyncDebug;
     session.resolveEpisode = resolveEpisode;
     session.resolveVersion = resolveVersion;
     // 671：页面存活期的富处理兜底（设置持久化等）——页面隐身存活后
@@ -4664,6 +4660,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 房间模式资源面板（590）：原生全屏窗口内自带 320dp 面板，
         // 切换 `_showPanel` 并立即重推快照（原生据此显隐 + 收窄 surface）。
         setState(() => _showPanel = !_showPanel);
+        _syncNativePanelData();
+      case ToggleDebug():
+        // 697：原生调试面板的关闭按钮 → 关设置项（等价于设置页开关）。
+        // 此前 `ToggleDebug` 命令已定义但**没有 case 分支**，被静默丢弃。
+        ref.read(settingsProvider.notifier).update(showSyncDebug: false);
         _syncNativePanelData();
       case ToggleRoomSync():
         // 591：该命令此前**无 case 分支**（解析后静默丢弃）。房间同步
@@ -5963,7 +5964,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!rtmService.isSupported) {
       _roomSyncInitializing = false;
       if (!mounted) return;
-      setState(() => _syncRtmStatus = '不支持此平台');
+      LogService().log('Room', 'RTM 不支持此平台');
       _logSyncEvent('当前平台不支持房间同步信令');
       showAppToast(context, '当前平台暂不支持房间同步');
       return;
@@ -6048,7 +6049,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!loginOk) {
       _roomSyncInitializing = false;
       if (!mounted) return;
-      setState(() => _syncRtmStatus = '登录失败');
+      LogService().log('Room', 'RTM 登录失败');
       _logSyncEvent('RTM 登录失败');
       if (mounted) {
         showAppToast(context, 'RTM 登录失败，请检查声网配置');
@@ -6059,7 +6060,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (!subscribeOk) {
       _roomSyncInitializing = false;
       if (!mounted) return;
-      setState(() => _syncRtmStatus = '订阅失败');
+      LogService().log('Room', 'RTM 订阅失败');
       _logSyncEvent('RTM 订阅失败');
       if (mounted) {
         showAppToast(context, 'RTM 频道订阅失败，请检查网络');
@@ -6069,8 +6070,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
     if (!mounted) return;
     setState(() {
-      _syncRtmChannel = _rtmChannel ?? '-';
-      _syncRtmStatus = '已连接';
+      LogService().log('Room', 'RTM 已连接');
     });
     _logSyncEvent('RTM 已连接, 频道: $_rtmChannel');
 
@@ -6104,9 +6104,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final rtmService = ref.read(rtmServiceProvider);
       final result = await rtmService.testMetadata(_rtmChannel!);
       if (mounted) {
-        setState(() {
-          _syncMetadataTestResult = result;
-        });
         _logSyncEvent('元数据自检: $result');
       }
     });
@@ -10329,85 +10326,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 同步调试面板（单人模式 + 房间模式均可显示）
-          if (ref.watch(settingsProvider).showSyncDebug)
-            Positioned(
-              left: _debugPanelX,
-              top: _debugPanelY,
-              child: SyncDebugPanel(
-                isHost: _isHost,
-                rtmChannel: _syncRtmChannel,
-                rtmStatus: _syncRtmStatus,
-                metadataTestResult: _syncMetadataTestResult,
-                clockOffsetMs: _clockOffset.offsetMs,
-                clockRttMs: _clockOffset.bestRttMs,
-                clockCalibrated: _clockOffset.isCalibrated,
-                voStatus: _voStatus,
-                hdrType: _hdrType,
-                hdrDirectStatus: _mpvHdrDirectStatus,
-                requestedVideoOutput: _mpvRequestedVideoPath,
-                nativeSurface: _mpvNativeSurface,
-                surfaceAttached: _mpvSurfaceAttached,
-                surfaceId: _mpvSurfaceId,
-                surfaceError: _mpvSurfaceError,
-                voConfigured: _mpvVoConfigured,
-                displayHdr: _mpvDisplayHdr,
-                targetTrc: _mpvTargetTrc,
-                isSinglePlayer: widget.roomCode == null,
-                // 播放状态
-                playbackState: _playbackState,
-                mediaStatusStr: _mediaStatusStr,
-                positionMs: _positionMs,
-                durationMs: _durationMs,
-                bufferedMs: _bufferedMs,
-                mediaBitrate: _mediaBitrate,
-                mediaFormat: _mediaFormat,
-                // 视频信息
-                videoCodecName: _videoCodecName,
-                videoResolution: _videoResolution,
-                videoFps: _videoFps,
-                videoBitrate: _videoBitrate,
-                pixelFormat: _pixelFormat,
-                doviProfile: _doviProfile,
-                // 音频信息
-                audioCodecName: _audioCodecName,
-                audioSampleRate: _audioSampleRate,
-                audioChannels: _audioChannels,
-                audioBitrate: _audioBitrate,
-                stereoDownmix: _stereoDownmix,
-                audioFilter: _audioFilterText,
-                textureId: _player.textureId.value,
-                textureSize: _textureSizeText,
-                videoOutput: _mpvActualVideoPath,
-                renderTarget: _renderTargetDesc,
-                videoFilter: _videoFilterText,
-                snapshotInfo: _snapshotInfo,
-                // Android：mdk snapshot 在 GL 异常设备上触发 native crash
-                // （无法 try/catch），隐藏截帧入口；其他平台保留取证能力
-                onSnapshot: Platform.isAndroid ? null : _probeSnapshot,
-                // 解码器
-                decodeMode: ref.read(settingsProvider).decodeMode,
-                actualVideoDecoders: _actualVideoDecoders,
-                mdkRawDecoder: _mdkRawDecoder,
-                decoderReport: _decoderReport,
-                audioBackend: _audioBackend,
-                dvCapability: _embyVideoStream?.isDolbyVision == true
-                    ? _dvProbe.summary
-                    : '',
-                buildSummary: _buildSummary,
-                // 卡顿诊断
-                stallSummary: _diagSummary,
-                bufProgress: _bufProgress,
-                deepLogActive: _deepLogActive,
-                onExportStutter: _exportFullDiagnostics,
-                onDrag: (delta) {
-                  setState(() {
-                    _debugPanelX += delta.dx;
-                    _debugPanelY += delta.dy;
-                  });
-                },
+          // 697：播放调试面板（重写版）——只显示播放中实时参数，
+          // 重点是 HDR / DV。数据由 DebugMetricsCollector 统一采集，
+          // 四端（Flutter/安卓/鸿蒙/Windows Qt）消费同一份指标。
+          // 锁定态隐藏（四端一致：锁定后只留锁钮）
+          if (ref.watch(settingsProvider).showSyncDebug &&
+              !_lockController.locked)
+            if (_debugMetricsCollector case final collector?)
+              Positioned(
+                left: _debugPanelX,
+                top: _debugPanelY,
+                child: PlaybackDebugPanel(
+                  fetch: () => collector.collect(
+                    playbackState: _playbackState,
+                    positionMs: _positionMs,
+                    durationMs: _durationMs,
+                    bufferedMs: _bufferedMs,
+                    speed: _speed,
+                  ),
+                  exportDiagnostics: _exportFullDiagnostics,
+                  onDrag: (delta) {
+                    setState(() {
+                      _debugPanelX += delta.dx;
+                      _debugPanelY += delta.dy;
+                    });
+                  },
+                  onClose: () => ref
+                      .read(settingsProvider.notifier)
+                      .update(showSyncDebug: false),
+                ),
               ),
-            ),
         ],
       ),
     );

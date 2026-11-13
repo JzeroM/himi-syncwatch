@@ -114,6 +114,7 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     // ── 播放 ──
     dirty |= assign(positionMs_, readInt64(json, "positionMs", positionMs_));
     dirty |= assign(durationMs_, readInt64(json, "durationMs", durationMs_));
+    dirty |= assign(bufferedMs_, readInt64(json, "bufferedMs", bufferedMs_));
     dirty |= assign(paused_, readBool(json, "paused", paused_));
     dirty |= assign(volume_, readDouble(json, "volume", volume_));
     dirty |= assign(speed_, readDouble(json, "speed", speed_));
@@ -158,6 +159,60 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     dirty |= assign(hdrOutput_, readBool(json, "hdrOutput", hdrOutput_));
     dirty |= assign(videoOutputActual_,
                     readString(json, "videoOutputActual", videoOutputActual_));
+
+    // ── 697：HDR/DV 调试指标（播放调试面板用）──
+    dirty |= assign(videoParamsPrimaries_,
+                    readString(json, "videoParamsPrimaries",
+                               videoParamsPrimaries_));
+    dirty |= assign(videoParamsGamma_,
+                    readString(json, "videoParamsGamma", videoParamsGamma_));
+    dirty |= assign(videoParamsSigPeak_,
+                    readDouble(json, "videoParamsSigPeak",
+                               videoParamsSigPeak_));
+    dirty |= assign(videoParamsBitDepth_,
+                    static_cast<int>(readInt64(json, "videoParamsBitDepth",
+                                               videoParamsBitDepth_)));
+    dirty |= assign(videoParamsPixelFormat_,
+                    readString(json, "videoParamsPixelFormat",
+                               videoParamsPixelFormat_));
+    dirty |= assign(doviProfile_,
+                    static_cast<int>(readInt64(json, "doviProfile",
+                                               doviProfile_)));
+    dirty |= assign(doviLevel_,
+                    static_cast<int>(readInt64(json, "doviLevel",
+                                               doviLevel_)));
+    dirty |= assign(dvContent_,
+                    readBool(json, "dvContent", dvContent_));
+    dirty |= assign(targetPrim_,
+                    readString(json, "targetPrim", targetPrim_));
+    dirty |= assign(targetTrc_,
+                    readString(json, "targetTrc", targetTrc_));
+    dirty |= assign(toneMapping_,
+                    readString(json, "toneMapping", toneMapping_));
+    dirty |= assign(toneMappingMode_,
+                    readString(json, "toneMappingMode", toneMappingMode_));
+    dirty |= assign(hdrComputePeak_,
+                    readString(json, "hdrComputePeak", hdrComputePeak_));
+    dirty |= assign(currentVo_,
+                    readString(json, "currentVo", currentVo_));
+    dirty |= assign(gpuApi_,
+                    readString(json, "gpuApi", gpuApi_));
+    dirty |= assign(gpuContext_,
+                    readString(json, "gpuContext", gpuContext_));
+    dirty |= assign(estimatedVfFps_,
+                    readDouble(json, "estimatedVfFps", estimatedVfFps_));
+    dirty |= assign(frameDropCount_,
+                    static_cast<int>(readInt64(json, "frameDropCount",
+                                               frameDropCount_)));
+    dirty |= assign(decoderFrameDropCount_,
+                    static_cast<int>(readInt64(json,
+                                               "decoderFrameDropCount",
+                                               decoderFrameDropCount_)));
+    dirty |= assign(hwdecCurrent_,
+                    readString(json, "hwdecCurrent", hwdecCurrent_));
+    dirty |= assign(videoFormat_,
+                    readString(json, "videoFormat", videoFormat_));
+    dirty |= assign(showDebug_, readBool(json, "showDebug", showDebug_));
 
     // ── 选集 ──
     const QJsonValue eps = json.value(QLatin1String("episodes"));

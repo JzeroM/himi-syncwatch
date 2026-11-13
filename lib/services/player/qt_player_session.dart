@@ -46,6 +46,23 @@ class QtPlayerSession {
   /// 不能随会话接管断供（Qt 弹幕不显示的根因）。
   Future<void> Function(int episodeIndex)? onEpisodeSwitched;
 
+  /// 697：调试指标采集（1s 节流）。
+  ///
+  /// 【为什么需要】Qt 模式下 Flutter 播放页已 pop，无法像内置播放那样
+  /// 每次 setState 都重建面板。调试面板的 HDR/DV 指标必须由会话**持续**
+  /// 推送，否则打开面板只看到接管瞬间的快照（DV 切换/起播后的真实状态
+  /// 全丢失）。
+  Future<Map<String, Object?>?> Function()? collectDebugMetrics;
+
+  /// 697：调试面板是否开启。
+  ///
+  /// 【为什么需要门控】采集一次要直读 14 个 mpv 属性（跨进程 IPC）。
+  /// 面板关着还每秒读一遍是纯浪费——Qt 模式下这个定时器会跑整个播放
+  /// 期间，长片累积下来是可观的无谓开销。
+  bool Function()? isDebugEnabled;
+
+  Timer? _debugTimer;
+
   /// 671：被新会话顶替时回调（旧的隐身播放页据此退场）。
   void Function()? onReplaced;
 
@@ -81,6 +98,8 @@ class QtPlayerSession {
     };
     // 快照一次推给 Qt（面板列表/标题等）。
     adapter.pushNativeState(Map.of(session._template));
+    // 697：调试指标定时推送（1s——mpv 属性直读是 IPC，频率过高无意义）。
+    session._startDebugTicker();
     return session;
   }
 
@@ -177,8 +196,31 @@ class QtPlayerSession {
     );
   }
 
+  /// 697：启动调试指标定时推送。
+  void _startDebugTicker() {
+    _debugTimer?.cancel();
+    _debugTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final collect = collectDebugMetrics;
+      if (collect == null) return;
+      // 面板未开启时跳过采集（省掉 14 次跨进程属性读取）
+      final enabled = isDebugEnabled;
+      if (enabled != null && !enabled()) return;
+      try {
+        final patch = await collect();
+        if (patch == null || patch.isEmpty) return;
+        // 合并进模板后整体重推（Qt 侧 applyJson 是全量覆盖语义）
+        _template.addAll(patch);
+        adapter.pushNativeState(Map.of(_template));
+      } catch (_) {
+        // 指标采集失败不影响播放，静默跳过
+      }
+    });
+  }
+
   /// 会话终止（Qt 窗口已关/被新会话替换时调用）。
   void shutdown() {
+    _debugTimer?.cancel();
+    _debugTimer = null;
     if (identical(active, this)) active = null;
   }
 }

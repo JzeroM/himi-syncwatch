@@ -286,6 +286,12 @@ class AndroidNativePlayerHost(
                 // 同上。
             }
 
+            override fun onCloseDebugPanel() {
+                // 697：关闭调试面板 = 关设置项（Dart 侧持久化 + 通知刷新）。
+                // 复用已有的 toggleDebug 命令（此前定义但无人处理）。
+                commandSink.send(mapOf("type" to "toggleDebug"))
+            }
+
             override fun onToggleResourcePanel() {
                 // 房间模式资源面板开关（对齐 Flutter `_showPanel`）。
                 // **不能发 requestBack**（旧实现点一下直接退出播放页）。

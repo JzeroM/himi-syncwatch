@@ -803,6 +803,17 @@ ApplicationWindow {
         }
     }
 
+    // ── 697：播放调试面板（HDR/DV 排查用）──
+    //
+    // Windows 是唯一能跑完整 libplacebo DV 处理的平台（D3D11 compute），
+    // 而 Flutter 播放页在 Qt 模式下已退场——所以面板必须在这里有。
+    DebugPanel {
+        id: debugPanel
+        // 设置项开关（Dart 侧下发 showDebug）。
+        // 位置由面板自身持有（拖动后本地更新，跨开关周期保持）。
+        shown: playerState.showDebug
+    }
+
     // ── 显示调节面板 ──
     DisplayAdjustPanel {
         id: adjustPanel

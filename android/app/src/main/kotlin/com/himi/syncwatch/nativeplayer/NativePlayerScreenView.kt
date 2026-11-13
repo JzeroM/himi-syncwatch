@@ -84,6 +84,9 @@ class NativePlayerScreenView(
         fun onOpenPanel(panel: String)
         fun onClosePanel()
 
+        /** 697：关闭播放调试面板（等价于在设置里关掉「播放调试面板」）。 */
+        fun onCloseDebugPanel()
+
         /** 房间模式「资源面板」开关（对齐 Flutter `_showPanel`）。 */
         fun onToggleResourcePanel()
 
@@ -998,7 +1001,13 @@ class NativePlayerScreenView(
     private var subtitleButton: View? = null
     private var audioButton: View? = null
     private var episodeButton: View? = null
-    private val diagText = TextView(context)
+    /**
+     * 697：播放调试面板（半透明可拖动，HDR/DV 排查用）。
+     *
+     * 替代旧的 `diagText`（两行挤在底栏里，HDR/DV 参数只占半行，
+     * 排查时找不到重点）。
+     */
+    private val debugPanel = DebugPanelView(context)
     /**
      * 加载指示器：自绘弧线转圈（复刻 Flutter `CircularProgressIndicator`）。
      *
@@ -1175,6 +1184,25 @@ class NativePlayerScreenView(
                 Gravity.START or Gravity.TOP,
             ),
         )
+
+        // 697：播放调试面板（浮层，可拖动；显隐由 showDebug 驱动）。
+        //
+        // 【为什么挂在根 FrameLayout 而不是底栏里】旧实现塞在 bottomBar 中，
+        // 只能显示两行且随控件自动隐藏一起消失——排查 HDR/DV 时面板自己
+        // 先消失了。独立浮层可常驻、可拖动到不挡画面的位置。
+        addView(
+            debugPanel,
+            lp(dp(300), LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.TOP).also {
+                it.leftMargin = dp(16)
+                it.topMargin = dp(80)
+            },
+        )
+        debugPanel.onClose = {
+            // 关闭 = 关设置项（下次进播放页不再自动弹）。
+            listener?.onCloseDebugPanel()
+        }
+        // 限高：分组全展开时约 30 行，小屏上必须可滚动而不是溢出屏幕。
+        debugPanel.applyMaxHeight(resources.displayMetrics.heightPixels)
 
         // 面板层（二级浮层）：透明遮罩 + 右侧玻璃浮层 + 解码 popover + 片头片尾卡。
         addView(panelScrim, lp(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -1782,12 +1810,6 @@ class NativePlayerScreenView(
                 .also { it.topMargin = dp(8) },
         )
 
-        // 诊断行（默认隐藏）
-        diagText.setTextColor(0x99FFFFFF.toInt())
-        diagText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-        diagText.maxLines = 2
-        diagText.visibility = GONE
-        bottomBar.addView(diagText, lp(LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
     // ── 控件工厂 ──────────────────────────────────────────────────
@@ -4097,10 +4119,11 @@ class NativePlayerScreenView(
         // 即禁用）把起播早期的滑杆锁死；空范围由 GlassSeekBarView 自守卫。
         seekBar.isEnabled = true
 
-        // 诊断行
-        val diag = buildDiag(state)
-        diagText.text = diag
-        diagText.visibility = if (state.showDebug && diag.isNotEmpty()) VISIBLE else GONE
+        // 697：调试面板（浮层，自行处理显隐）。
+        // 传入 surface 实际尺寸——安卓「画面变糊」的根因就是它被写成了
+        // 1/3 尺寸，这是唯一能直接核验的口径（Dart 侧拿不到这个值）。
+        val (sw, sh) = surfaceSizeProvider()
+        debugPanel.apply(state, surfaceWidthPx = sw, surfaceHeightPx = sh)
 
         // 加载指示器（586）：统一读快照的 `showLoading`（首帧未出 **或**
         // 缓冲中），不再自己判 `state.buffering`——否则 Flutter 首帧转圈时
@@ -4257,7 +4280,8 @@ class NativePlayerScreenView(
             seekRow.visibility = GONE
             logoImage.visibility = GONE
             logoSpacer.visibility = GONE
-            diagText.visibility = GONE
+            // 调试面板的显隐由 DebugPanelView.apply 统一判（含 locked），
+            // 这里不再单独设 GONE——否则下次状态推送会把它重新显示出来。
             transportGroup.visibility = GONE
             trailingGroup.visibility = GONE
             skipPromptChip.visibility = GONE
@@ -4310,20 +4334,6 @@ class NativePlayerScreenView(
         configureSeekListeners()
         configureTransportListeners()
         applyFocusability()
-    }
-
-    private fun buildDiag(state: AndroidNativePlayerState): String {
-        val parts = mutableListOf<String>()
-        parts.add("vo=${state.currentVo ?: state.voConfigured ?: "-"}")
-        parts.add("hwdec=${state.hwdecCurrent ?: "-"}")
-        parts.add("surface=${if (state.surfaceAttached) "att" else "未附着"}")
-        state.surfaceId?.takeIf { it.isNotEmpty() }?.let { parts.add("handle=$it") }
-        val (sw, sh) = surfaceSizeProvider()
-        parts.add("size=${sw}x$sh")
-        state.surfaceError?.let { parts.add("err=$it") }
-        if (state.buffering) parts.add("缓冲中")
-        parts.addAll(state.debugLines)
-        return parts.joinToString(" · ")
     }
 
     private fun tick() {

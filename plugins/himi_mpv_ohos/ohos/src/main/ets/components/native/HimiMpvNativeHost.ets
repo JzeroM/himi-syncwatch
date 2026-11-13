@@ -348,6 +348,26 @@ export class NativePlayerUiState {
   voConfigured: string = '';
   currentVo: string = '';
   hwdecCurrent: string = '';
+  // ── 697：HDR/DV 调试指标（播放调试面板用）──
+  // 排查三元组：输入（videoParams*）→ 决策（dvContent）→ 输出（target*）。
+  videoParamsPrimaries: string = '';
+  videoParamsGamma: string = '';
+  videoParamsSigPeak: number = 0;
+  videoParamsBitDepth: number = 0;
+  videoParamsPixelFormat: string = '';
+  doviProfile: number = 0;
+  doviLevel: number = 0;
+  dvContent: boolean = false;
+  targetPrim: string = '';
+  toneMapping: string = '';
+  toneMappingMode: string = '';
+  hdrComputePeak: string = '';
+  gpuApi: string = '';
+  gpuContext: string = '';
+  estimatedVfFps: number = 0;
+  frameDropCount: number = 0;
+  decoderFrameDropCount: number = 0;
+  videoFormat: string = '';
 
   // Surface 诊断
   surfaceAttached: boolean = false;
@@ -442,7 +462,7 @@ export class NativePlayerUiState {
   danmakuTopRows: number = 4;
   danmakuBottomRows: number = 4;
   danmakuMaxCount: number = 0;
-  /** 是否显示原生诊断行（设置→同步调试）。 */
+  /** 是否显示播放调试面板（设置→实验性→播放调试面板）。 */
   showDebug: boolean = false;
   /** 房间模式（隐藏选集/线路/画面比例等单人入口）。 */
   isRoom: boolean = false;
@@ -500,6 +520,29 @@ export class NativePlayerUiState {
     this.voConfigured = jsonStr(obj.voConfigured, this.voConfigured);
     this.currentVo = jsonStr(obj.currentVo, this.currentVo);
     this.hwdecCurrent = jsonStr(obj.hwdecCurrent, this.hwdecCurrent);
+    // 697：HDR/DV 调试指标
+    this.videoParamsPrimaries =
+      jsonStr(obj.videoParamsPrimaries, this.videoParamsPrimaries);
+    this.videoParamsGamma = jsonStr(obj.videoParamsGamma, this.videoParamsGamma);
+    this.videoParamsSigPeak = jsonNum(obj.videoParamsSigPeak, this.videoParamsSigPeak);
+    this.videoParamsBitDepth =
+      jsonNum(obj.videoParamsBitDepth, this.videoParamsBitDepth);
+    this.videoParamsPixelFormat =
+      jsonStr(obj.videoParamsPixelFormat, this.videoParamsPixelFormat);
+    this.doviProfile = jsonNum(obj.doviProfile, this.doviProfile);
+    this.doviLevel = jsonNum(obj.doviLevel, this.doviLevel);
+    this.dvContent = jsonBool(obj.dvContent, this.dvContent);
+    this.targetPrim = jsonStr(obj.targetPrim, this.targetPrim);
+    this.toneMapping = jsonStr(obj.toneMapping, this.toneMapping);
+    this.toneMappingMode = jsonStr(obj.toneMappingMode, this.toneMappingMode);
+    this.hdrComputePeak = jsonStr(obj.hdrComputePeak, this.hdrComputePeak);
+    this.gpuApi = jsonStr(obj.gpuApi, this.gpuApi);
+    this.gpuContext = jsonStr(obj.gpuContext, this.gpuContext);
+    this.estimatedVfFps = jsonNum(obj.estimatedVfFps, this.estimatedVfFps);
+    this.frameDropCount = jsonNum(obj.frameDropCount, this.frameDropCount);
+    this.decoderFrameDropCount =
+      jsonNum(obj.decoderFrameDropCount, this.decoderFrameDropCount);
+    this.videoFormat = jsonStr(obj.videoFormat, this.videoFormat);
     this.surfaceAttached = jsonBool(obj.surfaceAttached, this.surfaceAttached);
     this.surfaceId = jsonStr(obj.surfaceId, this.surfaceId);
     this.surfaceError = jsonStr(obj.surfaceError, this.surfaceError);
@@ -842,6 +885,15 @@ export class HimiMpvNativeHost {
     }
     this.sendCommand('requestBack', null);
     return true;
+  }
+
+  /**
+   * 697：关闭播放调试面板（等价于在设置里关掉「播放调试面板」）。
+   *
+   * 复用已有的 `toggleDebug` 命令（Dart 侧转成设置项变更）。
+   */
+  requestCloseDebugPanel(): void {
+    this.sendCommand('toggleDebug', null);
   }
 
   /** 原生命令回传 Dart（经插件的 himi_mpv/native_ui EventChannel）。 */

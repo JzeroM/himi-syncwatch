@@ -28,6 +28,7 @@ import { NativePlayerPanel, segmentMarkReject } from './NativePlayerPanel';
 import { NativePlayerIcons } from './NativePlayerIcons';
 import { DanmakuLayer } from './DanmakuLayer';
 import { GlassSlider } from './GlassSlider';
+import { DebugPanel } from './DebugPanel';
 import { MpvXComponentController, MpvSurfaceCallbacks } from '../plugin/HimiMpvSurface';
 
 const TAG = 'HimiNativePlayerView';
@@ -2595,6 +2596,22 @@ export struct HimiNativePlayerView {
           videoW: this.videoW,
         });
       }
+
+      // ── 697：播放调试面板（HDR/DV 排查用）──
+      //
+      // 【为什么在根 Stack 顶层而不是底栏里】旧实现是底栏内的两行
+      // `diagLine`，只显示 vo/hwdec/canvas，HDR/DV 参数全无；且它随
+      // 控件自动隐藏一起消失——排查时面板自己先没了。
+      //
+      // 画布尺寸取宿主亲自收到的值（`canvasWidth/Height`），不是 Dart
+      // 上报值——这是验证「mpv 画布 = 屏幕物理像素」的唯一可靠口径。
+      DebugPanel({
+        revision: this.revision,
+        onClose: (): void => {
+          // 关闭 = 关设置项（Dart 侧持久化 + 重推快照）。
+          HimiMpvNativeHost.getInstance().requestCloseDebugPanel();
+        },
+      });
     }
     .width('100%')
     .height('100%')
@@ -2841,39 +2858,9 @@ export struct HimiNativePlayerView {
       });
 
       this.ControlRow();
-
-      // ── 诊断行（586）：对齐安卓 `NativePlayerScreenView.diagText`。
-      //    仅 `showDebug`（设置页「同步调试」）为真时显示，薄文本整行宽。
-      //    关键字段 `canvas=` 是 mpv 实际合成画布尺寸（px）——真机「画面
-      //    变糊」就是它被写成了 1/3 尺寸，一眼可核验。
-      if (this.state().showDebug) {
-        Text(this.diagLine())
-          .fontSize(10)
-          .fontColor('#99FFFFFF')
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-          .margin({ top: 2 });
-      }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%');
-  }
-
-  /**
-   * 底部诊断行文本（对齐安卓 buildDiag 的字段顺序）。
-   *
-   * `canvas=` 取宿主亲自收到的画布尺寸（px），不是 Dart 上报值——这是
-   * 验证「mpv 画布 = 屏幕物理像素」的唯一可靠口径。
-   */
-  private diagLine(): string {
-    const s = this.state();
-    const host = HimiMpvNativeHost.getInstance();
-    const vo = s.currentVo.length > 0 ? s.currentVo : (s.voConfigured.length > 0 ? s.voConfigured : '-');
-    const hw = s.hwdecCurrent.length > 0 ? s.hwdecCurrent : '-';
-    const canvas = `${host.canvasWidth}x${host.canvasHeight}`;
-    const video = s.debugLines.length > 0 ? ` | ${s.debugLines[0]}` : '';
-    return `vo=${vo} | hwdec=${hw} | surface=${s.surfaceAttached ? 'att' : '未附着'} | canvas=${canvas}${video}`;
   }
 
   /**

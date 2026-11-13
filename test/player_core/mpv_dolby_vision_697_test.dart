@@ -69,6 +69,23 @@ void main() {
       expect(sdrBlock, contains('toneMapping'));
     });
 
+    test('1.5 SDR 分支无条件设置 tone-mapping（避免属性残留）', () {
+      // mpv 属性是持久的：条件设置会让切到 SDR 片源时残留上一次的
+      // tone-mapping，诊断面板也会显示错值。
+      final idx = adapter.indexOf('Future<void> _applyHdrOutputProperties');
+      final block = adapter.substring(idx, idx + 2000);
+      final sdrIdx = block.indexOf("'target-trc': 'auto'");
+      final sdrBlock = block.substring(sdrIdx, sdrIdx + 400);
+      expect(
+        sdrBlock,
+        contains("'tone-mapping': toneMapping,"),
+        reason: 'SDR 分支必须无条件设置 tone-mapping',
+      );
+      expect(sdrBlock, isNot(contains("if (_dvContentForMedia) 'tone-mapping'")));
+      // mode 也要复位，否则残留 hybrid
+      expect(sdrBlock, contains("'tone-mapping-mode': _dvContentForMedia"));
+    });
+
     test('1.5 不加 vf=libplacebo（避免双重处理）', () {
       final code = codeOnly(adapter);
       expect(code, isNot(contains('apply_dolbyvision')),

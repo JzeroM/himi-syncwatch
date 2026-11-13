@@ -13,6 +13,7 @@ import 'native/native_player_controller.dart';
 import 'native/native_player_gating.dart';
 import 'native/native_player_state.dart';
 import 'package:himi_syncwatch/services/decode_mode_service.dart';
+import 'package:himi_syncwatch/services/debug/debug_metrics.dart';
 import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:image/image.dart' as img;
 
@@ -289,6 +290,48 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   String? get mpvSurfaceError => _surfaceError;
   String? get mpvVoConfigured => _voConfigured;
 
+  /// 697：调试面板——实际 vo / gpu-context（最近一次轮询）。
+  String? get mpvCurrentVo => _currentVo;
+  String? get mpvGpuContext => _gpuContext;
+
+  /// 697：最近一次解析的输入色彩信息（`video-params`）。
+  ///
+  /// 调试面板与原生 UI 共用——避免两处各自解析 `video-params` 导致
+  /// 显示不一致（HDR 排查最忌讳「两个面板说不同的数」）。
+  VideoColorInfo? _colorInfo;
+  VideoColorInfo? get colorInfo => _colorInfo;
+
+  /// 697：最近一次直读的 mpv 调试属性（HDR/DV 相关）。
+  Map<String, String> _debugProps = const {};
+  Map<String, String> get debugProps => _debugProps;
+
+  /// 697：调试面板——读取 mpv 实时属性（异步直读，非缓存）。
+  ///
+  /// 【为什么需要】HDR/DV 排查依赖 `video-params`（输入色彩元数据）、
+  /// `tone-mapping` / `target-prim` / `target-trc`（输出映射）等属性，
+  /// 这些没有走事件订阅，只能按需直读。面板刷新频率低（1s），开销可忽略。
+  ///
+  /// 单个属性读取失败静默跳过（不同 mpv 版本支持的属性不同）。
+  Future<Map<String, String>> readDebugProperties(
+    List<String> names,
+  ) async {
+    final player = _player;
+    final out = <String, String>{};
+    if (player == null) return out;
+    for (final name in names) {
+      try {
+        final v = await player.getProperty(name);
+        if (v != null && v.isNotEmpty) out[name] = v;
+      } catch (_) {}
+    }
+    // 697：缓存最近一次结果——原生 UI 状态下发时复用，避免重复 IPC，
+    // 也保证「Flutter 面板」与「原生面板」显示同一份数据。
+    _debugProps = out;
+    final vp = out['video-params'];
+    if (vp != null) _colorInfo = VideoColorInfo.tryParse(vp);
+    return out;
+  }
+
   // ── 原生播放器 UI（全屏原生窗口）门控 ──────────────────────
 
   /// 用户设置：是否允许原生播放器 UI（默认开启）。
@@ -477,9 +520,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
             'target-colorspace-hint': 'no',
             'target-prim': 'auto',
             'target-trc': 'auto',
-            // SDR 输出时 DV 内容同样用感知映射（避免降级观感发灰）
-            if (_dvContentForMedia) 'tone-mapping': toneMapping,
-            if (_dvContentForMedia) 'tone-mapping-mode': 'hybrid',
+            // SDR 输出：HDR/DV 内容都走感知映射（避免降级观感发灰）。
+            // 显式设置而不是条件设置——否则切到 SDR 片源时会残留上一次
+            // 的 tone-mapping（mpv 属性是持久的），诊断面板也会显示错值。
+            'tone-mapping': toneMapping,
+            'tone-mapping-mode': _dvContentForMedia ? 'hybrid' : 'auto',
             if (defaultTargetPlatform == TargetPlatform.windows)
               'd3d11-output-format': 'auto',
           };
@@ -1614,6 +1659,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   void _parseVideoParams(Object? value) {
     if (value is! String) return;
+    // 697：同步缓存输入色彩信息（HDR/DV 排查的「输入」层）。
+    //
+    // 【为什么在这里更新而不是只在采集时】`video-params` 是事件驱动的，
+    // 视频参数一变就到达。原生 UI 的状态推送（`buildNativePlayerState`）
+    // 读的就是 `_colorInfo`——只在调试面板采集时更新会导致「面板没开时
+    // 原生面板永远显示上一次的值」。
+    _colorInfo = VideoColorInfo.tryParse(value);
     try {
       final decoded = jsonDecode(value);
       if (decoded is! Map<String, dynamic>) return;
@@ -2254,6 +2306,26 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       voConfigured: _voConfigured,
       currentVo: _currentVo,
       hwdecCurrent: _hwdecActual,
+      // 697：HDR/DV 调试指标（原生面板用，与 Flutter 面板同源）
+      videoParamsPrimaries: _colorInfo?.primaries ?? '',
+      videoParamsGamma: _colorInfo?.gamma ?? '',
+      videoParamsSigPeak: _colorInfo?.sigPeak ?? 0,
+      videoParamsBitDepth: _colorInfo?.bitDepth ?? 0,
+      videoParamsPixelFormat: _colorInfo?.pixelFormat ?? '',
+      doviProfile: _colorInfo?.doviProfile ?? 0,
+      doviLevel: _colorInfo?.doviLevel ?? 0,
+      dvContent: _dvContentForMedia,
+      targetPrim: _debugProps['target-prim'] ?? '',
+      toneMapping: _debugProps['tone-mapping'] ?? '',
+      toneMappingMode: _debugProps['tone-mapping-mode'] ?? '',
+      hdrComputePeak: _debugProps['hdr-compute-peak'] ?? '',
+      gpuApi: _debugProps['gpu-api'] ?? '',
+      gpuContext: _debugProps['gpu-context'] ?? _gpuContext ?? '',
+      estimatedVfFps: double.tryParse(_debugProps['estimated-vf-fps'] ?? '') ?? 0,
+      frameDropCount: int.tryParse(_debugProps['frame-drop-count'] ?? '') ?? 0,
+      decoderFrameDropCount:
+          int.tryParse(_debugProps['decoder-frame-drop-count'] ?? '') ?? 0,
+      videoFormat: _debugProps['video-format'] ?? '',
       surfaceAttached: _surfaceAttached,
       surfaceId: _surfaceId,
       surfaceError: _surfaceError,

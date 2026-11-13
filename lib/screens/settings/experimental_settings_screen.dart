@@ -39,7 +39,7 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
                   notifier.update(showSyncDebug: !settings.showSyncDebug),
               child: SwitchListTile(
                 title: const Text('播放调试面板'),
-                subtitle: const Text('实时显示播放诊断信息，可拖拽移动'),
+                subtitle: const Text('实时显示 HDR / 杜比视界参数，可拖拽移动'),
                 value: settings.showSyncDebug,
                 onChanged: (v) => notifier.update(showSyncDebug: v),
               ),

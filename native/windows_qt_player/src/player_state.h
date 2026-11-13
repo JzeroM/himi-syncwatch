@@ -24,6 +24,8 @@ class PlayerState : public QObject {
     // ── 播放 ──
     Q_PROPERTY(qint64 positionMs READ positionMs NOTIFY changed)
     Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY changed)
+    /// 697：已缓冲毫秒数（调试面板显示）。
+    Q_PROPERTY(qint64 bufferedMs READ bufferedMs NOTIFY changed)
     Q_PROPERTY(bool paused READ paused NOTIFY changed)
     Q_PROPERTY(double volume READ volume NOTIFY changed)
     Q_PROPERTY(double speed READ speed NOTIFY changed)
@@ -99,6 +101,38 @@ class PlayerState : public QObject {
     Q_PROPERTY(bool hdrOutput READ hdrOutput NOTIFY changed)
     Q_PROPERTY(QString videoOutputActual READ videoOutputActual NOTIFY changed)
 
+    // ── 697：HDR/DV 调试指标（播放调试面板用）──
+    //
+    // 这些是 mpv 的**实时属性**（Dart 侧 1s 轮询直读后下发），
+    // 排查 HDR/DV 问题的关键三元组：
+    //   输入（videoParams*）→ 决策（dvContent/hdrContent）→ 输出（target*）
+    Q_PROPERTY(QString videoParamsPrimaries READ videoParamsPrimaries
+                   NOTIFY changed)
+    Q_PROPERTY(QString videoParamsGamma READ videoParamsGamma NOTIFY changed)
+    Q_PROPERTY(double videoParamsSigPeak READ videoParamsSigPeak NOTIFY changed)
+    Q_PROPERTY(int videoParamsBitDepth READ videoParamsBitDepth NOTIFY changed)
+    Q_PROPERTY(QString videoParamsPixelFormat READ videoParamsPixelFormat
+                   NOTIFY changed)
+    Q_PROPERTY(int doviProfile READ doviProfile NOTIFY changed)
+    Q_PROPERTY(int doviLevel READ doviLevel NOTIFY changed)
+    Q_PROPERTY(bool dvContent READ dvContent NOTIFY changed)
+    Q_PROPERTY(QString targetPrim READ targetPrim NOTIFY changed)
+    Q_PROPERTY(QString targetTrc READ targetTrc NOTIFY changed)
+    Q_PROPERTY(QString toneMapping READ toneMapping NOTIFY changed)
+    Q_PROPERTY(QString toneMappingMode READ toneMappingMode NOTIFY changed)
+    Q_PROPERTY(QString hdrComputePeak READ hdrComputePeak NOTIFY changed)
+    Q_PROPERTY(QString currentVo READ currentVo NOTIFY changed)
+    Q_PROPERTY(QString gpuApi READ gpuApi NOTIFY changed)
+    Q_PROPERTY(QString gpuContext READ gpuContext NOTIFY changed)
+    Q_PROPERTY(double estimatedVfFps READ estimatedVfFps NOTIFY changed)
+    Q_PROPERTY(int frameDropCount READ frameDropCount NOTIFY changed)
+    Q_PROPERTY(int decoderFrameDropCount READ decoderFrameDropCount
+                   NOTIFY changed)
+    Q_PROPERTY(QString hwdecCurrent READ hwdecCurrent NOTIFY changed)
+    Q_PROPERTY(QString videoFormat READ videoFormat NOTIFY changed)
+    /// 697：调试面板开关（设置页「播放调试面板」）。
+    Q_PROPERTY(bool showDebug READ showDebug NOTIFY changed)
+
     // ── 669：控件层显隐共享态（悬浮层渲染绑定 + 双窗手势共写）──
     // 纯 UI 本地状态，不参与 Flutter 状态同步（applyJson 不含此键）。
     // 控件悬浮层与宿主窗口的 VideoGestures 实例都能写——点击唤出在
@@ -155,6 +189,7 @@ public:
 
     qint64 positionMs() const { return positionMs_; }
     qint64 durationMs() const { return durationMs_; }
+    qint64 bufferedMs() const { return bufferedMs_; }
     bool paused() const { return paused_; }
     double volume() const { return volume_; }
     double speed() const { return speed_; }
@@ -218,6 +253,30 @@ public:
 
     bool hdrOutput() const { return hdrOutput_; }
     QString videoOutputActual() const { return videoOutputActual_; }
+
+    // 697：HDR/DV 调试指标 getter
+    QString videoParamsPrimaries() const { return videoParamsPrimaries_; }
+    QString videoParamsGamma() const { return videoParamsGamma_; }
+    double videoParamsSigPeak() const { return videoParamsSigPeak_; }
+    int videoParamsBitDepth() const { return videoParamsBitDepth_; }
+    QString videoParamsPixelFormat() const { return videoParamsPixelFormat_; }
+    int doviProfile() const { return doviProfile_; }
+    int doviLevel() const { return doviLevel_; }
+    bool dvContent() const { return dvContent_; }
+    QString targetPrim() const { return targetPrim_; }
+    QString targetTrc() const { return targetTrc_; }
+    QString toneMapping() const { return toneMapping_; }
+    QString toneMappingMode() const { return toneMappingMode_; }
+    QString hdrComputePeak() const { return hdrComputePeak_; }
+    QString currentVo() const { return currentVo_; }
+    QString gpuApi() const { return gpuApi_; }
+    QString gpuContext() const { return gpuContext_; }
+    double estimatedVfFps() const { return estimatedVfFps_; }
+    int frameDropCount() const { return frameDropCount_; }
+    int decoderFrameDropCount() const { return decoderFrameDropCount_; }
+    QString hwdecCurrent() const { return hwdecCurrent_; }
+    QString videoFormat() const { return videoFormat_; }
+    bool showDebug() const { return showDebug_; }
 
     bool controlsVisible() const { return controlsVisible_; }
     void setControlsVisible(bool visible);
@@ -283,6 +342,7 @@ private:
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
+    qint64 bufferedMs_ = 0;
     bool paused_ = true;
     double volume_ = 1.0;
     double speed_ = 1.0;
@@ -333,6 +393,30 @@ private:
 
     bool hdrOutput_ = false;
     QString videoOutputActual_;
+
+    // 697：HDR/DV 调试指标
+    QString videoParamsPrimaries_;
+    QString videoParamsGamma_;
+    double videoParamsSigPeak_ = 0;
+    int videoParamsBitDepth_ = 0;
+    QString videoParamsPixelFormat_;
+    int doviProfile_ = 0;
+    int doviLevel_ = 0;
+    bool dvContent_ = false;
+    QString targetPrim_;
+    QString targetTrc_;
+    QString toneMapping_;
+    QString toneMappingMode_;
+    QString hdrComputePeak_;
+    QString currentVo_;
+    QString gpuApi_;
+    QString gpuContext_;
+    double estimatedVfFps_ = 0;
+    int frameDropCount_ = 0;
+    int decoderFrameDropCount_ = 0;
+    QString hwdecCurrent_;
+    QString videoFormat_;
+    bool showDebug_ = false;
 
     QList<Episode> episodes_;
     int currentEpisodeIndex_ = -1;

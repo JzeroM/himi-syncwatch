@@ -348,6 +348,25 @@ class NativePlayerState {
     this.voConfigured,
     this.currentVo,
     this.hwdecCurrent,
+    // 697：HDR/DV 调试指标（播放调试面板用）
+    this.videoParamsPrimaries = '',
+    this.videoParamsGamma = '',
+    this.videoParamsSigPeak = 0,
+    this.videoParamsBitDepth = 0,
+    this.videoParamsPixelFormat = '',
+    this.doviProfile = 0,
+    this.doviLevel = 0,
+    this.dvContent = false,
+    this.targetPrim = '',
+    this.toneMapping = '',
+    this.toneMappingMode = '',
+    this.hdrComputePeak = '',
+    this.gpuApi = '',
+    this.gpuContext = '',
+    this.estimatedVfFps = 0,
+    this.frameDropCount = 0,
+    this.decoderFrameDropCount = 0,
+    this.videoFormat = '',
     this.surfaceAttached = false,
     this.surfaceId,
     this.surfaceError,
@@ -441,6 +460,29 @@ class NativePlayerState {
   final String? voConfigured;
   final String? currentVo;
   final String? hwdecCurrent;
+
+  // ── 697：HDR/DV 调试指标 ──
+  //
+  // 排查 HDR/DV 问题的关键三元组：
+  //   输入（videoParams*）→ 决策（dvContent）→ 输出（targetPrim/Trc/toneMapping）
+  final String videoParamsPrimaries;
+  final String videoParamsGamma;
+  final double videoParamsSigPeak;
+  final int videoParamsBitDepth;
+  final String videoParamsPixelFormat;
+  final int doviProfile;
+  final int doviLevel;
+  final bool dvContent;
+  final String targetPrim;
+  final String toneMapping;
+  final String toneMappingMode;
+  final String hdrComputePeak;
+  final String gpuApi;
+  final String gpuContext;
+  final double estimatedVfFps;
+  final int frameDropCount;
+  final int decoderFrameDropCount;
+  final String videoFormat;
 
   // ── Surface 诊断 ──
   final bool surfaceAttached;
@@ -537,7 +579,7 @@ class NativePlayerState {
   /// 片头片尾功能开关（TV 长按进度条入口）。
   final bool segmentEnabled;
 
-  /// 是否显示原生诊断行（设置→同步调试）。
+  /// 是否显示播放调试面板（设置→实验性→播放调试面板）。
   final bool showDebug;
 
   /// 房间模式（隐藏选集/线路/画面比例等单人入口）。
@@ -627,6 +669,29 @@ class NativePlayerState {
       voConfigured: json['voConfigured'] as String?,
       currentVo: json['currentVo'] as String?,
       hwdecCurrent: json['hwdecCurrent'] as String?,
+      // 697：HDR/DV 调试指标
+      videoParamsPrimaries: json['videoParamsPrimaries'] as String? ?? '',
+      videoParamsGamma: json['videoParamsGamma'] as String? ?? '',
+      videoParamsSigPeak:
+          (json['videoParamsSigPeak'] as num?)?.toDouble() ?? 0,
+      videoParamsBitDepth:
+          (json['videoParamsBitDepth'] as num?)?.toInt() ?? 0,
+      videoParamsPixelFormat:
+          json['videoParamsPixelFormat'] as String? ?? '',
+      doviProfile: (json['doviProfile'] as num?)?.toInt() ?? 0,
+      doviLevel: (json['doviLevel'] as num?)?.toInt() ?? 0,
+      dvContent: json['dvContent'] == true,
+      targetPrim: json['targetPrim'] as String? ?? '',
+      toneMapping: json['toneMapping'] as String? ?? '',
+      toneMappingMode: json['toneMappingMode'] as String? ?? '',
+      hdrComputePeak: json['hdrComputePeak'] as String? ?? '',
+      gpuApi: json['gpuApi'] as String? ?? '',
+      gpuContext: json['gpuContext'] as String? ?? '',
+      estimatedVfFps: (json['estimatedVfFps'] as num?)?.toDouble() ?? 0,
+      frameDropCount: (json['frameDropCount'] as num?)?.toInt() ?? 0,
+      decoderFrameDropCount:
+          (json['decoderFrameDropCount'] as num?)?.toInt() ?? 0,
+      videoFormat: json['videoFormat'] as String? ?? '',
       surfaceAttached: json['surfaceAttached'] == true,
       surfaceId: json['surfaceId'] as String?,
       surfaceError: json['surfaceError'] as String?,
@@ -756,6 +821,25 @@ class NativePlayerState {
         'voConfigured': voConfigured,
         'currentVo': currentVo,
         'hwdecCurrent': hwdecCurrent,
+        // 697：HDR/DV 调试指标
+        'videoParamsPrimaries': videoParamsPrimaries,
+        'videoParamsGamma': videoParamsGamma,
+        'videoParamsSigPeak': videoParamsSigPeak,
+        'videoParamsBitDepth': videoParamsBitDepth,
+        'videoParamsPixelFormat': videoParamsPixelFormat,
+        'doviProfile': doviProfile,
+        'doviLevel': doviLevel,
+        'dvContent': dvContent,
+        'targetPrim': targetPrim,
+        'toneMapping': toneMapping,
+        'toneMappingMode': toneMappingMode,
+        'hdrComputePeak': hdrComputePeak,
+        'gpuApi': gpuApi,
+        'gpuContext': gpuContext,
+        'estimatedVfFps': estimatedVfFps,
+        'frameDropCount': frameDropCount,
+        'decoderFrameDropCount': decoderFrameDropCount,
+        'videoFormat': videoFormat,
         'surfaceAttached': surfaceAttached,
         'surfaceId': surfaceId,
         'surfaceError': surfaceError,
@@ -851,6 +935,25 @@ class NativePlayerState {
     String? voConfigured,
     String? currentVo,
     String? hwdecCurrent,
+    // 697：HDR/DV 调试指标
+    String? videoParamsPrimaries,
+    String? videoParamsGamma,
+    double? videoParamsSigPeak,
+    int? videoParamsBitDepth,
+    String? videoParamsPixelFormat,
+    int? doviProfile,
+    int? doviLevel,
+    bool? dvContent,
+    String? targetPrim,
+    String? toneMapping,
+    String? toneMappingMode,
+    String? hdrComputePeak,
+    String? gpuApi,
+    String? gpuContext,
+    double? estimatedVfFps,
+    int? frameDropCount,
+    int? decoderFrameDropCount,
+    String? videoFormat,
     bool? surfaceAttached,
     String? surfaceId,
     String? surfaceError,
@@ -941,6 +1044,27 @@ class NativePlayerState {
         voConfigured: voConfigured ?? this.voConfigured,
         currentVo: currentVo ?? this.currentVo,
         hwdecCurrent: hwdecCurrent ?? this.hwdecCurrent,
+        videoParamsPrimaries:
+            videoParamsPrimaries ?? this.videoParamsPrimaries,
+        videoParamsGamma: videoParamsGamma ?? this.videoParamsGamma,
+        videoParamsSigPeak: videoParamsSigPeak ?? this.videoParamsSigPeak,
+        videoParamsBitDepth: videoParamsBitDepth ?? this.videoParamsBitDepth,
+        videoParamsPixelFormat:
+            videoParamsPixelFormat ?? this.videoParamsPixelFormat,
+        doviProfile: doviProfile ?? this.doviProfile,
+        doviLevel: doviLevel ?? this.doviLevel,
+        dvContent: dvContent ?? this.dvContent,
+        targetPrim: targetPrim ?? this.targetPrim,
+        toneMapping: toneMapping ?? this.toneMapping,
+        toneMappingMode: toneMappingMode ?? this.toneMappingMode,
+        hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
+        gpuApi: gpuApi ?? this.gpuApi,
+        gpuContext: gpuContext ?? this.gpuContext,
+        estimatedVfFps: estimatedVfFps ?? this.estimatedVfFps,
+        frameDropCount: frameDropCount ?? this.frameDropCount,
+        decoderFrameDropCount:
+            decoderFrameDropCount ?? this.decoderFrameDropCount,
+        videoFormat: videoFormat ?? this.videoFormat,
         surfaceAttached: surfaceAttached ?? this.surfaceAttached,
         surfaceId: surfaceId ?? this.surfaceId,
         surfaceError: surfaceError ?? this.surfaceError,
