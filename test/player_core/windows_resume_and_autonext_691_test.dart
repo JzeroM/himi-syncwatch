@@ -120,26 +120,31 @@ void main() {
   // B. 胶囊位置（底栏居中）
   // ═══════════════════════════════════════════════════════════════
 
-  group('B 跳过胶囊位置', () {
-    test('B1 水平居中', () {
-      final start = overlayQml.indexOf('id: skipCapsule');
-      expect(start, greaterThan(0));
-      final block = overlayQml.substring(start, start + 700);
-      expect(block, contains('anchors.horizontalCenter: parent.horizontalCenter'));
+  group('B 跳过胶囊位置（692 已改为双胶囊）', () {
+    test('B1 片头贴进度条左端上方', () {
+      expect(overlayQml, contains('id: skipIntroCapsule'));
+      expect(overlayQml, contains('x: skipCapsuleLayer.sliderRect.x'));
     });
 
-    test('B2 底栏内垂直居中（bottomMargin 31）', () {
-      final start = overlayQml.indexOf('id: skipCapsule');
-      final block = overlayQml.substring(start, start + 700);
-      expect(block, contains('anchors.bottomMargin: 31'));
-      expect(block, contains('height: 34'));
+    test('B2 片尾贴进度条右端上方', () {
+      expect(overlayQml, contains('id: skipOutroCapsule'));
+      expect(overlayQml,
+          contains('skipCapsuleLayer.sliderRect.width - width'));
     });
 
-    test('B3 不受 controlsVisible 控制（独立倒计时）', () {
-      final start = overlayQml.indexOf('id: skipCapsule');
-      final block = overlayQml.substring(start, start + 700);
-      expect(block, isNot(contains('controlsVisible')));
-      expect(block, contains('playerState.skipPrompt'));
+    test('B3 不遮挡进度条（垂直在进度条上沿之上）', () {
+      expect(overlayQml, contains('sliderRect.y - height - 8'));
+    });
+
+    test('B4 不受 controlsVisible 控制（独立倒计时）', () {
+      for (final id in ['skipIntroCapsule', 'skipOutroCapsule']) {
+        final idx = overlayQml.indexOf('id: $id');
+        expect(idx, greaterThan(0));
+        final block = overlayQml.substring(
+            idx, (idx + 400).clamp(0, overlayQml.length));
+        expect(block, isNot(contains('controlsVisible')));
+        expect(block, contains('playerState.skipPrompt'));
+      }
     });
   });
 
@@ -175,13 +180,14 @@ void main() {
       expect(body, contains('adapter.onPlaybackEnded = _handleQtPlaybackEnded'));
     });
 
-    test('C6 复用 _handleEpisodeFinished + seek 冷却防误判', () {
+    test('C6 复用 _handleEpisodeFinished + 双守卫（692 对齐安卓）', () {
       final body = extract(playerScreen, 'void _handleQtPlaybackEnded()');
       expect(body, contains('_handleEpisodeFinished('));
-      // 与安卓同款：seek/拖动中忽略
-      expect(body, contains('_isSeekingPlayback'));
-      expect(body, contains('_isDraggingSlider'));
+      // 守卫 1：时长未知忽略
+      expect(body, contains('_duration.inMilliseconds <= 0'));
+      // 守卫 2：seek 冷却期
       expect(body, contains('autoNextSeekCooldown'));
+      expect(body, contains('_lastSeekCompletedAt'));
     });
 
     test('C7 防重门由 _handleEpisodeFinished 内部保证', () {

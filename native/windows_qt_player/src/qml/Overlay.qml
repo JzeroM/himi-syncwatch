@@ -318,47 +318,98 @@ ApplicationWindow {
         }
     }
 
-    // ── 690/691：跳过片头/片尾**独立胶囊**（底栏水平居中）──
+    // ── 692：跳过片头/片尾胶囊（独立层，贴在进度条两端上方）──
     //
-    // 【为什么独立于 BottomBar】BottomBar 整体由 `controlsVisible` 控制
-    // 透明度，胶囊放里面会跟着控件一起隐藏（真机反馈「跳过提示不该跟随
-    // 其他控件隐藏，有自己的倒计时」）。
+    // 【位置】片头胶囊贴进度条**左端上方**、片尾胶囊贴**右端上方**，
+    // 不遮挡进度条本身（垂直方向在其上沿之上）。
     //
-    // 【位置】底栏高 96、胶囊高 34 → 垂直居中在底栏内 = bottomMargin 31。
-    Rectangle {
-        id: skipCapsule
-        visible: playerState.skipPrompt === "intro"
-                 || playerState.skipPrompt === "outro"
-        // 底栏水平居中
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 31
-        width: skipLabel.implicitWidth + 32
-        height: 34
-        radius: 17
-        color: Qt.rgba(1, 1, 1, 0.16)
-        border.color: theme.focusColor
-        border.width: 1.2
+    // 【为什么用 Overlay 而不是 BottomBar】
+    // 1. BottomBar 整体 `opacity: showControls ? 1 : 0`——放里面会跟着
+    //    控件一起隐藏（用户要求「跳过提示有自己的倒计时」）
+    // 2. 需要精确对齐进度条两端（用 `mapToItem` 取真实坐标）
+    //
+    // 【为什么两个独立胶囊】片头/片尾位置不同：片头贴左、片尾贴右，
+    // 符合用户直觉（片头在开始、片尾在结束）。
+    Item {
+        id: skipCapsuleLayer
+        anchors.fill: parent
+        z: 5
+        // 裸 `Item` 不绘制、不接收鼠标（QML 默认），所以不需要
+        // `enabled: false`——那会连子项的 MouseArea 一起禁用。
 
-        Behavior on opacity { NumberAnimation { duration: 160 } }
-        opacity: visible ? 1 : 0
-
-        Text {
-            id: skipLabel
-            anchors.centerIn: parent
-            text: playerState.skipPrompt === "intro" ? "跳过片头" : "跳过片尾"
-            color: Theme.white
-            font.pixelSize: Theme.panelOptionSize
-            font.weight: 600
+        // 定位辅助：进度条在 Overlay 坐标系里的矩形
+        readonly property rect sliderRect: {
+            var r = bottomBar.sliderRect
+            if (r.width <= 0) return Qt.rect(0, 0, 0, 0)
+            // bottomBar 左上角映射到本层
+            var p = bottomBar.mapToItem(skipCapsuleLayer, r.x, r.y)
+            return Qt.rect(p.x, p.y, r.width, r.height)
         }
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                // 677：房间观众不得跳片头/片尾
-                if (!playerState.canControl) return
-                pipeServer.sendCommand({"type": "skipSegment"})
+
+        // 片头胶囊（进度条左端上方）
+        Rectangle {
+            id: skipIntroCapsule
+            visible: playerState.skipPrompt === "intro"
+            x: skipCapsuleLayer.sliderRect.x
+            // 贴进度条上沿再往上 8px
+            y: skipCapsuleLayer.sliderRect.y - height - 8
+            width: introLabel.implicitWidth + 28
+            height: 30
+            radius: 8
+            color: Qt.rgba(1, 1, 1, 0.14)
+            border.color: theme.focusColor
+            border.width: 1
+
+            Text {
+                id: introLabel
+                anchors.centerIn: parent
+                text: "跳过片头"
+                color: theme.textColor
+                font.pixelSize: Theme.captionSize
+                font.weight: 600
+            }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (!playerState.canControl) return
+                    pipeServer.sendCommand({"type": "skipSegment"})
+                }
+            }
+        }
+
+        // 片尾胶囊（进度条右端上方）
+        Rectangle {
+            id: skipOutroCapsule
+            visible: playerState.skipPrompt === "outro"
+            // 右端对齐（右边缘与进度条右边缘齐平）
+            x: skipCapsuleLayer.sliderRect.x +
+               skipCapsuleLayer.sliderRect.width - width
+            y: skipCapsuleLayer.sliderRect.y - height - 8
+            width: outroLabel.implicitWidth + 28
+            height: 30
+            radius: 8
+            color: Qt.rgba(1, 1, 1, 0.14)
+            border.color: theme.focusColor
+            border.width: 1
+
+            Text {
+                id: outroLabel
+                anchors.centerIn: parent
+                text: "跳过片尾"
+                color: theme.textColor
+                font.pixelSize: Theme.captionSize
+                font.weight: 600
+            }
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (!playerState.canControl) return
+                    pipeServer.sendCommand({"type": "skipSegment"})
+                }
             }
         }
     }

@@ -42,6 +42,10 @@ Rectangle {
     signal seekFinished(real ratio)
     signal skipSegmentClicked()
 
+    /// 692：进度条在本组件坐标系里的矩形（供 Overlay 定位跳过胶囊）。
+    readonly property rect sliderRect: Qt.rect(
+        seekSlider.x, seekSlider.y, seekSlider.width, seekSlider.height)
+
     height: 96
     color: "transparent"
     visible: opacity > 0
@@ -101,6 +105,7 @@ Rectangle {
                 font.pixelSize: Theme.captionSize
             }
             PlayerSlider {
+                id: seekSlider
                 Layout.fillWidth: true
                 Layout.preferredHeight: 32
                 text: ""
@@ -293,6 +298,10 @@ Rectangle {
                     }
                 }
             }
+
+            // 692：跳过片头/片尾胶囊已移到 Overlay 独立层——
+            // 贴在进度条左/右端上方，且不跟随底栏淡出。
+            // （见 Overlay.qml 的 skipCapsuleLeft / skipCapsuleRight）
 
             Item { Layout.fillWidth: true }
 

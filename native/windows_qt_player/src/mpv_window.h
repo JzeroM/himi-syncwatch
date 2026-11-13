@@ -322,6 +322,13 @@ private:
     /// 万一当前构建不认，文件就绪后补一次 seek，保证不会从头播。
     qint64 pendingStartMs_ = 0;
 
+    /// 692：mpv 的 `eof-reached` 状态（播完判定）。
+    ///
+    /// 【为什么不用 `MPV_EVENT_END_FILE`】项目开了 `keep-open=yes`
+    /// （与安卓/鸿蒙一致，播完停在最后一帧）——该选项会让 mpv
+    /// **不发送 END_FILE 事件**，只能靠属性观察判定播完。
+    bool eofReached_ = false;
+
     /// 682：当前是否已加载媒体（`stop` 后为 false，`load` 后为 true）。
     ///
     /// 【为什么需要】`stopPlayback()` 只把本地镜像 `paused_` 置 true，而

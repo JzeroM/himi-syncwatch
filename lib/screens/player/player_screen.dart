@@ -8354,33 +8354,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   // 切集（房主操作 + 发送RTM命令）
-  /// 691：Qt 自然播完 → 自动切下一集（对齐安卓 `MediaStatus.end` 链路）。
+  /// 691/692：Qt 自然播完 → 自动切下一集（对齐安卓/鸿蒙 `eof-reached`）。
   ///
-  /// 【与安卓的差异】安卓的 `shouldHandleEngineEnd` 用「位置接近时长」
-  /// 判断（防 mdk keyframe seek 误报 end 位）。Qt 的 `playbackEnded` 来自
-  /// mpv 的 `MPV_EVENT_END_FILE(EOF)`——**只在真正播完时**触发，本身
-  /// 可靠，不需要位置校验。
+  /// 【与安卓完全一致的双守卫】见 `MpvPlayerAdapter._handleEofReached`：
+  /// 1. **时长未知忽略**——直播/转码流 seek 后瞬时报 eof；
+  /// 2. **seek 冷却期内忽略**——文件流 seek 期间 demuxer 也可能瞬时翻 eof。
   ///
-  /// 但仍要防两种误触发：
-  /// - seek 冷却期内（用户拖到结尾附近时 mpv 也可能报 EOF）
-  /// - `_handleEpisodeFinished` 内部已有 `_endHandled` 防重 + 观众权限门
+  /// 【为什么不用 `shouldHandleEngineEnd`】那个判据是「位置接近时长」，
+  /// 防的是 mdk keyframe seek 误报 `MediaStatus.end`。Qt 的 `eof-reached`
+  /// 是 mpv 内核直接给出的真实结束标志，不需要位置推断。
   void _handleQtPlaybackEnded() {
     if (!mounted || _disposed) return;
-    // 与安卓同款：seek/拖动中忽略
+    // 守卫 1：时长未知（直播/转码流）
+    if (_duration.inMilliseconds <= 0) {
+      LogService().log('Player', 'Qt eof 但时长未知，忽略（防 seek 误判播完）');
+      return;
+    }
+    // 守卫 2：seek 冷却期
     final seekAt = _lastSeekCompletedAt;
-    final seekInProgress = _isSeekingPlayback ||
-        _isDraggingSlider ||
-        (seekAt != null &&
-            DateTime.now().difference(seekAt) <
-                PlayerScreen.autoNextSeekCooldown);
-    if (seekInProgress) {
-      LogService().log('Player', 'Qt 播完但处于 seek 冷却期，忽略');
+    if (seekAt != null &&
+        DateTime.now().difference(seekAt) <
+            PlayerScreen.autoNextSeekCooldown) {
+      LogService().log('Player', 'Qt eof 在 seek 冷却期内，忽略');
       return;
     }
     LogService().log('Player', 'Qt 自然播完 → 自动下一集');
     unawaited(_handleEpisodeFinished(
-      completedAtMs:
-          _duration.inMilliseconds > 0 ? _duration.inMilliseconds : null,
+      completedAtMs: _duration.inMilliseconds,
     ));
   }
 

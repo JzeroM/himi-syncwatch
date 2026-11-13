@@ -243,6 +243,9 @@ bool MpvWindow::attach(QWindow* host, bool hdr, bool hlg) {
     mpv_observe_property(mpv_, 0, "pause", MPV_FORMAT_FLAG);
     mpv_observe_property(mpv_, 0, "time-pos", MPV_FORMAT_DOUBLE);
     mpv_observe_property(mpv_, 0, "duration", MPV_FORMAT_DOUBLE);
+    // 692：播完判定——`keep-open=yes` 会抑制 `MPV_EVENT_END_FILE`，
+    // 必须靠这个属性（与安卓 media_kit / 鸿蒙 ohos mpv 同款做法）。
+    mpv_observe_property(mpv_, 0, "eof-reached", MPV_FORMAT_FLAG);
 
     timer_ = new QTimer(this);
     timer_->setInterval(20);
@@ -428,6 +431,7 @@ void MpvWindow::stopPlayback() {
     mpv_set_property_string(mpv_, "pause", "yes");
     paused_ = true;
     hasMedia_ = false;
+    eofReached_ = false;
     // 弹幕轨随媒体一起清掉（否则残留在次字幕轨上）
     setDanmakuAss(QString());
     emit positionChanged(0, 0);
@@ -473,6 +477,8 @@ void MpvWindow::load(const QString& url,
 
     // 691：记下起点，`FILE_LOADED` 时补 seek。
     pendingStartMs_ = startMs > 0 ? startMs : 0;
+    // 692：新媒重置播完标记（否则上一集的 eof 会让下一集刚起播就判"播完"）。
+    eofReached_ = false;
 
     // 682：**新资源必须显式起播**。
     //
@@ -1173,6 +1179,17 @@ void MpvWindow::pumpEvents() {
                         static_cast<qint64>(*static_cast<double*>(prop->data) *
                                             1000.0);
                     positionDirty = true;
+                } else if (name == QLatin1String("eof-reached") &&
+                           prop->format == MPV_FORMAT_FLAG &&
+                           prop->data != nullptr) {
+                    // 692：播完判定（`keep-open=yes` 抑制了 END_FILE 事件）。
+                    // 去重：同值不重复通知（属性可能在 seek 时反复翻转）。
+                    const bool reached =
+                        *static_cast<int*>(prop->data) != 0;
+                    if (reached != eofReached_) {
+                        eofReached_ = reached;
+                        if (reached) emit playbackEnded();
+                    }
                 }
                 break;
             }
@@ -1195,7 +1212,13 @@ void MpvWindow::pumpEvents() {
             case MPV_EVENT_END_FILE: {
                 auto* end = static_cast<mpv_event_end_file*>(event->data);
                 if (end != nullptr && end->reason == MPV_END_FILE_REASON_EOF) {
-                    emit playbackEnded();
+                    // 692：**播完通知改由 `eof-reached` 属性驱动**。
+                    //
+                    // 【为什么不在��里 emit】项目开了 `keep-open=yes`，
+                    // 正常播完时 mpv **不发** END_FILE；只有 stop/换源等
+                    // 情况才会到这里——那种「结束」不是「自然播完」，
+                    // 不该触发自动下一集。自然播完统一走 `eof-reached`。
+                    qInfo() << "[mpv] END_FILE(EOF)（非自然播完，忽略）";
                 } else if (end != nullptr &&
                            end->reason == MPV_END_FILE_REASON_ERROR) {
                     lastError_ = QString::fromUtf8(mpv_error_string(end->error));
