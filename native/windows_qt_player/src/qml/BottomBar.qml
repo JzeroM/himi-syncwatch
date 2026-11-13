@@ -43,8 +43,16 @@ Rectangle {
     signal skipSegmentClicked()
 
     /// 692：进度条在本组件坐标系里的矩形（供 Overlay 定位跳过胶囊）。
-    readonly property rect sliderRect: Qt.rect(
-        seekSlider.x, seekSlider.y, seekSlider.width, seekSlider.height)
+    ///
+    /// 【必须用 mapToItem】`seekSlider` 在嵌套的
+    /// `BottomBar → ColumnLayout → RowLayout` 里，其 `x/y` 是相对**直接
+    /// 父级 RowLayout**——直接用会让 `y` 少算几十像素，胶囊被推到屏幕外
+    ///（真机回归「跳过片头/片尾控件未显示」）。
+    readonly property rect sliderRect: {
+        if (seekSlider.width <= 0) return Qt.rect(0, 0, 0, 0)
+        var p = seekSlider.mapToItem(root, 0, 0)
+        return Qt.rect(p.x, p.y, seekSlider.width, seekSlider.height)
+    }
 
     height: 96
     color: "transparent"

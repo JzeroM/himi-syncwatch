@@ -340,16 +340,19 @@ ApplicationWindow {
         // 定位辅助：进度条在 Overlay 坐标系里的矩形
         readonly property rect sliderRect: {
             var r = bottomBar.sliderRect
-            if (r.width <= 0) return Qt.rect(0, 0, 0, 0)
-            // bottomBar 左上角映射到本层
+            // 布局未完成时 width/y 都是 0 —— 返回空矩形让胶囊不显示
+            if (r.width <= 0 || r.height <= 0) return Qt.rect(0, 0, 0, 0)
             var p = bottomBar.mapToItem(skipCapsuleLayer, r.x, r.y)
+            if (p.y <= 0) return Qt.rect(0, 0, 0, 0)
             return Qt.rect(p.x, p.y, r.width, r.height)
         }
 
         // 片头胶囊（进度条左端上方）
         Rectangle {
             id: skipIntroCapsule
+            // 坐标无效（布局未完成）时不显示，避免闪到屏幕角落
             visible: playerState.skipPrompt === "intro"
+                     && skipCapsuleLayer.sliderRect.width > 0
             x: skipCapsuleLayer.sliderRect.x
             // 贴进度条上沿再往上 8px
             y: skipCapsuleLayer.sliderRect.y - height - 8
@@ -383,6 +386,7 @@ ApplicationWindow {
         Rectangle {
             id: skipOutroCapsule
             visible: playerState.skipPrompt === "outro"
+                     && skipCapsuleLayer.sliderRect.width > 0
             // 右端对齐（右边缘与进度条右边缘齐平）
             x: skipCapsuleLayer.sliderRect.x +
                skipCapsuleLayer.sliderRect.width - width

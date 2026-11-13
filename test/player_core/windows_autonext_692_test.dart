@@ -177,7 +177,7 @@ void main() {
         final start = overlayQml.indexOf('id: $id');
         expect(start, greaterThan(0));
         final block =
-            overlayQml.substring(start, (start + 400).clamp(0, overlayQml.length));
+            overlayQml.substring(start, (start + 700).clamp(0, overlayQml.length));
         expect(block, contains('radius: 8'));
         expect(block, isNot(contains('radius: 16')));
         expect(block, isNot(contains('radius: 17')));
@@ -204,17 +204,32 @@ void main() {
       for (final id in ['skipIntroCapsule', 'skipOutroCapsule']) {
         final start = overlayQml.indexOf('id: $id');
         final block =
-            overlayQml.substring(start, (start + 400).clamp(0, overlayQml.length));
+            overlayQml.substring(start, (start + 700).clamp(0, overlayQml.length));
         expect(block, isNot(contains('controlsVisible')));
         expect(block, contains('playerState.skipPrompt'));
       }
     });
 
-    test('C6 BottomBar 暴露 sliderRect 供定位', () {
+    test('C6 sliderRect 用 mapToItem（嵌套布局坐标必须转换）', () {
       final bottomBar =
           read('native/windows_qt_player/src/qml/BottomBar.qml');
       expect(bottomBar, contains('readonly property rect sliderRect'));
       expect(bottomBar, contains('id: seekSlider'));
+      // 【关键】seekSlider 在 ColumnLayout → RowLayout 里，x/y 是相对
+      // 直接父级——必须 mapToItem 映射到 BottomBar 根坐标系，否则胶囊
+      // 被推到屏幕外（真机「控件未显示」）。
+      expect(bottomBar, contains('seekSlider.mapToItem(root, 0, 0)'));
+      expect(bottomBar, isNot(contains(
+          'Qt.rect(\n        seekSlider.x, seekSlider.y')));
+    });
+
+    test('C8 坐标无效时胶囊不显示（防闪到角落）', () {
+      for (final id in ['skipIntroCapsule', 'skipOutroCapsule']) {
+        final idx = overlayQml.indexOf('id: $id');
+        final block = overlayQml.substring(
+            idx, (idx + 400).clamp(0, overlayQml.length));
+        expect(block, contains('sliderRect.width > 0'));
+      }
     });
 
     test('C7 点击回传 skipSegment（观众门控）', () {
