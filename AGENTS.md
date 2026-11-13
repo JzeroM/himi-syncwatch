@@ -9,6 +9,7 @@
 5. 不要把安全隐私类文件传github,比如的github Api不要泄露，因为项目是公开库
 6. 版本号各段（major/minor/patch）取值范围 0-99（如 1.2.0；不再出现 1.1.255 这类三位数补丁），构建号 `+N` 保持单调递增以保证 Android versionCode 可覆盖安装
 7. 发布基础设施：`deps-mirror` release（存改名副本 `mdk-sdk-windows-x64.7z`）是 Windows 构建依赖，**严禁删除**；清理旧版本时只删 `v*` 标签/Release，勿动 `deps-mirror`
+8. **发布说明写简短**：只列出**新增了哪些功能**；修复项一笔带过（统一写「修复一些已知问题」），不写根因分析和实现细节。`docs/release_notes_by_platform.md` 面向最终用户，不是技术报告
 
 ## 构建环境陷阱
 

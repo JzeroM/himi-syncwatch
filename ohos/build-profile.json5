@@ -9,8 +9,28 @@
         // mpv.har（@mpv-ohos/mpv-arkts）要求 compatibleSdkVersion ≥ 24，
         // 低于此值 hvigor 拒绝依赖。本机 SDK 为 26.0.0(26)，API≥26 时
         // 该字段必须是 "26.0.0" 这种字符串格式。
+        //
+        // 【697：compatibleSdkVersion 26 → 24】
+        //
+        // 三个字段的职责完全不同，不要混：
+        //   - `compileSdkVersion`   编译用哪个 SDK（能用哪些 API）
+        //   - `compatibleSdkVersion` **设备可安装的最低系统版本**（安装门槛）
+        //   - `targetSdkVersion`    运行时行为模式（官方要求升级的是这个）
+        //
+        // 此前 `compatibleSdkVersion` 与 compile/target 一起写死 26.0.0，
+        // 导致 HarmonyOS 6.0 以下的设备（云测试 MatePad Mini）安装时报
+        // 「安装失败，应用不匹配当前系统版本」。
+        //
+        // 【为什么降到 24 安全】已核对全部原生依赖的元数据：
+        //   mpv.har            compatibleSdkVersion: 24
+        //   libaki_jsbind.so   compatibleSdkVersion: 24
+        //   libmpv_wrapper.so  compatibleSdkVersion: 24
+        // 24 就是依赖允许的下限，不会引入兼容风险。
+        //
+        // 【不影响官方要求】官方提示「将应用的 targetSdkVersion 升级至
+        // 26.0.0」——这里保持 26.0.0 不动，只放开安装门槛。
         "compileSdkVersion": "26.0.0",
-        "compatibleSdkVersion": "26.0.0",
+        "compatibleSdkVersion": "24.0.0",
         "targetSdkVersion": "26.0.0",
         "runtimeOS": "HarmonyOS",
         // ⚠️ 必须保持 false。
