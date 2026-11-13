@@ -318,17 +318,19 @@ ApplicationWindow {
         }
     }
 
-    // ── 692：跳过片头/片尾胶囊（独立层，贴在进度条两端上方）──
+    // ── 692：跳过片头/片尾胶囊（独立层，贴在底栏上方）──
     //
-    // 【位置】片头胶囊贴进度条**左端上方**、片尾胶囊贴**右端上方**，
-    // 不遮挡进度条本身（垂直方向在其上沿之上）。
+    // 【位置】697 起：
+    //   · 片头 → **剧集 Logo 右侧 16px**（Logo 不存在时回退进度条左端）
+    //   · 片尾 → 进度条右端上方
+    // 垂直方向都在底栏上方 8px，不遮挡任何控件。
     //
     // 【为什么用 Overlay 而不是 BottomBar】
     // 1. BottomBar 整体 `opacity: showControls ? 1 : 0`——放里面会跟着
     //    控件一起隐藏（用户要求「跳过提示有自己的倒计时」）
-    // 2. 需要精确对齐进度条两端（用 `mapToItem` 取真实坐标）
+    // 2. 需要对齐 Logo / 进度条右端的真实坐标
     //
-    // 【为什么两个独立胶囊】片头/片尾位置不同：片头贴左、片尾贴右，
+    // 【为什么两个独立胶囊】片头/片尾位置不同：片头贴 Logo 右侧、片尾贴右，
     // 符合用户直觉（片头在开始、片尾在结束）。
     Item {
         id: skipCapsuleLayer
@@ -351,16 +353,27 @@ ApplicationWindow {
             return Qt.rect(p.x, p.y, slider.width, slider.height)
         }
 
-        // 片头胶囊（进度条左端上方）
+        // 片头胶囊（贴 Logo 右侧；Logo 不存在时回退到进度条左端）
         Rectangle {
             id: skipIntroCapsule
-            // 坐标无效（布局未完成）时不显示，避免闪到屏幕角落
-            // 695：**先确保能显示**——只依赖 skipPrompt，不再依赖坐标绑定
-            //（跨 item 的 readonly property 链在 QML 里刷新时机不可靠）。
             visible: playerState.skipPrompt === "intro"
-            // 进度条左端：时间列宽 + 底栏左内边距
-            x: Theme.barPadH + Theme.timeCellWidth
-            // 进度条上沿再往上 8px（底栏高 96，第一行约在 y=16）
+            // 697：**贴剧集 Logo 右侧 16px**，不遮挡 Logo。
+            //
+            // Logo 不存在（logoUrl 为空 / 房间模式）时回退到进度条左端，
+            // 避免胶囊跑到屏幕最左（那里没有参照物，观感突兀）。
+            //
+            // 【为什么这次绑定可靠】`episodeLogo.x/.width/.visible` 是
+            // 基础属性，QML 对其通知是可靠的——不同于之前失败的
+            // `readonly property rect` 三层链（首帧求值后不再重算）。
+            //
+            // 【坐标系为什么能直接用】`episodeLogo` 直接挂在 root 下
+            // （`anchors.left/bottom`），本层 `skipCapsuleLayer` 是
+            // `anchors.fill: parent`——两者原点都是 root 的 (0,0)，
+            // 所以 `episodeLogo.x` 无需 mapToItem 换算。
+            x: episodeLogo.visible
+               ? episodeLogo.x + episodeLogo.width + 16
+               : Theme.barPadH + Theme.timeCellWidth
+            // 底栏上方 8px（保持原位置）
             y: parent.height - Theme.bottomBarHeight - height - 8
             width: introLabel.implicitWidth + 28
             height: 30

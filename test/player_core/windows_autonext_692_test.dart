@@ -176,8 +176,9 @@ void main() {
       for (final id in ['skipIntroCapsule', 'skipOutroCapsule']) {
         final start = overlayQml.indexOf('id: $id');
         expect(start, greaterThan(0));
-        final block =
-            overlayQml.substring(start, (start + 700).clamp(0, overlayQml.length));
+        // 697：片头胶囊注释变长，窗口放宽到 1200 才覆盖到 radius。
+        final block = overlayQml.substring(
+            start, (start + 1200).clamp(0, overlayQml.length));
         expect(block, contains('radius: 8'));
         expect(block, isNot(contains('radius: 16')));
         expect(block, isNot(contains('radius: 17')));
@@ -192,9 +193,11 @@ void main() {
       expect(overlayQml, isNot(contains('sliderRect.y - height - 8')));
     });
 
-    test('C4 片头左对齐、片尾右对齐', () {
-      // 片头：底栏左内边距 + 时间列宽（进度条左端）
-      expect(overlayQml, contains('x: Theme.barPadH + Theme.timeCellWidth'));
+    test('C4 片头贴剧集 Logo 右侧、片尾右对齐', () {
+      // 697：片头胶囊贴 Logo 右侧 16px，不遮挡 Logo。
+      expect(overlayQml, contains('episodeLogo.x + episodeLogo.width + 16'));
+      // Logo 不存在时回退到进度条左端（底栏左内边距 + 时间列宽）
+      expect(overlayQml, contains('Theme.barPadH + Theme.timeCellWidth'));
       // 片尾：屏幕宽 - 右内边距 - 时间列宽 - 胶囊宽
       expect(overlayQml,
           contains('x: parent.width - Theme.barPadH - Theme.timeCellWidth - width'));

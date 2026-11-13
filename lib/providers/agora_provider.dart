@@ -11,9 +11,15 @@ final agoraConfigProvider =
 );
 
 class AgoraConfigNotifier extends StateNotifier<AgoraConfigModel?> {
-  AgoraConfigNotifier() : super(null);
+  AgoraConfigNotifier({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage(),
+        super(null);
 
-  final _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage;
+
+  /// 697：当前配置快照（备份导出用；`state` 是 protected 成员，
+  /// 外部无法直接读）。
+  AgoraConfigModel? get snapshot => state;
 
   Future<void> load() async {
     final raw = await _storage.read(key: _storageKey);

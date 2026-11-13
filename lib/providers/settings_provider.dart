@@ -14,9 +14,11 @@ final settingsProvider =
 });
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
-  SettingsNotifier() : super(const AppSettings());
+  SettingsNotifier({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage(),
+        super(const AppSettings());
 
-  final _storage = const FlutterSecureStorage();
+  final FlutterSecureStorage _storage;
 
   /// 当前设置快照（bootstrap 在 runApp 前读取注入 fvp 全局选项，
   /// `state` 为 protected 成员，子类内访问合法）。

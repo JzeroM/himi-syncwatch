@@ -121,9 +121,12 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('B 跳过胶囊位置（695 绝对定位）', () {
-    test('B1 片头贴进度条左端上方', () {
+    test('B1 片头贴剧集 Logo 右侧（无 Logo 回退进度条左端）', () {
       expect(overlayQml, contains('id: skipIntroCapsule'));
-      expect(overlayQml, contains('x: Theme.barPadH + Theme.timeCellWidth'));
+      // 697：贴 Logo 右侧 16px
+      expect(overlayQml, contains('episodeLogo.x + episodeLogo.width + 16'));
+      // 回退分支：进度条左端
+      expect(overlayQml, contains('Theme.barPadH + Theme.timeCellWidth'));
     });
 
     test('B2 片尾贴进度条右端上方', () {

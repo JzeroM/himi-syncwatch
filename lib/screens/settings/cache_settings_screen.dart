@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,14 +7,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/cache_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/backup/backup_file_io.dart';
+import 'package:himi_syncwatch/services/backup/backup_service.dart';
 import 'package:himi_syncwatch/services/cache/cache_models.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_confirm_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 class CacheSettingsScreen extends ConsumerStatefulWidget {
-  const CacheSettingsScreen({super.key});
+  const CacheSettingsScreen({
+    super.key,
+    this.backupService,
+    this.fileIo = const BackupFileIo(),
+  });
+
+  /// 697：备份服务（测试可注入；为空时从 Riverpod 容器构造）。
+  final BackupService? backupService;
+
+  /// 697：文件读写（测试可注入）。
+  final BackupFileIo fileIo;
 
   @override
   ConsumerState<CacheSettingsScreen> createState() =>
@@ -26,6 +40,10 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
   bool _scanning = true;
   CacheCategory? _clearing;
   bool _clearingAll = false;
+
+  /// 697：备份/还原进行中（防止重复点击）。
+  bool _backingUp = false;
+  bool _restoring = false;
 
   @override
   void initState() {
@@ -114,6 +132,102 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
     );
   }
 
+  // ── 697：备份与还原 ─────────────────────────────────────────
+
+  BackupService get _backup =>
+      widget.backupService ?? BackupService.fromRef(ref);
+
+  /// 导出配置到用户选的文件。
+  Future<void> _backupConfig() async {
+    if (_backingUp || _restoring) return;
+    setState(() => _backingUp = true);
+    try {
+      final service = _backup;
+      final json = await service.buildBackup();
+      final text = const JsonEncoder.withIndent('  ').convert(json);
+      final path = await widget.fileIo.save(
+        fileName: BackupService.suggestedFileName(),
+        content: text,
+      );
+      if (!mounted) return;
+      if (path == null) return;
+      showAppToast(context, '已备份到 $path', duration: const Duration(seconds: 3));
+    } catch (e) {
+      LogService().log('Backup', '备份失败: $e');
+      if (mounted) showAppToast(context, '备份失败：$e');
+    } finally {
+      if (mounted) setState(() => _backingUp = false);
+    }
+  }
+
+  /// 选文件 → 校验 → 二次确认 → 完全替换写入 → 刷新 provider。
+  Future<void> _restoreConfig() async {
+    if (_backingUp || _restoring) return;
+
+    final PickedBackupFile? picked;
+    try {
+      picked = await widget.fileIo.pick();
+    } catch (e) {
+      if (mounted) showAppToast(context, '读取备份文件失败：$e');
+      return;
+    }
+    if (picked == null || !mounted) return;
+
+    final service = _backup;
+    final validation = service.validateText(picked.text);
+    if (!validation.ok) {
+      showAppToast(context, validation.error ?? '备份文件无效');
+      return;
+    }
+    if (!mounted) return;
+
+    final when = validation.createdAt?.toLocal();
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '还原配置？',
+      message: '将用备份内容完全替换现有配置：\n'
+          '· Emby 服务器（${validation.serverCount} 个）\n'
+          '· 声网、TMDB、弹幕、Trakt 登录\n\n'
+          '现有服务器列表会被清空（只保留备份里的）。\n'
+          '${when == null ? '' : '备份时间：${_formatTime(when)}\n'}'
+          '${validation.appVersion == null || validation.appVersion!.isEmpty ? '' : '备份版本：${validation.appVersion}\n'}'
+          '文件：${picked.name}',
+      confirmLabel: '还原',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _restoring = true);
+    try {
+      final result = await service.restoreFromText(picked.text);
+      if (!mounted) return;
+      if (!result.ok) {
+        showAppToast(context, result.error ?? '还原失败');
+        return;
+      }
+      await BackupService.refreshProviders(ref, result);
+      if (!mounted) return;
+      showAppToast(
+        context,
+        result.restored.isEmpty
+            ? '备份里没有可还原的配置'
+            : '已还原：${result.restored.join('、')}',
+        duration: const Duration(seconds: 3),
+      );
+    } catch (e) {
+      LogService().log('Backup', '还原失败: $e');
+      if (mounted) showAppToast(context, '还原失败：$e');
+    } finally {
+      if (mounted) setState(() => _restoring = false);
+    }
+  }
+
+  static String _formatTime(DateTime t) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} '
+        '${two(t.hour)}:${two(t.minute)}';
+  }
+
   String _confirmMessage(CacheCategory category) {
     switch (category) {
       case CacheCategory.images:
@@ -181,8 +295,100 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             ),
           ),
         ],
+        // 697：备份与还原（独立于缓存扫描状态，扫描失败也能用）
+        SettingsGroupCard(
+          title: '备份与还原',
+          children: [
+            _BackupActionRow(
+              rowKey: const ValueKey('backupExport'),
+              icon: Icons.upload_file_outlined,
+              title: '备份配置',
+              subtitle: '导出服务器、声网、TMDB、弹幕、Trakt 登录到 JSON 文件',
+              tvMode: tvMode,
+              busy: _backingUp,
+              enabled: !_restoring,
+              onTap: () => unawaited(_backupConfig()),
+            ),
+            _BackupActionRow(
+              rowKey: const ValueKey('backupRestore'),
+              icon: Icons.download_outlined,
+              title: '还原配置',
+              subtitle: '从备份文件恢复（完全替换现有配置，立即生效）',
+              tvMode: tvMode,
+              busy: _restoring,
+              enabled: !_backingUp,
+              onTap: () => unawaited(_restoreConfig()),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 32),
+          child: Text(
+            '备份含服务器 token 等敏感信息，请妥善保管备份文件。\n'
+            '不含：Trakt Client ID/Secret、字幕样式、片头片尾标记、TV 配对、'
+            '解码/HDR/渲染器等设备相关设置。',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white54,
+              height: 1.5,
+            ),
+          ),
+        ),
       ],
     );
+  }
+}
+
+/// 697：「备份与还原」分组里的一行（玻璃组内，带图标 + 标题 + 副标题）。
+class _BackupActionRow extends StatelessWidget {
+  const _BackupActionRow({
+    required this.rowKey,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.tvMode,
+    required this.busy,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final Key rowKey;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool tvMode;
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final active = enabled && !busy;
+    final row = ListTile(
+      key: rowKey,
+      leading: Icon(
+        icon,
+        color: active ? accent : Colors.white24,
+      ),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: active ? Colors.white54 : Colors.white24,
+            ),
+      onTap: active ? onTap : null,
+    );
+
+    if (!active) return row;
+    return settingsTvWrapRow(tvMode: tvMode, onTap: onTap, child: row);
   }
 }
 

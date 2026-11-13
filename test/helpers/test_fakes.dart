@@ -122,6 +122,28 @@ class FakeEmbyAuthService extends EmbyAuthService {
     lastSavedSessionRoutes = routes;
     lastSavedActiveRouteUrl = activeRouteUrl;
     lastSavedStrmDirectPlay = strmDirectPlay;
+    // 697：备份还原测试需要断言「实际写入的会话内容」。
+    savedSessions.add(<String, dynamic>{
+      'id': id,
+      'serverId': serverId,
+      'serverUrl': serverUrl,
+      'serverName': serverName,
+      'userId': userId,
+      'username': username,
+      'accessToken': accessToken,
+    });
+  }
+
+  /// 697：saveSession 收到的会话（按调用顺序）。
+  final List<Map<String, dynamic>> savedSessions = [];
+
+  /// 697：deleteAllSessions 调用次数（还原「完全替换」断言）。
+  int deleteAllSessionsCalls = 0;
+
+  @override
+  Future<void> deleteAllSessions() async {
+    deleteAllSessionsCalls++;
+    savedSessions.clear();
   }
 
   /// 最近一次 saveSession 的 routes（编辑保存不丢备用线路回归断言）。
