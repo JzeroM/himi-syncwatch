@@ -10402,14 +10402,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   Widget _buildTopBar() {
-    // 687：只订阅顶栏真正用到的三个字段（旧写法监听整个 AppSettings，
+    // 687：只订阅顶栏真正用到的字段（旧写法监听整个 AppSettings，
     // 播放中任何无关设置变化都会重建顶栏 → 与进度条刷新叠加抖动）。
-    final (:tvMode, :showNetworkSpeed, :glassUi) =
+    // 697：新增 `topBarClockFormat`——TV 时钟开启时标题需要让位。
+    final (:tvMode, :showNetworkSpeed, :glassUi, :clockFormat) =
         ref.watch(settingsProvider.select(
       (s) => (
         tvMode: s.tvMode,
         showNetworkSpeed: s.showNetworkSpeed,
         glassUi: s.glassUi,
+        clockFormat: s.topBarClockFormat,
       ),
     ));
     final mobilePlatform = PlayerPlatform.isMobile;
@@ -10485,8 +10487,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       onToggleDecode: () =>
           setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
       onShare: _showShareRoomDialog,
-      // 642：TV 时钟已移到左贴边，顶栏尾部不再需要预留 100px。
-      reserveClockSpace: false,
+      // 697：TV 时钟在左上角——开启时标题让位（预留 112px），
+      // 关闭时标题回到原来的最左位置。
+      reserveClockSpace: tvMode && clockFormat.enabled,
     );
   }
 

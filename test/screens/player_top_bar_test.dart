@@ -164,14 +164,21 @@ void main() {
       expect(find.text('4.89 MB/s'), findsOneWidget);
     });
 
-    testWidgets('开启顶栏时钟时在右侧预留时钟位置', (tester) async {
+    testWidgets('697：时钟开启时在**左侧**预留（标题让位）', (tester) async {
       await tester.pumpWidget(_host(_bar(reserveClockSpace: false)));
       expect(find.byKey(const ValueKey('playerClockSpace')), findsNothing);
 
       await tester.pumpWidget(_host(_bar(reserveClockSpace: true)));
       final space = find.byKey(const ValueKey('playerClockSpace'));
       expect(space, findsOneWidget);
-      expect(tester.getSize(space).width, 100);
+      // 时钟宽 100 + 与标题间距 12
+      expect(tester.getSize(space).width, 112);
+
+      // 697：预留区必须在返回按钮之前（左侧），否则会与左上角时钟重叠
+      final spaceDx = tester.getTopLeft(space).dx;
+      final backDx =
+          tester.getTopLeft(find.byKey(const ValueKey('playerBackButton'))).dx;
+      expect(spaceDx, lessThan(backDx), reason: '预留区应在返回按钮左侧');
     });
 
     testWidgets('标题为空不渲染文本；网速 null（设置关闭）不渲染', (tester) async {

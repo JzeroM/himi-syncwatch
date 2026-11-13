@@ -221,13 +221,16 @@ void main() {
       expect(body, contains('onLeft: true'));
     });
 
-    test('player_screen 不再预留尾部时钟位（642 移到左侧）', () {
+    test('697：时钟开启时标题让位（642 的硬编码 false 已修正）', () {
       final src = File('lib/screens/player/player_screen.dart').readAsStringSync();
+      // 642 把时钟移到左侧后，尾部预留被硬编码为 false，但预留区当时仍在
+      // Row 末尾 → 标题与左上角时钟重叠。697 改为「左侧预留 + 按需开启」。
       expect(
         src,
-        contains('reserveClockSpace: false'),
-        reason: 'TV 时钟已在左贴边，尾部无需 100px 预留',
+        contains('reserveClockSpace: tvMode && clockFormat.enabled'),
+        reason: 'TV 时钟在左上角，开启时标题需让位；关闭时不让位',
       );
+      expect(src, isNot(contains('reserveClockSpace: false')));
     });
 
     test('player_screen 有 TV 网速独立定位层', () {

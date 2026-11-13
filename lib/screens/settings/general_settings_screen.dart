@@ -73,7 +73,7 @@ class GeneralSettingsScreen extends ConsumerWidget {
                     context: context,
                     tvMode: settings.tvMode,
                     title: '顶栏时间',
-                    subtitle: '播放器顶栏最右侧显示系统时间，控制栏隐藏后仍显示',
+                    subtitle: '播放器左上角显示系统时间，控制栏隐藏后仍显示',
                     labels: const {
                       'off': '关闭',
                       '12h': '12 小时制',

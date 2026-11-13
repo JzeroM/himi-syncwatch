@@ -23,7 +23,8 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 ///
 /// ## 现在的行为
 ///
-/// `mpvRenderer` 三档：`auto`（等价 gpu-next）/ `gpu-next` / `gpu`。
+/// 697：移除 `auto` 档（运行时本就等价 `gpu-next`），只保留
+/// `gpu-next`（默认）/ `gpu`（老 GPU 兼容）两档。
 /// 经 `AppSettings.resolveMpvVo()` 解析成实际 `vo` 值传给插件。
 void main() {
   final android = File(
@@ -54,7 +55,7 @@ void main() {
       // media_kit 的 AndroidVideoController 走 TextureRegistry Surface +
       // wid + vo=gpu。传别的值会让 VideoOutput.Resize 永不触发 →
       // texture id 恒 null → 超时。
-      for (final r in ['auto', 'gpu-next', 'gpu']) {
+      for (final r in ['gpu-next', 'gpu']) {
         expect(
           AppSettings.resolveMpvVo(renderer: r, nativeSurface: false),
           'gpu',
@@ -63,14 +64,7 @@ void main() {
       }
     });
 
-    test('Surface + auto → gpu-next（新设备默认）', () {
-      expect(
-        AppSettings.resolveMpvVo(renderer: 'auto', nativeSurface: true),
-        'gpu-next',
-      );
-    });
-
-    test('Surface + gpu-next → gpu-next', () {
+    test('Surface + gpu-next → gpu-next（默认档）', () {
       expect(
         AppSettings.resolveMpvVo(renderer: 'gpu-next', nativeSurface: true),
         'gpu-next',
@@ -84,25 +78,29 @@ void main() {
       );
     });
 
-    test('未知值按 auto 处理（不炸）', () {
-      expect(
-        AppSettings.resolveMpvVo(renderer: 'bogus', nativeSurface: true),
-        'gpu-next',
-      );
+    test('未知值（含已删除的 auto）按 gpu-next 处理（不炸）', () {
+      for (final r in ['bogus', 'auto', '']) {
+        expect(
+          AppSettings.resolveMpvVo(renderer: r, nativeSurface: true),
+          'gpu-next',
+          reason: '未知值应兜底 gpu-next（renderer=$r）',
+        );
+      }
     });
   });
 
-  group('② 设置项：默认 auto，非法值归一', () {
-    test('构造器默认 auto', () {
-      expect(const AppSettings().mpvRenderer, 'auto');
+  group('② 设置项：默认 gpu-next，非法值归一', () {
+    test('构造器默认 gpu-next（697：auto 已移除）', () {
+      expect(const AppSettings().mpvRenderer, 'gpu-next');
+      expect(AppSettings.defaultMpvRenderer, 'gpu-next');
     });
 
-    test('fromJson 缺字段 → auto', () {
-      expect(AppSettings.fromJson(<String, dynamic>{}).mpvRenderer, 'auto');
+    test('fromJson 缺字段 → gpu-next', () {
+      expect(AppSettings.fromJson(<String, dynamic>{}).mpvRenderer, 'gpu-next');
     });
 
     test('fromJson 合法值保留', () {
-      for (final v in ['auto', 'gpu-next', 'gpu']) {
+      for (final v in ['gpu-next', 'gpu']) {
         expect(
           AppSettings.fromJson(<String, dynamic>{'mpvRenderer': v}).mpvRenderer,
           v,
@@ -110,12 +108,28 @@ void main() {
       }
     });
 
-    test('fromJson 非法值 → auto', () {
+    test('fromJson 旧存档 auto → 静默迁移 gpu-next（行为不变）', () {
+      expect(
+        AppSettings.fromJson(<String, dynamic>{'mpvRenderer': 'auto'})
+            .mpvRenderer,
+        'gpu-next',
+      );
+    });
+
+    test('fromJson 非法值 → gpu-next', () {
       expect(
         AppSettings.fromJson(<String, dynamic>{'mpvRenderer': 'vulkan'})
             .mpvRenderer,
-        'auto',
+        'gpu-next',
       );
+    });
+
+    test('normalizeMpvRenderer：只有 gpu 保留，其余归 gpu-next', () {
+      expect(AppSettings.normalizeMpvRenderer('gpu'), 'gpu');
+      for (final v in ['gpu-next', 'auto', 'vulkan', null, '']) {
+        expect(AppSettings.normalizeMpvRenderer(v), 'gpu-next',
+            reason: '输入 $v 应归 gpu-next');
+      }
     });
 
     test('toJson 往返保留', () {
@@ -127,9 +141,9 @@ void main() {
       expect(const AppSettings().copyWith(mpvRenderer: 'gpu').mpvRenderer, 'gpu');
     });
 
-    test('标签三档齐全', () {
-      expect(AppSettings.mpvRendererLabels.keys.toSet(),
-          {'auto', 'gpu-next', 'gpu'});
+    test('标签只有两档（auto 已删除）', () {
+      expect(AppSettings.mpvRendererLabels.keys.toSet(), {'gpu-next', 'gpu'});
+      expect(AppSettings.mpvRendererLabels.containsKey('auto'), isFalse);
     });
   });
 

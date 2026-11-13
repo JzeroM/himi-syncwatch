@@ -208,10 +208,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   /// 655：Android Surface 路径的渲染器（'auto' / 'gpu-next' / 'gpu'）。
   ///
-  /// 由 `AppSettings.mpvRenderer` 经播放页注入。`auto` 与 `gpu-next` 等价
-  /// （新设备默认），`gpu` 用于老 GPU 兼容。见 `AppSettings.mpvRenderer`
+  /// 由 `AppSettings.mpvRenderer` 经播放页注入。
+  ///
+  /// 697：移除 `auto` 档（运行时本就等价 `gpu-next`），默认直接
+  /// `gpu-next`；`gpu` 用于老 GPU 兼容。见 `AppSettings.mpvRenderer`
   /// 注释里对「删除 GLES 自动探测」的说明。
-  String _mpvRenderer = 'auto';
+  String _mpvRenderer = AppSettings.defaultMpvRenderer;
   set mpvRenderer(String value) => _mpvRenderer = value;
 
   set mpvVideoOutput(String value) => _mpvVideoOutput = value;

@@ -433,7 +433,7 @@ class AppSettings {
     this.videoOutputUserSet = false,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
-    this.mpvRenderer = 'auto',
+    this.mpvRenderer = defaultMpvRenderer,
     this.useQtPlayer = false,
     this.renderCompatMode = false,
     this.videoDecoderNoImage = false,
@@ -968,10 +968,10 @@ class AppSettings {
           mpvTextureMigration['mpvVideoOutputUserSet'] as bool,
       mpvTextureAutoMigrated:
           mpvTextureMigration['mpvTextureAutoMigrated'] as bool,
-      // 655：渲染器改为手动选择。旧数据无此字段 → 'auto'（用 gpu-next）。
-      mpvRenderer: const ['auto', 'gpu-next', 'gpu'].contains(json['mpvRenderer'])
-          ? json['mpvRenderer'] as String
-          : 'auto',
+      // 655：渲染器改为手动选择。
+      // 697：移除 `auto` 档（与 `gpu-next` 等价），旧存档的 `auto`
+      // 由 normalizeMpvRenderer 静默迁移到 `gpu-next`（行为不变）。
+      mpvRenderer: AppSettings.normalizeMpvRenderer(json['mpvRenderer']),
       // 656：Qt 播放器开关。旧数据无此字段 → false（走现有 646 路径）。
       //
       // 685：**Windows 硬编码为 true**——设置页已移除该开关，Qt 窗口是
@@ -1076,15 +1076,30 @@ class AppSettings {
   };
 
   /// 655：MPV 渲染器选项（仅 Android Surface 路径有意义）。
+  ///
+  /// 697：移除 `auto` 档——它运行时等价于 `gpu-next`（见 [resolveMpvVo]），
+  /// 留着只会让用户以为两者有区别。默认值直接改为 `gpu-next`。
   static const mpvRendererLabels = {
-    'auto': '自动（gpu-next）',
     'gpu-next': 'gpu-next',
     'gpu': 'gpu（兼容）',
   };
 
+  /// 渲染器默认值（697：原 `auto` 与 `gpu-next` 等价，统一为 `gpu-next`）。
+  static const defaultMpvRenderer = 'gpu-next';
+
+  /// 归一渲染器值：`gpu` 保留（老 GPU 兼容档），其余一律 `gpu-next`。
+  ///
+  /// 用于 [fromJson] 与设置项写入——旧存档里的 `auto` 会被静默迁移到
+  /// `gpu-next`（行为不变，只是去掉冗余档位）。
+  static String normalizeMpvRenderer(Object? raw) =>
+      raw == 'gpu' ? 'gpu' : defaultMpvRenderer;
+
   /// 解析渲染器设置 → 实际传给 mpv 的 `vo` 值。
   ///
   /// 655：从「按 GLES 版本自动探测」改为手动。见 [mpvRenderer] 注释。
+  ///
+  /// 697：`auto` 档已移除（运行时等价 `gpu-next`），只有 `gpu` / `gpu-next`
+  /// 两种输入；未知值一律按 `gpu-next` 处理。
   ///
   /// 纹理路径**恒为 `gpu`**（不受此设置影响）：media_kit 的 Android
   /// VideoController 走 TextureRegistry Surface + wid + vo=gpu，传别的值

@@ -185,6 +185,15 @@ class PlayerTopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // 697：TV 时钟在左上角（x ∈ [12, 112]），标题需从其右侧开始。
+          // 只在「TV 模式 + 时钟开启」时预留；关闭时标题回到原来的最左
+          // 位置（不让位）。
+          if (reserveClockSpace)
+            const SizedBox(
+              key: ValueKey('playerClockSpace'),
+              // 时钟宽 100 + 与标题间距 12
+              width: 112,
+            ),
           if (showBack)
             IconButton(
               key: const ValueKey('playerBackButton'),
@@ -356,11 +365,8 @@ class PlayerTopBar extends StatelessWidget {
               onPressed: onShare,
             ),
           ],
-          if (reserveClockSpace)
-            const SizedBox(
-              key: ValueKey('playerClockSpace'),
-              width: 100,
-            ),
+          // 697：旧的右侧预留已删除——时钟在 TV 模式下位于**左上角**，
+          // 预留区随之移到 Row 开头（见上方 `playerClockSpace`）。
         ],
       ),
     );
