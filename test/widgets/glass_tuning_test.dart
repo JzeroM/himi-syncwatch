@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_platform.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
@@ -177,6 +178,23 @@ void main() {
 
     test('TV 模式隐藏（遥控器方向键会被滑杆吞键）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassEdgeZoneVisible(tvMode: true), isFalse);
+    });
+
+    test('鸿蒙非 TV 显示（697：此前被当桌面隐藏）', () {
+      HimiPlatform.debugIsOhosOverride = true;
+      addTearDown(() => HimiPlatform.debugIsOhosOverride = null);
+      // stock SDK 无法表达鸿蒙，用桌面平台验证「isOhos 覆盖生效」
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      expect(glassEdgeZoneVisible(tvMode: false), isTrue);
+    });
+
+    test('鸿蒙 TV 模式仍隐藏', () {
+      HimiPlatform.debugIsOhosOverride = true;
+      addTearDown(() => HimiPlatform.debugIsOhosOverride = null);
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(glassEdgeZoneVisible(tvMode: true), isFalse);
     });

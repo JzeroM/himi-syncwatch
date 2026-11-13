@@ -13,6 +13,8 @@ import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/intro_outro_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/engine_detail_screen.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/tmdb_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/qr_config_screen.dart';
@@ -44,6 +46,17 @@ GoRouter _testRouter() => GoRouter(
                 GoRoute(
                   path: 'engine-config',
                   builder: (context, state) => const EngineConfigScreen(),
+                  routes: [
+                    // 697：TV 引擎板块 → 独立子页
+                    GoRoute(
+                      path: ':engineId',
+                      builder: (context, state) => EngineDetailScreen(
+                        engine: PlayerEngine.fromId(
+                          state.pathParameters['engineId'],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 GoRoute(
                   path: 'intro-outro',
@@ -130,6 +143,14 @@ Future<ProviderContainer> _pumpScreen(
 /// 【681】引擎收敛后，**MDK 子页只存在于安卓 TV**（手机只 MPV、
 /// 鸿蒙/Windows 只 MPV、iOS 只 Erika）。因此默认按 TV 模式打开，
 /// 保证 MDK 专属选项（音频后端 / 段缓存 / 网络流缓冲）可测。
+/// 进入引擎设置（697：TV 模式下引擎改为纵向板块 → 需先点板块进子页）。
+///
+/// ## 697 变更
+///
+/// TV 模式的「播放器配置」不再是分段胶囊 + 内嵌内容，而是**纵向引擎板块**，
+/// 点板块跳独立子页。因此测试必须多一步「点板块」。
+///
+/// 非 TV 平台仍是 TabBar + 内嵌内容，行为不变。
 Future<ProviderContainer> _pumpMdkSettings(
   WidgetTester tester, {
   AppSettings initial = const AppSettings(),
@@ -144,6 +165,24 @@ Future<ProviderContainer> _pumpMdkSettings(
   );
   await tester.tap(find.text('播放器配置'));
   await tester.pumpAndSettle();
+
+  // 697：TV 多引擎时先点第一个引擎板块进子页
+  if (tvMode) {
+    final board = find.byKey(const ValueKey('engineBoardList'));
+    if (board.evaluate().isNotEmpty) {
+      final firstBoard = find
+          .descendant(
+            of: board,
+            matching: find.byWidgetPredicate(
+              (w) => w.key is ValueKey<String> &&
+                  (w.key! as ValueKey<String>).value.startsWith('engineBoard_'),
+            ),
+          )
+          .first;
+      await tester.tap(firstBoard);
+      await tester.pumpAndSettle();
+    }
+  }
   return container;
 }
 
@@ -154,6 +193,9 @@ Future<ProviderContainer> _pumpMdkSettings(
 /// - 安卓 TV → MDK / Erika / MPV
 /// - iOS → 只有 Erika（`engineTab_erika`）
 /// 因此不能再写死 `engineTab_mdk`，要按平台取第一个存在的 tab。
+///
+/// 【697】TV 模式进入引擎子页后没有 `engineTab_*`（子页直接铺设置项），
+/// 回退到子页列表 `settingsSubPageList`。
 Finder _subScrollable() {
   for (final id in ['mdk', 'mpv', 'erika']) {
     final tab = find.byKey(ValueKey('engineTab_$id'));
@@ -381,10 +423,10 @@ void main() {
   });
 
   testWidgets('通用子页：非 TV 隐藏顶栏时间设置', (tester) async {
-    // 690：缓存入口已迁出通用页，改用「导出运行日志」作滚动锚点
+    // 697：导出日志已迁到「实验性」，改用「Trakt 同步」作滚动锚点。
     await _pumpScreen(tester, category: '通用');
     await tester.scrollUntilVisible(
-      find.text('导出运行日志'),
+      find.text('Trakt 同步'),
       250,
       scrollable: _subScrollable(),
     );
@@ -392,6 +434,14 @@ void main() {
 
     expect(find.byKey(const ValueKey('topBarClockSetting')), findsNothing);
     expect(find.text('顶栏时间'), findsNothing);
+  });
+
+  testWidgets('通用子页不再包含导出运行日志（697 迁到实验性）', (tester) async {
+    await _pumpScreen(tester, category: '通用');
+    await tester.pumpAndSettle();
+
+    expect(find.text('导出运行日志'), findsNothing);
+    expect(find.text('诊断'), findsNothing, reason: '诊断分组整组迁走');
   });
 
   testWidgets('通用子页 TV：顶栏时间默认关闭，弹层切到 24 小时制并落盘', (tester) async {
@@ -1003,40 +1053,62 @@ void main() {
     }
   });
 
-  testWidgets('实验性子页：Android 展示渲染兼容模式开关，默认关闭', (tester) async {
-    final container = await _pumpScreen(tester, category: '实验性');
-    await tester.scrollUntilVisible(
-      find.text('渲染兼容模式（实验）'),
-      250,
-      scrollable: _subScrollable(),
-    );
+  testWidgets('实验性子页：只保留诊断，渲染/A-B 开关已移除（697）', (tester) async {
+    await _pumpScreen(tester, category: '实验性');
     await tester.pumpAndSettle();
 
-    expect(find.text('渲染兼容模式（实验）'), findsOneWidget);
-    // 渲染兼容模式实验开关含重启提示
-    expect(find.textContaining('需重启应用生效'), findsWidgets);
-    expect(container.read(settingsProvider).renderCompatMode, isFalse);
+    // 诊断三项
+    expect(find.text('播放调试面板'), findsOneWidget);
+    expect(find.text('深度诊断'), findsOneWidget);
+    expect(find.byKey(const ValueKey('exportLogsTile')), findsOneWidget);
+    expect(find.text('导出运行日志'), findsOneWidget);
+
+    // 697：底层引擎开关全部移除（设备相关，用户自调只会黑屏/卡顿）
+    for (final label in const [
+      '渲染兼容模式（实验）',
+      'HDR image=0（实验）',
+      '硬解 low_latency=1（实验）',
+      '8-bit 渲染表面（实验）',
+      'HDR GL 渲染方案',
+      '音频自适应同步（实验）',
+    ]) {
+      expect(find.text(label), findsNothing, reason: '$label 应已移除');
+    }
+    // 分组标题也不再出现
+    expect(find.textContaining('仅 Android'), findsNothing);
+    expect(find.textContaining('A/B 对比'), findsNothing);
   });
 
-  testWidgets('渲染兼容模式开关切换写入设置', (tester) async {
+  testWidgets('实验性子页：播放调试面板开关写入设置', (tester) async {
     final container = await _pumpScreen(tester, category: '实验性');
-    final row = find.ancestor(
-      of: find.text('渲染兼容模式（实验）'),
-      matching: find.byType(SwitchListTile),
-    );
-    await tester.scrollUntilVisible(
-      find.text('渲染兼容模式（实验）'),
-      250,
-      scrollable: _subScrollable(),
-    );
     await tester.pumpAndSettle();
 
+    final row = find.ancestor(
+      of: find.text('播放调试面板'),
+      matching: find.byType(SwitchListTile),
+    );
     final sw = tester.widget<Switch>(
         find.descendant(of: row, matching: find.byType(Switch)));
     sw.onChanged!(true);
     await tester.pumpAndSettle();
 
-    expect(container.read(settingsProvider).renderCompatMode, isTrue);
+    expect(container.read(settingsProvider).showSyncDebug, isTrue);
+  });
+
+  testWidgets('实验性子页：深度诊断开关写入设置', (tester) async {
+    final container = await _pumpScreen(tester, category: '实验性');
+    await tester.pumpAndSettle();
+
+    final row = find.ancestor(
+      of: find.text('深度诊断'),
+      matching: find.byType(SwitchListTile),
+    );
+    final sw = tester.widget<Switch>(
+        find.descendant(of: row, matching: find.byType(Switch)));
+    sw.onChanged!(true);
+    await tester.pumpAndSettle();
+
+    expect(container.read(settingsProvider).deepDiagnostics, isTrue);
   });
 
   testWidgets('TV：解码方式行点开居中弹层，选择软解写入', (tester) async {

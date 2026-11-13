@@ -2,6 +2,7 @@ import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_platform.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -169,14 +170,18 @@ double glassDefault(String key) {
   return glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 }
 
-/// 折射范围（glassEdgeZone）滑杆可见性：Android / iOS 非 TV 模式显示。
+/// 折射范围（glassEdgeZone）滑杆可见性：Android / iOS / 鸿蒙 非 TV 模式显示。
 ///
 /// 两端都走 standard（`interactive_indicator.frag`）路径，读 `uEdgeZone`
 /// uniform，拖动真实生效；
 /// - 其他平台（桌面 / Web）隐藏；
 /// - TV 模式：遥控器方向键导航会被滑杆吞键 → 隐藏。
+///
+/// 【697 修复】此前只判 android / iOS，**鸿蒙被当成桌面隐藏了该滑杆**——
+/// 但鸿蒙同样走 standard 路径，与 Android 行为一致。
 bool glassEdgeZoneVisible({required bool tvMode}) =>
-    (defaultTargetPlatform == TargetPlatform.android ||
+    (HimiPlatform.isOhos ||
+        defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) &&
     !tvMode;
 

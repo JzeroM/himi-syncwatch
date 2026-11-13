@@ -14,6 +14,8 @@ import 'package:himi_syncwatch/screens/settings/appearance_settings_screen.dart'
 import 'package:himi_syncwatch/screens/settings/player_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/intro_outro_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/engine_config_screen.dart';
+import 'package:himi_syncwatch/screens/settings/engine_detail_screen.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/screens/settings/general_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/cache_settings_screen.dart';
 import 'package:himi_syncwatch/screens/settings/experimental_settings_screen.dart';
@@ -103,6 +105,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                       path: 'engine-config',
                       pageBuilder: (context, state) =>
                           _settingsFadePage(const EngineConfigScreen()),
+                      routes: [
+                        // 697：TV 引擎板块 → 单个引擎的独立设置子页。
+                        GoRoute(
+                          path: ':engineId',
+                          pageBuilder: (context, state) {
+                            final engine = PlayerEngine.fromId(
+                              state.pathParameters['engineId'],
+                            );
+                            return _settingsFadePage(
+                              EngineDetailScreen(engine: engine),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                     GoRoute(
                       path: 'intro-outro',

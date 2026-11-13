@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
@@ -245,15 +246,18 @@ class _HomeListState extends ConsumerState<_HomeList> {
 
     final list = GlassRefreshIndicator(
       onRefresh: () => refreshTmdbHome(ref),
-      child: ListView.builder(
-        padding: EdgeInsets.only(
-          top: headerCount > 0
-              ? 0
-              : (widget.tvMode ? 12 : GlassConfig.topInsetOf(context)),
-          bottom: GlassConfig.bottomReserveOf(context),
+      // 697：滚动中玻璃降级（同首页；此前 ScrollGlassScope 从未接线）。
+      child: ScrollGlassScope(
+        child: ListView.builder(
+          padding: EdgeInsets.only(
+            top: headerCount > 0
+                ? 0
+                : (widget.tvMode ? 12 : GlassConfig.topInsetOf(context)),
+            bottom: GlassConfig.bottomReserveOf(context),
+          ),
+          itemCount: content.length,
+          itemBuilder: (context, index) => content[index],
         ),
-        itemCount: content.length,
-        itemBuilder: (context, index) => content[index],
       ),
     );
 

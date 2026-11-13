@@ -5,6 +5,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 import 'package:himi_syncwatch/widgets/pressable_scale.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -253,13 +254,16 @@ class SettingsSubPage extends StatelessWidget {
           flexibleSpace: const GlassBackdrop(),
           leading: const TvBackButton(),
         ),
-        body: ListView(
-          key: const ValueKey('settingsSubPageList'),
-          padding: EdgeInsets.only(
-            top: GlassConfig.topInsetOf(context),
-            bottom: GlassConfig.bottomReserveOf(context),
+        body: ScrollGlassScope(
+          // 697：设置子页整页都是玻璃卡片，滚动时降级收益最明显。
+          child: ListView(
+            key: const ValueKey('settingsSubPageList'),
+            padding: EdgeInsets.only(
+              top: GlassConfig.topInsetOf(context),
+              bottom: GlassConfig.bottomReserveOf(context),
+            ),
+            children: children,
           ),
-          children: children,
         ),
       ),
     );
@@ -328,6 +332,8 @@ class SettingsGroupCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               showShadow: false,
               padding: const EdgeInsets.symmetric(vertical: 2),
+              // 697：设置子页长列表内的玻璃卡片——滚动中降级为纯色。
+              degradeWhileScrolling: true,
               // 690：`ListTile` 的墨水效果画在最近的 `Material` 祖先上，
               // 而 `GlassContainer` 用 `DecoratedBox` 提供背景——不套一层
               // 透明 `Material` 时 Flutter 会断言「墨水效果不可见」。
@@ -371,6 +377,7 @@ class SettingsCategoryCard extends StatelessWidget {
     required this.onTap,
     required this.tvMode,
     this.autofocus = false,
+    this.focusNode,
   });
 
   final IconData icon;
@@ -382,6 +389,9 @@ class SettingsCategoryCard extends StatelessWidget {
   /// 690：TV 模式下是否自动落焦（首张卡片用）。
   final bool autofocus;
 
+  /// 697：焦点节点（TV 下由调用方持有，用于从子页返回后恢复焦点）。
+  final FocusNode? focusNode;
+
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
@@ -389,6 +399,8 @@ class SettingsCategoryCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       showShadow: false,
       padding: const EdgeInsets.all(16),
+      // 697：设置主页网格内的玻璃卡片——滚动中降级为纯色。
+      degradeWhileScrolling: true,
       child: Row(
         children: [
           // 图标：圆形主色渐变底（与侧边栏品牌区同款语言）
@@ -448,6 +460,7 @@ class SettingsCategoryCard extends StatelessWidget {
         onTap: onTap,
         scale: 1.03,
         autofocus: autofocus,
+        focusNode: focusNode,
         child: card,
       );
     }

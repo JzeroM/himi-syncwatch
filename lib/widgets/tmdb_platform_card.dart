@@ -42,6 +42,8 @@ class TmdbPlatformCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           showShadow: false,
+          // 697：TMDB 首页列表内的玻璃项——滚动中降级为纯色。
+          degradeWhileScrolling: true,
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,

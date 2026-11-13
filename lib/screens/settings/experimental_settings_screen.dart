@@ -1,10 +1,23 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/log_service.dart';
 
-/// 实验性设置子页：渲染兼容模式 / 播放调试面板 / 深度诊断。
+/// 实验性设置子页：**只保留诊断**。
+///
+/// ## 697 精简
+///
+/// 此前这里是「渲染（仅 Android）+ 诊断 + 高级（A/B 对比）」三组开关：
+/// - 渲染兼容模式 / HDR image=0 / 硬解 low_latency / 8-bit 渲染表面
+/// - HDR GL 渲染方案 / 音频自适应同步
+///
+/// 这些开关都是**设备相关**的底层引擎参数，普通用户开了只会黑屏或卡顿，
+/// 真出问题也应该由诊断日志定位而不是让用户自己试。现已全部移除
+/// （字段仍保留在 `AppSettings` 里，兼容旧存档与既有代码路径）。
+///
+/// 同时把「导出运行日志」从「通用」迁到这里——诊断能力集中在一处，
+/// 用户报问题时只需要进一个页面。
 class ExperimentalSettingsScreen extends ConsumerWidget {
   const ExperimentalSettingsScreen({super.key});
 
@@ -17,71 +30,6 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
       pageKey: const ValueKey('experimentalSettingsPage'),
       title: '实验性',
       children: [
-        // 690：分组玻璃卡片——渲染 / 诊断 / 高级
-        if (defaultTargetPlatform == TargetPlatform.android)
-          SettingsGroupCard(
-            title: '渲染（仅 Android）',
-            children: [
-              settingsTvWrapRow(
-                tvMode: settings.tvMode,
-                onTap: () => notifier
-                    .update(renderCompatMode: !settings.renderCompatMode),
-                child: SwitchListTile(
-                  title: const Text('渲染兼容模式（实验）'),
-                  subtitle: const Text(
-                    '启用 rockchip GL 渲染变体（yuv 采样 / SurfaceTexture 上下文）。'
-                    '视频全黑时尝试，修改后需重启应用生效',
-                  ),
-                  value: settings.renderCompatMode,
-                  onChanged: (v) => notifier.update(renderCompatMode: v),
-                ),
-              ),
-              settingsTvWrapRow(
-                tvMode: settings.tvMode,
-                onTap: () => notifier.update(
-                    videoDecoderNoImage: !settings.videoDecoderNoImage),
-                child: SwitchListTile(
-                  title: const Text('HDR image=0（实验）'),
-                  subtitle: const Text(
-                    '解码器 image=0：禁用 AImageReader/AHardwareBuffer 路径，'
-                    '回退旧 Surface/BufferQueue 输出。HDR10 4K60 丢帧 A/B '
-                    '对比用，修改后下次起播生效',
-                  ),
-                  value: settings.videoDecoderNoImage,
-                  onChanged: (v) => notifier.update(videoDecoderNoImage: v),
-                ),
-              ),
-              settingsTvWrapRow(
-                tvMode: settings.tvMode,
-                onTap: () => notifier.update(
-                    videoDecoderLowLatency: !settings.videoDecoderLowLatency),
-                child: SwitchListTile(
-                  title: const Text('硬解 low_latency=1（实验）'),
-                  subtitle: const Text(
-                    'AMediaCodec low_latency=1：改变硬解器 buffer 管理路径。'
-                    '10-bit 4K60 丢帧 A/B 对比用，修改后下次起播生效',
-                  ),
-                  value: settings.videoDecoderLowLatency,
-                  onChanged: (v) => notifier.update(videoDecoderLowLatency: v),
-                ),
-              ),
-              settingsTvWrapRow(
-                tvMode: settings.tvMode,
-                onTap: () =>
-                    notifier.update(renderDepth8: !settings.renderDepth8),
-                child: SwitchListTile(
-                  title: const Text('8-bit 渲染表面（实验）'),
-                  subtitle: const Text(
-                    'EGL_SDR_DEPTH=8：强制 8-bit SDR 渲染表面。'
-                    '修复 HDR10 丢帧（10-bit 表面损坏），10-bit SDR 可能'
-                    '轻微 banding。修改后需重启应用生效',
-                  ),
-                  value: settings.renderDepth8,
-                  onChanged: (v) => notifier.update(renderDepth8: v),
-                ),
-              ),
-            ],
-          ),
         SettingsGroupCard(
           title: '诊断',
           children: [
@@ -109,38 +57,16 @@ class ExperimentalSettingsScreen extends ConsumerWidget {
                 onChanged: (v) => notifier.update(deepDiagnostics: v),
               ),
             ),
-          ],
-        ),
-        SettingsGroupCard(
-          title: '高级（A/B 对比用）',
-          children: [
+            // 697：从「通用」迁入——诊断相关操作集中在本页。
             settingsTvWrapRow(
               tvMode: settings.tvMode,
-              onTap: () =>
-                  notifier.update(hdrGlWorkaround: !settings.hdrGlWorkaround),
-              child: SwitchListTile(
-                title: const Text('HDR GL 渲染方案'),
-                subtitle: const Text(
-                  'fvp#379：HDR 内容自动降级到 GL 渲染路径 + buffer 夹紧 + '
-                  'tone map。关闭则不干预（HDR 直写可能 wedge，仅 A/B）。'
-                  '修改后下次起播生效',
-                ),
-                value: settings.hdrGlWorkaround,
-                onChanged: (v) => notifier.update(hdrGlWorkaround: v),
-              ),
-            ),
-            settingsTvWrapRow(
-              tvMode: settings.tvMode,
-              onTap: () => notifier.update(
-                  avsyncAudioAdaptive: !settings.avsyncAudioAdaptive),
-              child: SwitchListTile(
-                title: const Text('音频自适应同步（实验）'),
-                subtitle: const Text(
-                  'avsync.audio.adaptive=1：视频落后时放慢音频追赶。'
-                  '改善卡顿（音调轻微变化）。默认关闭；修改后需重启应用生效',
-                ),
-                value: settings.avsyncAudioAdaptive,
-                onChanged: (v) => notifier.update(avsyncAudioAdaptive: v),
+              onTap: () => LogService().shareLogs(),
+              child: ListTile(
+                key: const ValueKey('exportLogsTile'),
+                leading: const Icon(Icons.bug_report),
+                title: const Text('导出运行日志'),
+                subtitle: const Text('保存最近 1000 条日志并分享'),
+                onTap: () => LogService().shareLogs(),
               ),
             ),
           ],

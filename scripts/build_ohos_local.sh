@@ -5,6 +5,45 @@ unset NODE_OPTIONS
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# ── 工具链自举（697）──────────────────────────────────────────────
+#
+# 真机上这三个依赖最容易漏，且报错信息**极不直观**：
+#   1. `npm`  —— hvigor 插件安装用；缺失时 Flutter 工具链抛
+#      `ProcessException: Failed to find "npm" in the search path`，
+#      栈里全是 flutter_tools 内部帧，看不出是 npm 的问题。
+#   2. `java` —— hvigor `PackageHap` / `assembleApp` 会 spawn 它做签名；
+#      缺失时报 `Error Code: 00308018 Unknown Error / spawn java ENOENT`。
+#   3. `OHOS_BASE_SDK_HOME` / `DEVECO_SDK_HOME` —— `ohos_pack.sh` 定位
+#      app_packing_tool 与签名工具链。
+#
+# DevEco 自带的 node/java 默认不在 PATH（尤其从终端启动时），这里自动
+# 探测常见安装位置；已有配置则尊重用户环境变量。
+HOS_SDK_DEFAULT="$HOME/harmonyos-clt"
+if [ -d "$HOS_SDK_DEFAULT" ]; then
+  # npm / node
+  if ! command -v npm >/dev/null 2>&1 && [ -x "$HOS_SDK_DEFAULT/tool/node/bin/npm" ]; then
+    export PATH="$HOS_SDK_DEFAULT/tool/node/bin:$PATH"
+  fi
+  # java（DevEco 不一定带 JDK，退回常见本地安装）
+  if ! command -v java >/dev/null 2>&1; then
+    for candidate in "$HOS_SDK_DEFAULT/tool/java/bin" \
+                     "$HOME/.local/jdk-17.0.21+9-jre/bin"; do
+      if [ -x "$candidate/java" ]; then
+        export PATH="$candidate:$PATH"
+        [ -z "${JAVA_HOME:-}" ] && export JAVA_HOME="$(dirname "$candidate")"
+        break
+      fi
+    done
+  fi
+  # SDK 根
+  if [ -z "${OHOS_BASE_SDK_HOME:-}" ] && [ -d "$HOS_SDK_DEFAULT/sdk" ]; then
+    export OHOS_BASE_SDK_HOME="$HOS_SDK_DEFAULT/sdk"
+  fi
+  if [ -z "${DEVECO_SDK_HOME:-}" ] && [ -n "${OHOS_BASE_SDK_HOME:-}" ]; then
+    export DEVECO_SDK_HOME="$OHOS_BASE_SDK_HOME"
+  fi
+fi
+
 if ! command -v flutter >/dev/null 2>&1; then
   echo "flutter 未找到：请使用 Flutter-OH SDK 的 bin 目录加入 PATH" >&2
   exit 1
@@ -13,6 +52,22 @@ if ! flutter --version 2>/dev/null | grep -qi ohos; then
   echo "当前 flutter 不是 Flutter-OH 版本" >&2
   exit 1
 fi
+
+# 自举失败时给出可操作的提示，而不是让下游抛晦涩错误。
+command -v npm >/dev/null 2>&1 || {
+  echo "缺少 npm：hvigor 需要它安装插件。" >&2
+  echo "  请把 DevEco 的 node/bin（如 ~/harmonyos-clt/tool/node/bin）加入 PATH" >&2
+  exit 1
+}
+command -v java >/dev/null 2>&1 || {
+  echo "缺少 java：hvigor 打包/签名需要 JDK 17+（否则报 spawn java ENOENT）。" >&2
+  echo "  请把 JDK 的 bin 目录加入 PATH，或设 JAVA_HOME" >&2
+  exit 1
+}
+[ -n "${OHOS_BASE_SDK_HOME:-}" ] || [ -n "${DEVECO_SDK_HOME:-}" ] || {
+  echo "未设置 OHOS_BASE_SDK_HOME / DEVECO_SDK_HOME（指向 HarmonyOS SDK 根）" >&2
+  exit 1
+}
 
 if [ -f "$HOME/.config/himi/trakt.env" ]; then
   set -a

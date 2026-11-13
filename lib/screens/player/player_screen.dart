@@ -2055,6 +2055,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    // 697：**进播放器立刻隐藏系统栏**（横屏/竖屏都要）。
+    //
+    // 此前只有 `_switchToLandscape()` 里设 `immersiveSticky`——竖屏进入
+    // 播放器（鸿蒙手机默认竖屏）时系统栏仍是 `edgeToEdge`，状态栏浮在
+    // 画面上压住顶栏控件。这里在 initState 立即设一次，再在首帧后补一次
+    // （部分平台在首个 frame 前设置会被后续 window 属性重置）。
+    _enterImmersive();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _enterImmersive();
+    });
     _manualSegments =
         widget.manualSegmentRepository ?? LocalManualSegmentStore();
     WidgetsBinding.instance.addObserver(this);
@@ -7470,6 +7480,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     });
   }
 
+  /// 进入/保持沉浸模式（隐藏状态栏与导航栏）。
+  ///
+  /// ## 为什么需要单独一个方法（697）
+  ///
+  /// 此前只有 `_switchToLandscape()` 里调 `immersiveSticky`，**竖屏路径
+  /// 从未设置过**——进入播放器时若保持竖屏（鸿蒙手机默认竖屏、房间竖屏
+  /// 窗口），系统栏仍是默认 `edgeToEdge`，状态栏浮在画面上把顶栏控件
+  /// 压住（真机反馈）。
+  ///
+  /// 另：`_toggleOrientation()` 从横屏切回竖屏时还主动设回
+  /// `edgeToEdge`，进一步固化了这个 bug。现在竖屏也走沉浸。
+  void _enterImmersive() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
   void _switchToLandscape(_OrientationMode mode) {
     if (!mounted) return;
     setState(() => _orientationMode = mode);
@@ -7481,7 +7506,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? PlayerLandscapeSide.right
           : PlayerLandscapeSide.left,
     );
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _enterImmersive();
   }
 
   void _toggleOrientation() {
@@ -7492,7 +7517,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      // 697：切回竖屏**也要保持沉浸**——此前设回 edgeToEdge 会让状态栏
+      // 重新压住顶栏控件。竖屏播放同样不该有系统栏。
+      _enterImmersive();
     }
   }
 
@@ -10530,7 +10557,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (_switchingKernel || _switchingEngine || target == _currentEngine) {
       return;
     }
-    if (!PlayerEngineFactory.isSupported(target)) {
+    // 697：**必须传 tvMode**。`isSupported` 默认 `tvMode: false`，而 Android
+    // 下 `tvMode=false` 只返回 `[mpv]`——安卓 TV 点 MDK/Erika 会被误判为
+    // 「当前平台不支持」，切换直接被拦（真机反馈的「点击切换显示不支持」）。
+    final tvMode = ref.read(settingsProvider).tvMode;
+    if (!PlayerEngineFactory.isSupported(target, tvMode: tvMode)) {
       if (mounted) showAppToast(context, '当前平台不支持 ${target.label}');
       return;
     }

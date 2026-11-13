@@ -1,6 +1,6 @@
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/page_transitions.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/core/scroll_behavior.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -51,17 +51,13 @@ class HimiSyncApp extends ConsumerWidget {
               brightness: Brightness.dark,
             ),
             useMaterial3: true,
-            // 687：页面转场——手机 iOS 横滑（比 Android 默认 Zoom 自然），
-            // 桌面淡入上移（不抢眼）。
-            pageTransitionsTheme: const PageTransitionsTheme(
-              builders: {
-                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-                TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
-                TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
-                TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-              },
-            ),
+            // 687：页面转场——手机（含鸿蒙）iOS 横滑（比 Android 默认 Zoom
+            // 自然），桌面淡入上移（不抢眼）。
+            //
+            // 697：改为运行时构建（见 [buildHimiPageTransitions]）——常量 map
+            // 里写不了 `TargetPlatform.ohos`（stock SDK 无该枚举值），鸿蒙
+            // 曾因此落到框架兜底的 Zoom 缩放。
+            pageTransitionsTheme: buildHimiPageTransitions(),
             // 聚焦可见反馈（TV 遥控器导航：ListTile/Switch/IconButton 等）
             focusColor: const Color(0x886366F1),
             hoverColor: const Color(0x336366F1),

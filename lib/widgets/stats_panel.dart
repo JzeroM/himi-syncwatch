@@ -37,6 +37,9 @@ class _StatCard extends StatelessWidget {
       child: GlassContainer(
         borderRadius: const BorderRadius.all(Radius.circular(14)),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        // 697：首页列表内的玻璃项——滚动中降级为纯色，停止后恢复
+        //（配合外层 ScrollGlassScope，滚动时不再每帧重采样背景纹理）。
+        degradeWhileScrolling: true,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

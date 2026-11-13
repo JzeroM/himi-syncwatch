@@ -1,11 +1,15 @@
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/core/himi_platform.dart';
+import 'package:himi_syncwatch/core/page_transitions.dart';
 import 'package:himi_syncwatch/core/scroll_behavior.dart';
 import 'package:himi_syncwatch/utils/motion.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 
 /// 687：全平台滑动流畅度与交互动效。
 ///
@@ -108,6 +112,47 @@ void main() {
     test('A4 app.dart 已挂载 scrollBehavior', () {
       expect(codeOnly(appDart), contains('scrollBehavior: const HimiScrollBehavior()'));
     });
+
+    // 697：鸿蒙曾被漏判（落在桌面分支 → Clamping 硬撞墙，没有回弹）。
+    testWidgets('A5 鸿蒙用 BouncingScrollPhysics（触屏回弹）', (tester) async {
+      HimiPlatform.debugIsOhosOverride = true;
+      addTearDown(() => HimiPlatform.debugIsOhosOverride = null);
+
+      late ScrollPhysics p;
+      await tester.pumpWidget(
+        Theme(
+          // stock SDK 下鸿蒙不可表达，用任意平台验证「按 isOhos 覆盖」
+          data: ThemeData(platform: TargetPlatform.windows),
+          child: Builder(
+            builder: (c) {
+              p = const HimiScrollBehavior().getScrollPhysics(c);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(p, isA<BouncingScrollPhysics>(),
+          reason: '鸿蒙是触屏设备，必须回弹而不是硬撞墙');
+    });
+
+    testWidgets('A6 非鸿蒙时 override 不影响桌面判定', (tester) async {
+      HimiPlatform.debugIsOhosOverride = false;
+      addTearDown(() => HimiPlatform.debugIsOhosOverride = null);
+
+      late ScrollPhysics p;
+      await tester.pumpWidget(
+        Theme(
+          data: ThemeData(platform: TargetPlatform.windows),
+          child: Builder(
+            builder: (c) {
+              p = const HimiScrollBehavior().getScrollPhysics(c);
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      expect(p, isA<ClampingScrollPhysics>());
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -115,14 +160,39 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('B 页面转场', () {
-    test('B1 手机用 Cupertino 横滑', () {
-      expect(appDart, contains('TargetPlatform.android: CupertinoPageTransitionsBuilder()'));
-      expect(appDart, contains('TargetPlatform.iOS: CupertinoPageTransitionsBuilder()'));
+    test('B1 手机（含鸿蒙）用 Cupertino 横滑', () {
+      final transitions = buildHimiPageTransitions();
+      expect(transitions.builders[TargetPlatform.android],
+          isA<CupertinoPageTransitionsBuilder>());
+      expect(transitions.builders[TargetPlatform.iOS],
+          isA<CupertinoPageTransitionsBuilder>());
+      // 697：鸿蒙必须也是横滑（此前漏配 → 走框架兜底 Zoom 缩放）
+      expect(transitions.builders[TargetPlatform.values.firstWhere(
+              (p) => p.name == 'ohos',
+              orElse: () => TargetPlatform.android)],
+          isA<CupertinoPageTransitionsBuilder>());
     });
 
     test('B2 桌面用 FadeUpwards', () {
-      expect(appDart, contains('TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder()'));
-      expect(appDart, contains('TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder()'));
+      final transitions = buildHimiPageTransitions();
+      expect(transitions.builders[TargetPlatform.windows],
+          isA<FadeUpwardsPageTransitionsBuilder>());
+      expect(transitions.builders[TargetPlatform.linux],
+          isA<FadeUpwardsPageTransitionsBuilder>());
+      expect(transitions.builders[TargetPlatform.macOS],
+          isA<FadeUpwardsPageTransitionsBuilder>());
+    });
+
+    test('B3 每个平台都有显式 builder（不依赖框架兜底）', () {
+      final transitions = buildHimiPageTransitions();
+      for (final platform in TargetPlatform.values) {
+        expect(transitions.builders.containsKey(platform), isTrue,
+            reason: '$platform 缺转场配置会走框架兜底');
+      }
+    });
+
+    test('B4 app.dart 已挂载 buildHimiPageTransitions', () {
+      expect(codeOnly(appDart), contains('pageTransitionsTheme: buildHimiPageTransitions()'));
     });
   });
 
@@ -259,6 +329,75 @@ void main() {
           File('lib/widgets/glass/scroll_glass_scope.dart').readAsStringSync();
       expect(scope, contains('class ScrollGlassIndicator extends InheritedWidget'));
       expect(scope, contains('dependOnInheritedWidgetOfExactType'));
+    });
+
+    // ── 697：接线验证（此前 687 只造零件、从未接线，等于空转）──
+
+    test('F5 首页列表外层挂 ScrollGlassScope', () {
+      expect(codeOnly(homeScreen), contains('ScrollGlassScope('));
+      expect(codeOnly(homeScreen),
+          contains("import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';"));
+    });
+
+    test('F6 TMDB 首页列表外层挂 ScrollGlassScope', () {
+      expect(codeOnly(tmdbHome), contains('ScrollGlassScope('));
+    });
+
+    test('F7 设置子页列表外层挂 ScrollGlassScope', () {
+      final settingsCommon =
+          File('lib/screens/settings/settings_common.dart').readAsStringSync();
+      expect(codeOnly(settingsCommon), contains('ScrollGlassScope('));
+    });
+
+    test('F8 列表内玻璃项已打开 degradeWhileScrolling', () {
+      // 首页统计面板 / TMDB 平台卡 / 设置分组卡 / 设置分类卡
+      for (final path in const [
+        'lib/widgets/stats_panel.dart',
+        'lib/widgets/tmdb_platform_card.dart',
+        'lib/screens/settings/settings_common.dart',
+      ]) {
+        final text = codeOnly(File(path).readAsStringSync());
+        expect(text, contains('degradeWhileScrolling: true'),
+            reason: '$path 的列表内玻璃项应打开降级');
+      }
+    });
+
+    testWidgets('F9 真实滚动时 GlassContainer 降级为纯色', (tester) async {
+      // 端到端：滚动 → 玻璃关闭 → 停止 120ms 后恢复。
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ScrollGlassScope(
+            child: ListView.builder(
+              controller: controller,
+              itemCount: 40,
+              itemBuilder: (_, i) => SizedBox(
+                height: 60,
+                child: Text('item$i'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // 初始：非滚动
+      final scopeState = tester
+          .state<ScrollGlassScopeState>(find.byType(ScrollGlassScope));
+      expect(scopeState.scrolling, isFalse);
+
+      // 手动滚动触发 ScrollStart/Update
+      controller.jumpTo(200);
+      await tester.pump();
+      await tester.pump();
+      expect(scopeState.scrolling, isTrue,
+          reason: '滚动开始后应广播 scrolling=true');
+
+      // 停止 120ms 后恢复
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(scopeState.scrolling, isFalse,
+          reason: '停止滚动 ${ScrollGlassScope.restoreDelayMs}ms 后应恢复');
     });
   });
 

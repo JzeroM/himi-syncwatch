@@ -6,9 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
-import 'package:himi_syncwatch/services/log_service.dart';
 
-/// 通用设置子页：TV 模式 / 导出运行日志。
+/// 通用设置子页：TV 模式 / 同步。
 class GeneralSettingsScreen extends ConsumerWidget {
   const GeneralSettingsScreen({super.key});
 
@@ -109,21 +108,7 @@ class GeneralSettingsScreen extends ConsumerWidget {
             ),
           ],
         ),
-        SettingsGroupCard(
-          title: '诊断',
-          children: [
-            settingsTvWrapRow(
-              tvMode: settings.tvMode,
-              onTap: () => LogService().shareLogs(),
-              child: ListTile(
-                leading: const Icon(Icons.bug_report),
-                title: const Text('导出运行日志'),
-                subtitle: const Text('保存最近 1000 条日志并分享'),
-                onTap: () => LogService().shareLogs(),
-              ),
-            ),
-          ],
-        ),
+        // 697：「导出运行日志」已迁到「实验性 → 诊断」，此处不再重复。
       ],
     );
   }

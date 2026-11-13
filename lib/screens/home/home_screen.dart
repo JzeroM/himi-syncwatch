@@ -23,6 +23,7 @@ import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
@@ -493,42 +494,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             onRefresh: _loadMedia,
                             child: GlassRefreshIndicator(
                               onRefresh: _loadMedia,
-                              child: ListView.builder(
-                                // 688：用页面级 controller 代替 PageStorageKey
-                                // ——后者会把滚动位置**跨启动持久化**，导致
-                                // 打开软件时首页不在开头（用户反馈）。
-                                controller: _homeScrollController,
-                                // 688：从 600 降到 250——过大的预渲染反而
-                                // 增加单帧布局开销，滚动发涩。
-                                // ignore: deprecated_member_use
-                                cacheExtent: 250,
-                                padding: EdgeInsets.only(
-                                  // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
-                                  top: showHero
-                                      ? 0
-                                      : (tvMode
-                                          ? 12
-                                          : GlassConfig.topInsetOf(context)),
-                                  bottom: GlassConfig.bottomReserveOf(context),
+                              // 697：列表外层挂滚动状态广播——滚动中把列表内
+                              // 玻璃项降级为纯色，停止 120ms 后恢复真折射。
+                              //
+                              // 【为什么之前是空转】687 建好了
+                              // `ScrollGlassScope` / `degradeWhileScrolling`
+                              // 两个零件，但**从未接线**：scope 没实例化、
+                              // 开关没传 true → `ScrollGlassIndicator.of` 恒为
+                              // false，滚动时玻璃仍每帧真折射（当初定位的
+                              // 卡顿主因其实没修上）。
+                              child: ScrollGlassScope(
+                                child: ListView.builder(
+                                  // 688：用页面级 controller 代替 PageStorageKey
+                                  // ——后者会把滚动位置**跨启动持久化**，导致
+                                  // 打开软件时首页不在开头（用户反馈）。
+                                  controller: _homeScrollController,
+                                  // 688：从 600 降到 250——过大的预渲染反而
+                                  // 增加单帧布局开销，滚动发涩。
+                                  // ignore: deprecated_member_use
+                                  cacheExtent: 250,
+                                  padding: EdgeInsets.only(
+                                    // 轮播英雄区自带顶部出血；否则预留 AppBar/壳层顶栏
+                                    top: showHero
+                                        ? 0
+                                        : (tvMode
+                                            ? 12
+                                            : GlassConfig.topInsetOf(context)),
+                                    bottom: GlassConfig.bottomReserveOf(context),
+                                  ),
+                                  itemCount: _categories.length +
+                                      (_libraries.isNotEmpty ? 1 : 0) +
+                                      (resumeVisible.isNotEmpty ? 1 : 0) +
+                                      (_counts != null ? 1 : 0) +
+                                      (showHero ? 1 : 0),
+                                  itemBuilder: (context, index) {
+                                    // 687：每项独立图层——滚动时只移动合成层，
+                                    // 不重绘内容（玻璃/阴影项尤其明显）。
+                                    return RepaintBoundary(
+                                      child: _buildHomeItem(
+                                        context,
+                                        index,
+                                        showHero: showHero,
+                                        heroHeight: heroHeight,
+                                        resumeVisible: resumeVisible,
+                                      ),
+                                    );
+                                  },
                                 ),
-                                itemCount: _categories.length +
-                                    (_libraries.isNotEmpty ? 1 : 0) +
-                                    (resumeVisible.isNotEmpty ? 1 : 0) +
-                                    (_counts != null ? 1 : 0) +
-                                    (showHero ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  // 687：每项独立图层——滚动时只移动合成层，
-                                  // 不重绘内容（玻璃/阴影项尤其明显）。
-                                  return RepaintBoundary(
-                                    child: _buildHomeItem(
-                                      context,
-                                      index,
-                                      showHero: showHero,
-                                      heroHeight: heroHeight,
-                                      resumeVisible: resumeVisible,
-                                    ),
-                                  );
-                                },
                               ),
                             ),
                           );
