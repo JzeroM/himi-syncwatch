@@ -68,6 +68,11 @@ fi
 sed -i '/^[[:space:]]*curl$/d' "$SRC/packages/mpv.cmake"
 sed -i 's/autoupdate -f && //' "$SRC/packages/lame.cmake"
 sed -i '/PATCH_COMMAND.*luajit-\*\.patch/d; /PATCH_COMMAND.*mujs-\*\.patch/d' "$SRC/packages/luajit.cmake" "$SRC/packages/mujs.cmake"
+# 【跳过 fontconfig 补丁】上游 fontconfig 更新后补丁无法应用
+# （sha1 information is lacking），且该补丁非必需。与 luajit/mujs 同理。
+if [ -f "$SRC/packages/fontconfig.cmake" ]; then
+  sed -i '/PATCH_COMMAND/d' "$SRC/packages/fontconfig.cmake"
+fi
 
 if [ ! -f "$BUILD/build.ninja" ]; then
   log "配置 Windows 交叉工具链"
