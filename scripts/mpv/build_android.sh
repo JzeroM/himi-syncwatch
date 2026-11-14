@@ -83,7 +83,7 @@ fi
 
 NDK="$SCRIPTS/sdk/android-ndk-$ANDROID_NDK"
 
-log "跳过 Vulkan 配置（临时禁用，见上方注释）"
+log "为 Vulkan 创建 pkg-config 文件（仅头文件，不链接）"
 # 【为什么需要】meson 交叉编译时 `dependency('vulkan')` 只走 pkg-config，
 # 不走编译器探测。NDK sysroot 自带 Vulkan 头文件和 libvulkan.so stub，
 # 但没有 vulkan.pc → meson 报 `vulkan found: NO`。
@@ -110,7 +110,14 @@ Name: Vulkan
 Description: Vulkan Graphics API (NDK sysroot stub)
 Version: 1.3.238
 Cflags: -I${includedir}
-Libs: -L${libdir} -lvulkan
+# 【关键】不写 Libs: -lvulkan——那会让 libmpv.so 的 DT_NEEDED 依赖
+# libvulkan.so，运行时 Android linker namespace 可能找不到 → 白屏。
+# libplacebo 的 Vulkan 后端内部用 dlopen 运行时加载 Vulkan，
+# 链接时只需头文件，不需要链接库。
+#
+# --unresolved-symbols=ignore-all：允许 Vulkan 符号在链接时未定义
+# （运行时由 dlopen 从系统 libvulkan.so 解析）。
+Libs: -Wl,--unresolved-symbols=ignore-all
 VULKANPC
 
 # 【关键】NDK 的 libvulkan.so stub 在 `usr/lib/<triple>/`（无版本号目录），
@@ -143,9 +150,7 @@ log "启用 libplacebo Vulkan（DV 元数据处理需要 compute shader）"
 if ! grep -q -- '-Dvulkan=disabled' "$SCRIPTS/scripts/libplacebo.sh"; then
   die "libplacebo.sh 结构已变，Vulkan patch 需要更新"
 fi
-# 【临时禁用】Vulkan 启用后 libmpv.so 依赖 libvulkan.so，
-# 运行时找不到导致白屏。先恢复可用，后续再调查。
-# sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled/' "$SCRIPTS/scripts/libplacebo.sh"
+sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled/' "$SCRIPTS/scripts/libplacebo.sh"
 
 log "构建 Android 依赖 ($ABI)"
 (
@@ -159,8 +164,7 @@ require_file "$PREFIX/lib/libmpv.so"
 # libmpv.so 发布前会被 strip，HDR 符号只在未 strip 的前缀产物中可见。
 grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
 # libplacebo 是静态库（default_library=static），符号在 libmpv.so 里
-# 【临时禁用】Vulkan 后端验证（当前不启用 Vulkan）
-# grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_create_vk' || die "libmpv 缺少 Vulkan 后端"
+grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_create_vk' || die "libmpv 缺少 Vulkan 后端（DV compute shader 不可用）"
 
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
 [ -n "$NDK_TOOLCHAIN" ] || die "找不到 Android NDK toolchain"

@@ -60,8 +60,9 @@ void main() {
     test('1.3b 必须创建 vulkan.pc（meson 交叉编译只走 pkg-config）', () {
       expect(buildScript, contains('vulkan.pc'));
       expect(buildScript, contains('Name: Vulkan'));
-      // -L${libdir} 让链接器搜 prefix/lib（通过 usr -> . 符号链接解析）
-      expect(buildScript, contains(r'Libs: -L${libdir} -lvulkan'));
+      // 不写 Libs: -lvulkan（避免 DT_NEEDED 硬依赖），用
+      // --unresolved-symbols=ignore-all 让 Vulkan 符号运行时 dlopen 解析
+      expect(buildScript, contains('--unresolved-symbols=ignore-all'));
       // 版本必须 >= 1.3.238（mpv 的 meson 要求），否则报
       // "Found 1.3 but need: '>= 1.3.238'"
       expect(buildScript, contains('Version: 1.3.238'));
@@ -70,13 +71,12 @@ void main() {
       expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/local"'));
     });
 
-    test('1.3c 创建 libvulkan.so stub（NDK r30 不自带）', () {
-      // NDK r30 只有 Vulkan 头文件，没有 libvulkan.so 链接 stub。
-      // 运行时由 Android 系统 Vulkan loader 提供，构建时只需空 stub。
-      expect(buildScript, contains('libvulkan.so'));
-      expect(buildScript, contains('VULKAN_TRIPLE'));
-      expect(buildScript, contains('_himi_vulkan_stub'));
-      expect(buildScript, contains(r'-Wl,-soname,libvulkan.so'));
+    test('1.3c 不创建 libvulkan.so stub（避免 DT_NEEDED 白屏）', () {
+      // 创建 stub 会让 libmpv.so 依赖 libvulkan.so → 运行时找不到就白屏。
+      // libplacebo 的 Vulkan 后端用 dlopen 运行时加载，链接时只需头文件。
+      // stub 创建代码应被注释掉（不实际执行）
+      expect(buildScript, contains('# echo \'void _himi_vulkan_stub'));
+      expect(buildScript, contains('不创建 libvulkan.so stub'));
     });
 
     test('1.3d NDK 定义在 Vulkan 检查之前', () {
