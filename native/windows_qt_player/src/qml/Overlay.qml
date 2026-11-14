@@ -803,15 +803,21 @@ ApplicationWindow {
         }
     }
 
-    // ── 697：播放调试面板（HDR/DV 排查用）──
+    // ── 697：播放调试信息（HDR/DV 排查用）——纯文字叠加 ──
     //
-    // Windows 是唯一能跑完整 libplacebo DV 处理的平台（D3D11 compute），
-    // 而 Flutter 播放页在 Qt 模式下已退场——所以面板必须在这里有。
+    // 【为什么是文字而不是浮层面板】浮层高度绑内容行数，指标刷新导致
+    // 行数变化 → 窗口几何跳变 → 透明叠加窗每秒重绘 → 与 D3D11 交换链
+    // 合成冲突 → 视频画面每秒闪一下（真机回归，用户确认「不开面板不闪」）。
+    //
+    // 数据由 Qt 侧自己读 mpv（`MpvWindow::debugText`）——Qt 模式下 mpv
+    // 在独立进程，Dart 的空闲引擎读不到真实属性。
     DebugPanel {
         id: debugPanel
-        // 设置项开关（Dart 侧下发 showDebug）。
-        // 位置由面板自身持有（拖动后本地更新，跨开关周期保持）。
         shown: playerState.showDebug
+        onClosed: {
+            // 关闭 = 关设置项（下次进播放页不再自动显示）
+            pipeServer.sendCommand({"type": "toggleDebug"})
+        }
     }
 
     // ── 显示调节面板 ──

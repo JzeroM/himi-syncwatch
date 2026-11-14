@@ -343,6 +343,13 @@ void MpvWindow::applyHdrOptions(bool hdr, bool hlg) {
     } else {
         setMpvString("d3d11-output-format", QStringLiteral("auto"));
         setMpvString("target-colorspace-hint", QStringLiteral("no"));
+        // 【必须显式复位】mpv 属性是持久的：只重置上面两项会让切到 SDR
+        // 片源时残留上一次的 HDR 目标色彩/映射，面板显示与实际渲染不一致。
+        setMpvString("target-prim", QStringLiteral("auto"));
+        setMpvString("target-trc", QStringLiteral("auto"));
+        setMpvString("tone-mapping", dvContent_ ? QStringLiteral("bt.2390")
+                                                : QStringLiteral("clip"));
+        setMpvString("tone-mapping-mode", QStringLiteral("auto"));
     }
 }
 
@@ -1142,6 +1149,99 @@ QString MpvWindow::videoOutputActual() const {
                              .arg(outPrimaries_, outGamma_)
                        : QStringLiteral("SDR (%1/%2)")
                              .arg(outPrimaries_, outGamma_);
+}
+
+// ── 697：调试文本（Qt 侧自己读 mpv）────────────────────────────
+
+QString MpvWindow::readMpvString(const char* name) {
+    if (mpv_ == nullptr) return QString();
+    char* raw = nullptr;
+    if (mpv_get_property(mpv_, name, MPV_FORMAT_STRING, &raw) < 0) {
+        return QString();
+    }
+    const QString out = raw != nullptr ? QString::fromUtf8(raw) : QString();
+    mpv_free(raw);
+    return out;
+}
+
+int MpvWindow::readMpvInt(const char* name) {
+    if (mpv_ == nullptr) return 0;
+    int64_t v = 0;
+    if (mpv_get_property(mpv_, name, MPV_FORMAT_INT64, &v) < 0) return 0;
+    return static_cast<int>(v);
+}
+
+double MpvWindow::readMpvDouble(const char* name) {
+    if (mpv_ == nullptr) return 0;
+    double v = 0;
+    if (mpv_get_property(mpv_, name, MPV_FORMAT_DOUBLE, &v) < 0) return 0;
+    return v;
+}
+
+QString MpvWindow::debugText() {
+    if (mpv_ == nullptr) return QString();
+
+    auto orDash = [](const QString& v) {
+        return v.isEmpty() ? QStringLiteral("-") : v;
+    };
+
+    QStringList lines;
+
+    // ── 输入色彩（片源真相）──
+    const QString inPrim = orDash(readMpvString("video-params/primaries"));
+    const QString inGamma = orDash(readMpvString("video-params/gamma"));
+    const QString pixFmt = orDash(readMpvString("video-params/pixelformat"));
+    // mpv 的 sig-peak 是 max_luma/100 的倍数，×100 才是 nits
+    const double sigPeak = readMpvDouble("video-params/sig-peak");
+    QString inputLine = QStringLiteral("输入  %1 / %2  %3")
+                            .arg(inPrim, inGamma, pixFmt);
+    if (sigPeak > 0) {
+        inputLine += QStringLiteral("  %1 nits")
+                         .arg(QString::number(sigPeak * 100.0, 'f', 0));
+    }
+    lines << inputLine;
+
+    // ── 杜比视界（在 current-tracks/video 下，不在 video-params）──
+    const int dvProfile =
+        readMpvInt("current-tracks/video/dolby-vision-profile");
+    const int dvLevel = readMpvInt("current-tracks/video/dolby-vision-level");
+    if (dvProfile > 0 || dvContent_) {
+        QString dv = QStringLiteral("DV    ");
+        if (dvProfile > 0) {
+            dv += QStringLiteral("P%1").arg(dvProfile);
+            if (dvProfile == 5) dv += QStringLiteral("（单层 IPT）");
+            if (dvLevel > 0) dv += QStringLiteral(" L%1").arg(dvLevel);
+        } else {
+            // mpv 读不到时回退 Emby 元数据（dvContent 由 Dart 下发）
+            dv += QStringLiteral("Profile 未知（Emby 元数据）");
+        }
+        lines << dv;
+    }
+
+    // ── 输出映射 ──
+    const QString targetPrim = orDash(readMpvString("target-prim"));
+    const QString targetTrc = orDash(readMpvString("target-trc"));
+    const QString toneMapping = orDash(readMpvString("tone-mapping"));
+    lines << QStringLiteral("输出  %1 / %2  %3")
+                 .arg(targetPrim, targetTrc, toneMapping);
+
+    // ── 渲染管线 ──
+    const QString gpuApi = orDash(readMpvString("gpu-api"));
+    const QString gpuCtx = orDash(readMpvString("gpu-context"));
+    const QString vo = orDash(readMpvString("current-vo"));
+    lines << QStringLiteral("管线  %1  %2 / %3").arg(vo, gpuApi, gpuCtx);
+
+    // ── 性能 ──
+    const double fps = readMpvDouble("estimated-vf-fps");
+    const int drop = readMpvInt("frame-drop-count");
+    const int decDrop = readMpvInt("decoder-frame-drop-count");
+    const QString hwdec = orDash(readMpvString("hwdec-current"));
+    lines << QStringLiteral("性能  %1fps  丢帧 %2/%3  硬解 %4")
+                 .arg(fps > 0 ? QString::number(fps, 'f', 2)
+                              : QStringLiteral("-"),
+                      QString::number(drop), QString::number(decDrop), hwdec);
+
+    return lines.join(QLatin1Char('\n'));
 }
 
 void MpvWindow::pumpEvents() {

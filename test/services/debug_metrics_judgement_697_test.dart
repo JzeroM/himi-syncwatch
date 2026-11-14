@@ -177,15 +177,16 @@ void main() {
       final collector = File(
         'lib/services/debug/debug_metrics_collector.dart',
       ).readAsStringSync();
-      final qml = File(
-        'native/windows_qt_player/src/qml/DebugPanel.qml',
-      ).readAsStringSync();
       for (final k in keywords) {
         expect(collector, contains("contains('$k')"),
             reason: '采集器缺关键词 $k');
-        expect(qml, contains('indexOf("$k") >= 0'),
-            reason: 'QML 缺关键词 $k');
       }
+      // 【697 起 Windows 不再需要该判定】Qt 面板改为纯文字叠加，且
+      // Windows 的 gpu-context 恒为 d3d11（一定支持 DV）——判定没有
+      // 意义，数据由 `MpvWindow::debugText()` 直接输出 gpu-context。
+      final qtCpp =
+          File('native/windows_qt_player/src/mpv_window.cpp').readAsStringSync();
+      expect(qtCpp, contains('gpu-context'));
     });
 
     test('6.2 后端标签给出能力结论而非光秃秃的 context 名', () {

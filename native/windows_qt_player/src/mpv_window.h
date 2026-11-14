@@ -215,6 +215,27 @@ public:
     bool hdrOutput() const;
     QString videoOutputActual() const;
 
+    /// 697：调试文本（左上角多行小字叠加）。
+    ///
+    /// 【为什么在 Qt 侧自己读 mpv】Qt 模式下 mpv 跑在**独立进程**里，
+    /// Dart 侧的 `_player` 是空闲引擎（`_prepared` 恒 false）——从它读
+    /// 属性恒为空（真机截图：色彩/位深/gpu-api 全空）。只有这里能读到
+    /// 真正在播放的实例。
+    ///
+    /// 【为什么是纯文字而不是浮层】697 真机回归：面板高度绑定内容行数，
+    /// 指标每秒刷新 → 行数变化 → 高度跳变 → 透明叠加窗每秒重绘 →
+    /// 与 D3D11 交换链合成冲突 → **视频画面每秒闪一下**。纯文字叠加
+    /// 不参与任何容器几何计算，从根上消除闪烁。
+    QString debugText();
+
+    /// 读 mpv 标量属性（失败返回空 / 0）。
+    ///
+    /// 走**子属性路径**（`video-params/primaries` 这种）——三端统一，
+    /// 且不需要 NODE 解析。
+    QString readMpvString(const char* name);
+    int readMpvInt(const char* name);
+    double readMpvDouble(const char* name);
+
 signals:
     /// 播放位置变化（供 QML 进度条绑定，约 20Hz）。
     void positionChanged(qint64 positionMs, qint64 durationMs);

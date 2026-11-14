@@ -42,6 +42,13 @@ QString readString(const QJsonObject& json, const char* key,
 
 PlayerState::PlayerState(QObject* parent) : QObject(parent) {}
 
+void PlayerState::setDebugText(const QString& text) {
+    // 内容相同不发信号——否则 2s 定时器每次都触发 QML 重绘
+    if (debugText_ == text) return;
+    debugText_ = text;
+    emit debugTextChanged();
+}
+
 void PlayerState::setControlsVisible(bool visible) {
     if (controlsVisible_ == visible) return;
     controlsVisible_ = visible;

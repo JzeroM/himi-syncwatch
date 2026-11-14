@@ -133,6 +133,13 @@ class PlayerState : public QObject {
     /// 697：调试面板开关（设置页「播放调试面板」）。
     Q_PROPERTY(bool showDebug READ showDebug NOTIFY changed)
 
+    /// 697：调试文本（左上角多行小字叠加）。
+    ///
+    /// 由 `main.cpp` 的定时器从 `MpvWindow::debugText()` 拉取后写入。
+    /// 【为什么不是 Flutter 下发】Qt 模式下 mpv 在独立进程里，Dart 读不到
+    /// 真实属性（其 `_player` 是空闲引擎）——数据只能由 Qt 侧自己读。
+    Q_PROPERTY(QString debugText READ debugText NOTIFY debugTextChanged)
+
     // ── 669：控件层显隐共享态（悬浮层渲染绑定 + 双窗手势共写）──
     // 纯 UI 本地状态，不参与 Flutter 状态同步（applyJson 不含此键）。
     // 控件悬浮层与宿主窗口的 VideoGestures 实例都能写——点击唤出在
@@ -278,6 +285,9 @@ public:
     QString videoFormat() const { return videoFormat_; }
     bool showDebug() const { return showDebug_; }
 
+    QString debugText() const { return debugText_; }
+    void setDebugText(const QString& text);
+
     bool controlsVisible() const { return controlsVisible_; }
     void setControlsVisible(bool visible);
 
@@ -325,6 +335,11 @@ public:
 
 signals:
     void changed();
+
+    /// 【独立信号】调试文本 2s 刷新一次；若复用 `changed` 会让所有
+    /// Q_PROPERTY 的绑定每秒全量重算（白白重绘整个控件层）。
+    void debugTextChanged();
+
     void controlsVisibleChanged();
     void windowDiagChanged();
 
@@ -417,6 +432,7 @@ private:
     QString hwdecCurrent_;
     QString videoFormat_;
     bool showDebug_ = false;
+    QString debugText_;
 
     QList<Episode> episodes_;
     int currentEpisodeIndex_ = -1;

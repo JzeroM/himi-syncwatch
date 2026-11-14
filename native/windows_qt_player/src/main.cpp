@@ -744,6 +744,26 @@ int main(int argc, char* argv[]) {
                          pipe.sendPlayback(pb);
                      });
 
+    // ── 697：调试文本（Qt 侧自己读 mpv）──
+    //
+    // 【为什么在 Qt 侧读】Qt 模式下 mpv 在**本进程**，Flutter 侧的
+    // `_player` 是空闲引擎 → 从 Dart 读属性恒为空（真机截图：色彩/位深/
+    // gpu-api 全空，面板显示「非 DV 内容」）。
+    //
+    // 【为什么是 2s】14 次 mpv_get_property 是本地调用（无 IPC），但
+    // 面板关着时没必要跑；2s 足够看参数变化，且不会因高频重绘引起闪烁。
+    //
+    // 【为什么是纯文字】697 真机回归：浮层高度绑内容行数 → 指标刷新
+    // 导致行数变化 → 窗口几何跳变 → 透明叠加窗每秒重绘 → 与 D3D11
+    // 交换链合成冲突 → 视频画面每秒闪一下。文字叠加不参与几何计算。
+    auto* debugTimer = new QTimer(&app);
+    debugTimer->setInterval(2000);
+    QObject::connect(debugTimer, &QTimer::timeout, &app, [&mpv, &state]() {
+        if (!state.showDebug()) return;
+        state.setDebugText(mpv.debugText());
+    });
+    debugTimer->start();
+
     // ── 677：全屏态回传（房间并排与全屏互斥，Dart 需要知道）──
     QObject::connect(&mpv, &MpvWindow::hostFullscreenChanged, &app, [&]() {
         QJsonObject ws;

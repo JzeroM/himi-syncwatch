@@ -1348,66 +1348,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return _debugCollector;
   }
 
-  /// 697：Qt 会话的调试指标采集（1s 一次，由会话定时器驱动）。
-  ///
-  /// 只采集 HDR/DV 相关的 mpv 属性并转成 `NativePlayerState` 的 JSON
-  /// 补丁——Qt 侧 `applyJson` 会解析这些字段并驱动 `DebugPanel.qml`。
-  ///
-  /// 【为什么不用 DebugMetricsCollector】那个是给 Flutter 面板的
-  /// 「分组 + 文本」结构；Qt 需要的是**扁平 JSON 字段**。两者数据源相同
-  ///（都读 mpv 属性），但形态不同，这里直接组装补丁更省一次转换。
-  Future<Map<String, Object?>?> _collectQtDebugMetrics() async {
-    final p = _player;
-    if (p is! MpvPlayerAdapter) return null;
-    // 直读 mpv 实时属性（含 video-params → HDR/DV 输入信息）
-    final props = await p.readDebugProperties(const [
-      'video-params',
-      'target-prim',
-      'target-trc',
-      'tone-mapping',
-      'tone-mapping-mode',
-      'hdr-compute-peak',
-      'current-vo',
-      'gpu-api',
-      'gpu-context',
-      'estimated-vf-fps',
-      'frame-drop-count',
-      'decoder-frame-drop-count',
-      'hwdec-current',
-      'video-format',
-    ]);
-    final info = p.colorInfo;
-    return <String, Object?>{
-      'videoParamsPrimaries': info?.primaries ?? '',
-      'videoParamsGamma': info?.gamma ?? '',
-      'videoParamsSigPeak': info?.sigPeak ?? 0,
-      'videoParamsBitDepth': info?.bitDepth ?? 0,
-      'videoParamsPixelFormat': info?.pixelFormat ?? '',
-      'doviProfile': info?.doviProfile ?? 0,
-      'doviLevel': info?.doviLevel ?? 0,
-      'dvContent': p.isDvContent,
-      'targetPrim': props['target-prim'] ?? '',
-      'targetTrc': props['target-trc'] ?? p.mpvTargetTrc,
-      'toneMapping': props['tone-mapping'] ?? '',
-      'toneMappingMode': props['tone-mapping-mode'] ?? '',
-      'hdrComputePeak': props['hdr-compute-peak'] ?? '',
-      'currentVo': props['current-vo'] ?? p.mpvCurrentVo ?? '',
-      'gpuApi': props['gpu-api'] ?? '',
-      'gpuContext': props['gpu-context'] ?? p.mpvGpuContext ?? '',
-      'estimatedVfFps':
-          double.tryParse(props['estimated-vf-fps'] ?? '') ?? 0,
-      'frameDropCount': int.tryParse(props['frame-drop-count'] ?? '') ?? 0,
-      'decoderFrameDropCount':
-          int.tryParse(props['decoder-frame-drop-count'] ?? '') ?? 0,
-      'hwdecCurrent': props['hwdec-current'] ?? '',
-      'videoFormat': props['video-format'] ?? '',
-      'hdrOutput': p.hdrOutputActive,
-      // 页面 pop 后 Qt 侧只有这条补丁在推，缓冲进度必须跟着走
-      //（否则面板显示冻结在接管瞬间的值）。
-      'bufferedMs': p.buffered(),
-    };
-  }
-
   /// 手机版长按临时 2× 倍速：按住生效、松手恢复 [_speed]（不落盘）。
   bool _speedBoostActive = false;
 
@@ -3763,11 +3703,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         unawaited(_safePopPlayerPage());
       },
     );
-    // 697：注入调试指标采集（会话每 1s 采集 mpv 属性推给 Qt 面板）。
-    session.collectDebugMetrics = _collectQtDebugMetrics;
-    // 面板关着就不采集（省掉每秒 14 次跨进程属性读取）
-    session.isDebugEnabled = () =>
-        ref.read(settingsProvider).showSyncDebug;
+    // 697：调试数据由 Qt 侧自己读 mpv（`MpvWindow::debugText`）。
+    // Qt 模式下 mpv 在独立进程，Dart 的 `_player` 是空闲引擎——
+    // 从这里读属性恒为空（真机截图：色彩/位深/gpu-api 全空）。
     session.resolveEpisode = resolveEpisode;
     session.resolveVersion = resolveVersion;
     // 671：页面存活期的富处理兜底（设置持久化等）——页面隐身存活后

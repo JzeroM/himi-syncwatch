@@ -207,8 +207,10 @@ void main() {
               'DebugPanel.ets');
       expect(ohos, contains('s.videoParamsSigPeak * 100'));
 
-      final qt = read('native/windows_qt_player/src/qml/DebugPanel.qml');
-      expect(qt, contains('playerState.videoParamsSigPeak * 100'));
+      // Windows 与其他三端不同：mpv 在独立进程，数据由 Qt 侧自己读，
+      // 所以 ×100 换算在 C++ 里（`MpvWindow::debugText`）。
+      final qtCpp = read('native/windows_qt_player/src/mpv_window.cpp');
+      expect(qtCpp, contains('sigPeak * 100.0'));
 
       final android = read(
           'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
@@ -300,8 +302,9 @@ void main() {
               'DebugPanel.ets');
       expect(ohos, contains('s.doviProfile > 0 || s.dvContent'));
 
-      final qt = read('native/windows_qt_player/src/qml/DebugPanel.qml');
-      expect(qt, contains('playerState.doviProfile > 0 || playerState.dvContent'));
+      // Windows：判定在 C++ 侧（Qt 自己读 mpv）
+      final qtCpp = read('native/windows_qt_player/src/mpv_window.cpp');
+      expect(qtCpp, contains('dvProfile > 0 || dvContent_'));
 
       final android = read(
           'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
