@@ -203,7 +203,10 @@ void main() {
 
   group('5. 与 Dart / Qt 端判定一致', () {
     test('5.1 后端关键词三端相同', () {
-      const keywords = ['d3d11', 'vulkan', 'ohosvk'];
+      // 【697 真机回归】安卓 Vulkan 的上下文名是 `androidvk`——不含
+      // `vulkan` 子串。所以关键词必须是 `vk` 而不是 `ohosvk` 这类枚举，
+      // 否则 androidvk 会被漏掉（真机截图报「不支持 DV，画面会偏色」）。
+      const keywords = ['d3d11', 'vulkan', 'vk'];
       for (final k in keywords) {
         expect(format, contains('contains("$k")'),
             reason: '安卓缺关键词 $k');

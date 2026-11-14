@@ -364,6 +364,15 @@ export class NativePlayerUiState {
   hdrComputePeak: string = '';
   gpuApi: string = '';
   gpuContext: string = '';
+
+  /**
+   * 实际生效的 GPU 上下文（mpv `current-gpu-context`）。
+   *
+   * 【697 真机回归（安卓）】`gpu-context` 读回来是**配置列表**
+   * （如 `androidvk,android`），不能据此判断实际后端。判 DV 能力
+   * 必须用这个字段。
+   */
+  gpuContextActual: string = '';
   estimatedVfFps: number = 0;
   frameDropCount: number = 0;
   decoderFrameDropCount: number = 0;
@@ -538,6 +547,8 @@ export class NativePlayerUiState {
     this.hdrComputePeak = jsonStr(obj.hdrComputePeak, this.hdrComputePeak);
     this.gpuApi = jsonStr(obj.gpuApi, this.gpuApi);
     this.gpuContext = jsonStr(obj.gpuContext, this.gpuContext);
+    this.gpuContextActual =
+      jsonStr(obj.gpuContextActual, this.gpuContextActual);
     this.estimatedVfFps = jsonNum(obj.estimatedVfFps, this.estimatedVfFps);
     this.frameDropCount = jsonNum(obj.frameDropCount, this.frameDropCount);
     this.decoderFrameDropCount =

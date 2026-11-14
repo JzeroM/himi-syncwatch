@@ -338,6 +338,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     'hdr-compute-peak',
     'gpu-api',
     'gpu-context',
+    // 697：实际生效的上下文名（gpu-context 读回来是配置列表，不可判实际）
+    'current-gpu-context',
     'video-format',
     'hwdec-current',
     'estimated-vf-fps',
@@ -1014,6 +1016,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 单次触发；软解下仍无则记录一次线索不再动作（指向渲染层）。
   bool _swDecodeFallbackDone = false;
   bool _swStillNoVideoNoted = false;
+
+  /// 697：GPU 后端回退是否已尝试过（安卓 Vulkan → opengl）。
+  bool _gpuApiFallbackDone = false;
   DateTime? _videoWaitSince;
 
   void _maybeFallbackToSoftwareDecode(MpvPollResult state) {
@@ -1027,6 +1032,34 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     final since = _videoWaitSince ??= DateTime.now();
     if (DateTime.now().difference(since).inSeconds < 3) return;
     if (_hwdec == 'no') {
+      // 697：软解仍无画面 → 说明问题在**渲染层**而不是解码器。
+      // 安卓上若当前在用 Vulkan（`gpu-api=vulkan,opengl`），可能是
+      // Vulkan 上下文能初始化但渲染不出帧（不触发 mpv 的上下文回退）。
+      // 这里显式切回 opengl 并重载一次——单次，避免死循环。
+      //
+      // 只认 `vo-configured=no`（vo 确实没起来）。纯音频内容同样是
+      // 「无 video-params」，但 vo 正常，不该白白重载一次。
+      final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+      final voDead = state.voConfigured == 'no';
+      if (isAndroid && voDead && !_gpuApiFallbackDone) {
+        _gpuApiFallbackDone = true;
+        // 跨会话记忆：后续起播直接用 opengl，不再每次黑 3 秒
+        HimiMpvAndroidSession.disableVulkanRendering();
+        _noteError('软解仍无画面：Vulkan 渲染疑似失败，回退 opengl 重载');
+        unawaited(_player?.setProperty('gpu-api', 'opengl'));
+        unawaited(_player?.setProperty('gpu-context', 'android'));
+        final uri = _uri;
+        if (uri == null || uri.isEmpty) return;
+        _videoParamsSeen = false;
+        firstFramePending.value = true;
+        unawaited(_player?.open(
+          _authorizeUrl(uri),
+          headers: _headers,
+          startMs: _positionMs > 0 ? _positionMs : _startMs,
+          pause: false,
+        ));
+        return;
+      }
       if (!_swStillNoVideoNoted) {
         _swStillNoVideoNoted = true;
         _noteError('软解下仍无视频参数：视频轨可能不存在，或为渲染层问题（surface 已绑但 vo 未出帧）');
@@ -2401,6 +2434,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       hdrComputePeak: _debugProps['hdr-compute-peak'] ?? '',
       gpuApi: _debugProps['gpu-api'] ?? '',
       gpuContext: _debugProps['gpu-context'] ?? _gpuContext ?? '',
+      gpuContextActual: _debugProps['current-gpu-context'] ?? '',
       estimatedVfFps: double.tryParse(_debugProps['estimated-vf-fps'] ?? '') ?? 0,
       frameDropCount: int.tryParse(_debugProps['frame-drop-count'] ?? '') ?? 0,
       decoderFrameDropCount:

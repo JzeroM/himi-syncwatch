@@ -363,6 +363,10 @@ class NativePlayerState {
     this.hdrComputePeak = '',
     this.gpuApi = '',
     this.gpuContext = '',
+    // 697：mpv 的 `current-gpu-context`（实际生效的后端名）。
+    // `gpu-api` / `gpu-context` 读回来是**配置列表**（如 `androidvk,android`），
+    // 无法据此判断实际选了哪个；这里单独携带实际值。
+    this.gpuContextActual = '',
     this.estimatedVfFps = 0,
     this.frameDropCount = 0,
     this.decoderFrameDropCount = 0,
@@ -479,6 +483,12 @@ class NativePlayerState {
   final String hdrComputePeak;
   final String gpuApi;
   final String gpuContext;
+
+  /// 实际生效的 GPU 上下文名（mpv `current-gpu-context`）。
+  ///
+  /// 空串 = 还没起来（vo 未初始化）。典型值：`androidvk`（安卓 Vulkan）、
+  /// `android`（安卓 OpenGL）、`ohosvk`、`d3d11`。
+  final String gpuContextActual;
   final double estimatedVfFps;
   final int frameDropCount;
   final int decoderFrameDropCount;
@@ -687,6 +697,7 @@ class NativePlayerState {
       hdrComputePeak: json['hdrComputePeak'] as String? ?? '',
       gpuApi: json['gpuApi'] as String? ?? '',
       gpuContext: json['gpuContext'] as String? ?? '',
+      gpuContextActual: json['gpuContextActual'] as String? ?? '',
       estimatedVfFps: (json['estimatedVfFps'] as num?)?.toDouble() ?? 0,
       frameDropCount: (json['frameDropCount'] as num?)?.toInt() ?? 0,
       decoderFrameDropCount:
@@ -836,6 +847,7 @@ class NativePlayerState {
         'hdrComputePeak': hdrComputePeak,
         'gpuApi': gpuApi,
         'gpuContext': gpuContext,
+        'gpuContextActual': gpuContextActual,
         'estimatedVfFps': estimatedVfFps,
         'frameDropCount': frameDropCount,
         'decoderFrameDropCount': decoderFrameDropCount,
@@ -950,6 +962,7 @@ class NativePlayerState {
     String? hdrComputePeak,
     String? gpuApi,
     String? gpuContext,
+    String? gpuContextActual,
     double? estimatedVfFps,
     int? frameDropCount,
     int? decoderFrameDropCount,
@@ -1060,6 +1073,7 @@ class NativePlayerState {
         hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
         gpuApi: gpuApi ?? this.gpuApi,
         gpuContext: gpuContext ?? this.gpuContext,
+        gpuContextActual: gpuContextActual ?? this.gpuContextActual,
         estimatedVfFps: estimatedVfFps ?? this.estimatedVfFps,
         frameDropCount: frameDropCount ?? this.frameDropCount,
         decoderFrameDropCount:

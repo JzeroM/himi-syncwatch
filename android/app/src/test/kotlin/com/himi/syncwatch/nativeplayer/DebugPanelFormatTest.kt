@@ -32,9 +32,62 @@ class DebugPanelFormatTest {
         assertTrue(DebugPanelFormat.backendSupportsDv("OHOSVK"))
     }
 
+    /**
+     * 【697 真机回归】安卓 Vulkan 的上下文名是 `androidvk`，**不含**
+     * `vulkan` 子串。旧判定 `contains("vulkan")` 把它误判为不支持 DV，
+     * 于是跑在 Vulkan 上的 P5 内容被标成「画面会偏色」（真机截图）。
+     */
+    @Test
+    fun `backendSupportsDv accepts androidvk`() {
+        assertTrue(DebugPanelFormat.backendSupportsDv("androidvk"))
+        assertTrue(DebugPanelFormat.backendSupportsDv("ANDROIDVK"))
+    }
+
+    /**
+     * `gpu-context` 读回来可能是**优先级列表**（我们为了 Vulkan 失败能
+     * 回落而下发 `androidvk,android`）。列表只看第一项——第一项能起来
+     * 的就是实际用的那个。
+     */
+    @Test
+    fun `backendSupportsDv handles priority list`() {
+        assertTrue(DebugPanelFormat.backendSupportsDv("androidvk,android"))
+        assertTrue(DebugPanelFormat.backendSupportsDv("vulkan,opengl"))
+        assertFalse(DebugPanelFormat.backendSupportsDv("android,androidvk"))
+    }
+
+    @Test
+    fun `renderBackendOf classifies families`() {
+        assertEquals("vulkan", DebugPanelFormat.renderBackendOf("androidvk"))
+        assertEquals("vulkan", DebugPanelFormat.renderBackendOf("ohosvk"))
+        assertEquals("vulkan", DebugPanelFormat.renderBackendOf("vulkan"))
+        assertEquals("d3d11", DebugPanelFormat.renderBackendOf("d3d11"))
+        assertEquals("opengl", DebugPanelFormat.renderBackendOf("android"))
+        assertEquals("opengl", DebugPanelFormat.renderBackendOf("opengl"))
+        assertEquals("unknown", DebugPanelFormat.renderBackendOf(""))
+        assertEquals("unknown", DebugPanelFormat.renderBackendOf(null))
+    }
+
+    /** 实际值优先；只有实际值缺失时才退回配置列表。 */
+    @Test
+    fun `effectiveRenderContext prefers actual`() {
+        assertEquals(
+            "androidvk",
+            DebugPanelFormat.effectiveRenderContext("androidvk", "androidvk,android"),
+        )
+        assertEquals(
+            "android",
+            DebugPanelFormat.effectiveRenderContext("android", "androidvk,android"),
+        )
+        assertEquals(
+            "androidvk,android",
+            DebugPanelFormat.effectiveRenderContext("", "androidvk,android"),
+        )
+    }
+
     @Test
     fun `backendSupportsDv rejects opengl es`() {
-        // 安卓 libmpv 构建 HAVE_VULKAN=0 → libplacebo 无 compute
+        // 回落路径：Vulkan 初始化失败 → android（EGL/GLES），无可靠 compute
+        assertFalse(DebugPanelFormat.backendSupportsDv("android"))
         assertFalse(DebugPanelFormat.backendSupportsDv("opengl"))
         assertFalse(DebugPanelFormat.backendSupportsDv("opengles"))
         assertFalse(DebugPanelFormat.backendSupportsDv("gl"))

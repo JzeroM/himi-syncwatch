@@ -196,7 +196,9 @@ void main() {
 
   group('6. 四端判定一致性', () {
     test('6.1 后端关键词四端相同', () {
-      for (final k in ['d3d11', 'vulkan', 'ohosvk']) {
+      // 【697 真机回归（安卓）】安卓 Vulkan 的上下文名是 `androidvk`，
+      // 不含 `vulkan` 子串；四端统一用 `vk` 覆盖 androidvk / ohosvk。
+      for (final k in ['d3d11', 'vulkan', 'vk']) {
         expect(format.contains("'$k'"), isTrue, reason: '鸿蒙缺关键词 $k');
       }
     });

@@ -26,18 +26,68 @@ export class DebugSeverity {
 }
 
 /**
+ * 上下文名 → 后端族（`vulkan` / `d3d11` / `opengl` / `unknown`）。
+ *
+ * 【697 真机回归（安卓）】不能写 `ctx.indexOf('vulkan') >= 0`：安卓
+ * Vulkan 的上下文名是 **`androidvk`**，不含 `vulkan` 子串。旧判定会把
+ * 跑在 Vulkan 上的 P5 误报成「后端不支持 DV，画面会偏色」。
+ *
+ * 入参可能是逗号分隔的**优先级列表**（`androidvk,android`）——只看第一项：
+ * 列表语义就是「第一个能起来的就是它」。若传的是实际值
+ * （mpv `current-gpu-context`），本来就只有一项。
+ */
+export function renderBackendOf(context: string | null): string {
+  const raw: string = (context ?? '').toLowerCase();
+  let first: string = '';
+  const parts: string[] = raw.split(',');
+  for (let i = 0; i < parts.length; i++) {
+    const t: string = parts[i].trim();
+    if (t.length > 0) {
+      first = t;
+      break;
+    }
+  }
+  if (first.length === 0) return 'unknown';
+  // `androidvk` / `ohosvk` / `vulkan` / `x11vk`……都带 `vk`
+  if (first.indexOf('vk') >= 0 || first.indexOf('vulkan') >= 0) return 'vulkan';
+  if (first.indexOf('d3d11') >= 0) return 'd3d11';
+  if (first.indexOf('android') >= 0 ||
+    first.indexOf('egl') >= 0 ||
+    first.indexOf('glx') >= 0 ||
+    first.indexOf('wayland') >= 0 ||
+    first.indexOf('opengl') >= 0 ||
+    first.indexOf('gl') >= 0) {
+    return 'opengl';
+  }
+  return 'unknown';
+}
+
+/**
  * 后端是否支持 DV 元数据（libplacebo 需要 compute shader）。
  *
- * - D3D11（Windows）/ Vulkan（鸿蒙 ohosvk）→ 支持
- * - OpenGL ES（安卓，libplacebo Vulkan 被禁用）→ 不支持
+ * - D3D11（Windows）/ Vulkan（安卓 androidvk、鸿蒙 ohosvk）→ 支持
+ * - OpenGL / OpenGL ES → 不支持（mpv 会关掉 hdr-compute-peak）
  *
  * 未知 context 保守判为不支持：误判成「支持」会让人以为 P5 没问题。
  */
-export function backendSupportsDv(gpuContext: string): boolean {
-  const ctx: string = gpuContext.toLowerCase();
-  return ctx.indexOf('d3d11') >= 0 ||
-    ctx.indexOf('vulkan') >= 0 ||
-    ctx.indexOf('ohosvk') >= 0;
+export function backendSupportsDv(gpuContext: string | null): boolean {
+  const backend: string = renderBackendOf(gpuContext);
+  return backend === 'vulkan' || backend === 'd3d11';
+}
+
+/**
+ * 面板判后端用的上下文：**实际值优先**，缺失才退回配置列表。
+ *
+ * 实际值来自 mpv `current-gpu-context`（`vo->context_name`）；配置列表只
+ * 说明我们「允许」哪些后端，不能证明实际选中了哪个。
+ */
+export function effectiveRenderContext(
+  actual: string | null,
+  configured: string | null,
+): string {
+  const a: string = (actual ?? '').trim();
+  if (a.length > 0) return a;
+  return (configured ?? '').trim();
 }
 
 /**

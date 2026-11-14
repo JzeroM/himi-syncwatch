@@ -25,6 +25,7 @@ import { HimiMpvNativeHost, NativePlayerUiState } from './HimiMpvNativeHost';
 import {
   DebugSeverity,
   backendSupportsDv,
+  effectiveRenderContext,
   dropSeverity,
   dvToneMappingOk,
   dvProfileText,
@@ -246,7 +247,13 @@ export struct DebugPanel {
       },
     ];
     if (isDv) {
-      const supports: boolean = backendSupportsDv(s.gpuContext);
+      // 实际值优先（`gpu-context` 是配置列表，且安卓 Vulkan 名 `androidvk`
+      // 不含 "vulkan" 子串——旧判定会误报「不支持 DV，画面会偏色」）。
+      const actualCtx: string = effectiveRenderContext(
+        s.gpuContextActual,
+        s.gpuContext,
+      );
+      const supports: boolean = backendSupportsDv(actualCtx);
       dvRows.push({
         label: '识别',
         value: s.dvContent ? '已识别为 DV' : '未识别（按普通 HDR 处理）',
@@ -254,7 +261,7 @@ export struct DebugPanel {
       });
       dvRows.push({
         label: '后端',
-        value: orDash(s.gpuContext) + (supports ? ' · 支持 DV' : ' · 不支持 DV'),
+        value: orDash(actualCtx) + (supports ? ' · 支持 DV' : ' · 不支持 DV'),
         severity: supports ? DebugSeverity.GOOD : DebugSeverity.WARN,
       });
       // P5 单层 IPT + 后端不支持 → 画面必偏色
@@ -283,7 +290,9 @@ export struct DebugPanel {
       { label: 'gpu-api', value: orDash(s.gpuApi), severity: DebugSeverity.NORMAL },
       {
         label: 'gpu-context',
-        value: orDash(s.gpuContext),
+        value: orDash(
+          effectiveRenderContext(s.gpuContextActual, s.gpuContext),
+        ),
         severity: DebugSeverity.NORMAL,
       },
       {

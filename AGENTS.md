@@ -88,12 +88,41 @@ mpv-android 的 `buildscripts/scripts/libplacebo.sh` 控制：
 这样 Vulkan 可用就走 Vulkan（DV 的 libplacebo compute），失败自动回落
 OpenGL，不会黑屏。
 
+**注意 mpv 的遍历顺序**（`video/out/gpu/context.c` 的 `ra_ctx_create`）：
+它按 **`gpu-context` 列表**逐个 `create_in_contexts`，再用 `gpu-api`
+的类型列表过滤。所以顺序由 `gpu-context` 决定，两个列表必须成对写。
+
+**坑 4.5：`gpu-api` / `gpu-context` 读回来是「配置列表」，不是实际值。**
+两者都是 `OPT_SETTINGSLIST` 类型，`getProperty` 返回完整候选串
+（`vulkan,opengl` / `androidvk,android`）。想看**实际生效**的后端必须读
+
+    current-gpu-context      // → vo->context_name，如 `androidvk`
+
+697 真机回归：面板拿 `gpu-context` 判 DV 能力，又叠加「`androidvk`
+不含 `vulkan` 子串」的坑，于是把跑在 Vulkan 上的 P5 内容标成
+「后端不支持 DV，画面会偏色」。判定逻辑现统一在
+`lib/services/debug/render_backend.dart`（四端同构），关键词用 **`vk`**
+覆盖 `androidvk` / `ohosvk`，并且**实际值优先**。
+
+**第五个坑：Vulkan 能初始化但渲染不出帧**。优先级列表只覆盖「上下文
+创建失败」。若 Vulkan 上下文创建成功、呈现却失败，mpv 不会回退 → 仍然
+是有声无画。适配器因此加了第二级看门狗
+（`MpvPlayerAdapter._maybeFallbackToSoftwareDecode`）：
+
+    软解(hwdec=no) 下 3s 仍无画面
+      + vo-configured == "no"
+      + 安卓
+    → 显式 gpu-api=opengl / gpu-context=android 并重载一次
+    → 同时 HimiMpvAndroidSession.disableVulkanRendering()
+      （本次运行内后续会话直接 opengl，不再每次黑 3 秒）
+
 另外两条硬化措施：
 - Manifest 加 `<uses-native-library android:name="libvulkan.so"
   android:required="false"/>`（Android 12+ 可见性策略）
-- `hwdec` 显式写 `mediacodec`，不用 `auto`（否则 mpv 会把 vulkan 硬解
-  后端纳入候选，它调用 Vulkan 1.1 的
-  `vkGetPhysicalDeviceQueueFamilyProperties2`，API 28+ 才有）
+- `hwdec` 保持 `auto` / `auto-copy`，**不要**显式写 `mediacodec`：
+  显式值要求硬解直写 Surface，部分设备直写失败且不回退 → 黑屏有声。
+  `hwdec=auto` 时 mpv 虽把 vulkan 硬解纳入候选，但只有在 Vulkan 上下文
+  初始化成功后才用，且 `hwdec-software-fallback=yes` 会兜底。
 - MainActivity 用 `catch (Throwable)` 包住 `super.configureFlutterEngine`
   ——再出问题也不会白屏，至少能打出可诊断日志
 

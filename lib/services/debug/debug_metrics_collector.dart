@@ -1,4 +1,5 @@
 import 'package:himi_syncwatch/services/debug/debug_metrics.dart';
+import 'package:himi_syncwatch/services/debug/render_backend.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 
 /// 697：播放调试面板的指标采集器。
@@ -48,6 +49,8 @@ class DebugMetricsCollector {
     'current-vo',
     'gpu-api',
     'gpu-context',
+    // 697：实际生效的上下文（`gpu-context` 是配置列表，不可判实际）
+    'current-gpu-context',
     'd3d11-output-format',
     'd3d11-output-csp',
     // 性能
@@ -84,7 +87,7 @@ class DebugMetricsCollector {
       ),
       _inputColorGroup(videoParams, props),
       _outputColorGroup(videoParams, props),
-      _dvGroup(videoParams),
+      _dvGroup(videoParams, props),
       _pipelineGroup(props),
     ]);
   }
@@ -246,7 +249,10 @@ class DebugMetricsCollector {
 
   // ── 杜比视界诊断 ────────────────────────────────────────────
 
-  DebugMetricGroup _dvGroup(VideoColorInfo? v) {
+  DebugMetricGroup _dvGroup(
+    VideoColorInfo? v,
+    Map<String, String> props,
+  ) {
     // 【697 真机回归：P5 显示「非 DV 内容」】不能只看 mpv 的
     // dolby-vision-profile——鸿蒙读不到该属性（恒 0）。Emby 元数据
     // （`dvContent`）是可靠兜底：Emby 说 DV，它就是 DV。
@@ -285,10 +291,12 @@ class DebugMetricsCollector {
         ),
         DebugMetricRow(
           '渲染后端',
-          _renderBackendLabel(),
-          severity: _renderBackendSupportsDv() ? Severity.good : Severity.warn,
+          _renderBackendLabel(props),
+          severity: _renderBackendSupportsDv(props)
+              ? Severity.good
+              : Severity.warn,
         ),
-        if (isP5 && !_renderBackendSupportsDv())
+        if (isP5 && !_renderBackendSupportsDv(props))
           const DebugMetricRow(
             'P5 风险',
             '当前后端不支持 DV 元数据，画面会偏色',
@@ -309,10 +317,18 @@ class DebugMetricsCollector {
           'gpu-api',
           props['gpu-api'] ?? '-',
         ),
+        // 实际值优先（mpv `current-gpu-context`）。配置列表只在没有
+        // 实际值时才显示——两者语义不同，混在一起会误导排障。
         DebugMetricRow(
           'gpu-context',
-          props['gpu-context'] ?? _adapter.mpvGpuContext ?? '-',
+          _effectiveCtx(props).isEmpty ? '-' : _effectiveCtx(props),
+          severity: backendSupportsDv(_effectiveCtx(props))
+              ? Severity.good
+              : Severity.normal,
         ),
+        if ((props['gpu-context'] ?? '').contains(',') &&
+            (props['current-gpu-context'] ?? '').isNotEmpty)
+          DebugMetricRow('gpu-context 配置', props['gpu-context']!),
         if (props['d3d11-output-format'] != null)
           DebugMetricRow('D3D11 格式', props['d3d11-output-format']!),
         if (props['d3d11-output-csp'] != null)
@@ -330,28 +346,34 @@ class DebugMetricsCollector {
     );
   }
 
+  /// 面板判后端用的上下文：**实际值优先**，没有才退回配置列表。
+  ///
+  /// 【697 真机回归】曾经直接拿 `gpu-context` 判定，而它读回来是
+  /// 优先级列表 `androidvk,android`；再叠加「安卓 Vulkan 上下文名是
+  /// `androidvk`、不含 `vulkan` 子串」这个坑，面板把运行在 Vulkan 上
+  /// 的 P5 内容误报成「后端不支持 DV，画面会偏色」。
+  String _effectiveCtx(Map<String, String> props) => effectiveRenderContext(
+        actual: props['current-gpu-context'] ?? '',
+        configured: props['gpu-context'] ?? _adapter.mpvGpuContext ?? '',
+      );
+
   /// 渲染后端标签（带 DV 能力结论，而非光秃秃的 context 名）。
   ///
   /// libplacebo 的 DV 处理需要 compute shader：
   /// - Windows：D3D11 ✅
   /// - 鸿蒙：Vulkan（ohosvk）✅
-  /// - 安卓：OpenGL ES（libplacebo Vulkan 被禁用）❌
+  /// - 安卓：Vulkan（androidvk）✅ / OpenGL（android）❌
   ///
   /// 面板直接给出「支持/不支持」比让用户自己对照 context 名有用得多。
-  String _renderBackendLabel() {
-    final ctx = _adapter.mpvGpuContext ?? '';
+  String _renderBackendLabel(Map<String, String> props) {
+    final ctx = _effectiveCtx(props);
     if (ctx.isEmpty) return '-';
-    return '$ctx · ${_renderBackendSupportsDv() ? "支持 DV" : "不支持 DV"}';
+    return '$ctx · ${_renderBackendSupportsDv(props) ? "支持 DV" : "不支持 DV"}';
   }
 
   /// 当前渲染后端是否支持 DV 元数据（libplacebo compute）。
-  bool _renderBackendSupportsDv() {
-    final ctx = (_adapter.mpvGpuContext ?? '').toLowerCase();
-    // d3d11（Windows）/ ohosvk、vulkan（鸿蒙）支持
-    return ctx.contains('d3d11') ||
-        ctx.contains('vulkan') ||
-        ctx.contains('ohosvk');
-  }
+  bool _renderBackendSupportsDv(Map<String, String> props) =>
+      backendSupportsDv(_effectiveCtx(props));
 
   // ── 格式化 ──────────────────────────────────────────────────
 

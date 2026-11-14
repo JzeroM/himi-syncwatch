@@ -162,6 +162,16 @@ class HimiMpvAndroidSession implements MpvSession {
   /// 决定 `gpu-api` / `gpu-context` 是否带上 Vulkan 优先项。
   static bool _vulkanOk = false;
 
+  /// 697：Vulkan 渲染已被判定失败 → 本次 app 运行内一律走 opengl。
+  ///
+  /// 由适配器的「软解仍无画面」看门狗置位（Vulkan 上下文能初始化但渲染
+  /// 不出帧的情况不触发 mpv 自己的上下文回退）。置位后新会话直接只用
+  /// opengl，避免每次起播都黑 3 秒再回退。
+  static bool _forceOpenGl = false;
+
+  /// 标记 Vulkan 渲染不可用（幂等）。
+  static void disableVulkanRendering() => _forceOpenGl = true;
+
   /// 697：检测 Vulkan 是否可用（libplacebo DV 处理需要 compute shader）。
   ///
   /// 结果缓存在 [_vulkanAvailable]，只需检测一次。
@@ -535,9 +545,10 @@ class HimiMpvAndroidSession implements MpvSession {
       // 的生效。Vulkan 初始化失败（驱动/设备不支持）会自动落到 OpenGL，
       // 不会出现「vo 起不来 → 黑屏有声」。
       if (effectiveSurface)
-        'gpu-api': _vulkanOk ? 'vulkan,opengl' : 'opengl',
+        'gpu-api': (_vulkanOk && !_forceOpenGl) ? 'vulkan,opengl' : 'opengl',
       if (effectiveSurface)
-        'gpu-context': _vulkanOk ? 'androidvk,android' : 'android',
+        'gpu-context':
+            (_vulkanOk && !_forceOpenGl) ? 'androidvk,android' : 'android',
       // 纹理模式（!nativeSurface）必须 copy-back 硬解：渲染纹理没有真实
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
       // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。

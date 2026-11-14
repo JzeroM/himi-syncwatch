@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/debug/debug_metrics.dart';
+import 'package:himi_syncwatch/services/debug/render_backend.dart';
 
 /// 697：调试指标采集器的**判定逻辑**（纯函数部分）。
 ///
@@ -12,16 +13,9 @@ import 'package:himi_syncwatch/services/debug/debug_metrics.dart';
 /// **判定**——「这个组合算正常还是异常」。判定错了，面板就会给出误导
 /// 结论（比如把 P5 标成绿、把软解标成正常），比没有面板更糟。
 ///
-/// 这里把判定逻辑用纯函数复刻并锁定语义，采集器实现必须与之一致。
+/// 后端判定不再「复刻」——直接调用共享实现 [backendSupportsDv]，避免
+/// 「测试里抄一份错的、实现里也是错的，于是测试通过」这种自欺欺人。
 void main() {
-  /// 复刻 `_renderBackendSupportsDv` 的判定（采集器与 QML 双端一致）。
-  bool backendSupportsDv(String gpuContext) {
-    final ctx = gpuContext.toLowerCase();
-    return ctx.contains('d3d11') ||
-        ctx.contains('vulkan') ||
-        ctx.contains('ohosvk');
-  }
-
   /// 复刻丢帧分级。
   Severity dropSeverity(int render, int decode) {
     if (render > 100 || decode > 100) return Severity.error;
@@ -41,8 +35,49 @@ void main() {
       expect(backendSupportsDv('OHOSVK'), isTrue);
     });
 
+    test('1.2b androidvk（安卓 Vulkan）支持 —— 697 真机回归', () {
+      // 【关键】安卓 Vulkan 的上下文名是 `androidvk`，**不含** `vulkan`
+      // 子串。旧判定 `contains('vulkan')` 把它误判成不支持 DV，导致
+      // 真机截图报「后端 androidvk,android · 不支持 DV / 画面会偏色」。
+      expect(backendSupportsDv('androidvk'), isTrue);
+      expect(backendSupportsDv('ANDROIDVK'), isTrue);
+      expect(renderBackendOf('androidvk'), RenderBackend.vulkan);
+    });
+
+    test('1.2c 优先级列表只看第一项', () {
+      // 我们为了 Vulkan 失败能回落而下发 `androidvk,android`
+      expect(backendSupportsDv('androidvk,android'), isTrue);
+      expect(backendSupportsDv('vulkan,opengl'), isTrue);
+      expect(backendSupportsDv('android,androidvk'), isFalse);
+      expect(backendSupportsDv('opengl,vulkan'), isFalse);
+    });
+
+    test('1.2d 实际值优先于配置列表', () {
+      expect(
+        effectiveRenderContext(actual: 'androidvk', configured: 'androidvk,android'),
+        'androidvk',
+      );
+      // 实际回落到了 GL → 即便配置里有 vulkan 也必须判「不支持」
+      expect(
+        effectiveRenderContext(actual: 'android', configured: 'androidvk,android'),
+        'android',
+      );
+      expect(
+        backendSupportsDv(
+          effectiveRenderContext(actual: 'android', configured: 'androidvk,android'),
+        ),
+        isFalse,
+      );
+      // 实际值缺失（vo 还没起来）→ 退回配置列表
+      expect(
+        effectiveRenderContext(actual: '', configured: 'androidvk,android'),
+        'androidvk,android',
+      );
+    });
+
     test('1.3 OpenGL ES（安卓）不支持', () {
-      // 安卓 libmpv 构建时 HAVE_VULKAN=0 → libplacebo 无 compute
+      // 回落路径：Vulkan 初始化失败 → android（EGL/GLES），无可靠 compute
+      expect(backendSupportsDv('android'), isFalse);
       expect(backendSupportsDv('opengl'), isFalse);
       expect(backendSupportsDv('opengles'), isFalse);
       expect(backendSupportsDv('gl'), isFalse);
@@ -132,26 +167,21 @@ void main() {
   });
 
   group('4. DV tone-mapping 正确性判定', () {
+    // 与采集器/面板同一语义：非 DV 不约束，DV 必须 bt.2390
+    bool dvMappingOk(bool isDv, String toneMapping) =>
+        !isDv || toneMapping == 'bt.2390';
+
     test('4.1 DV + bt.2390 = 正确', () {
       // 697 修复：DV 必须感知映射，否则高光细节丢失
-      const dv = true;
-      const toneMapping = 'bt.2390';
-      final ok = !dv || toneMapping == 'bt.2390';
-      expect(ok, isTrue);
+      expect(dvMappingOk(true, 'bt.2390'), isTrue);
     });
 
     test('4.2 DV + clip = 错误（会报红）', () {
-      const dv = true;
-      const toneMapping = 'clip';
-      final ok = !dv || toneMapping == 'bt.2390';
-      expect(ok, isFalse);
+      expect(dvMappingOk(true, 'clip'), isFalse);
     });
 
     test('4.3 非 DV 用 clip 是正常的（不该报错）', () {
-      const dv = false;
-      const toneMapping = 'clip';
-      final ok = !dv || toneMapping == 'bt.2390';
-      expect(ok, isTrue);
+      expect(dvMappingOk(false, 'clip'), isTrue);
     });
   });
 
@@ -170,23 +200,19 @@ void main() {
   });
 
   group('6. 三端判定逻辑必须一致', () {
-    test('6.1 Dart 采集器与 QML 面板用同一组关键词', () {
-      // 采集器与 DebugPanel.qml 各自实现了一份判定；关键词必须一致，
-      // 否则「Flutter 说支持、Qt 说不支持」。
-      const keywords = ['d3d11', 'vulkan'];
+    test('6.1 判定只有一份实现（共享 render_backend.dart）', () {
+      // 采集器不再自己写关键词，必须委托给共享实现——否则复制出第二份
+      // 判定就会再次出现「一处修好、另一处还是旧 bug」。
       final collector = File(
         'lib/services/debug/debug_metrics_collector.dart',
       ).readAsStringSync();
-      for (final k in keywords) {
-        expect(collector, contains("contains('$k')"),
-            reason: '采集器缺关键词 $k');
-      }
-      // 【697 起 Windows 不再需要该判定】Qt 面板改为纯文字叠加，且
-      // Windows 的 gpu-context 恒为 d3d11（一定支持 DV）——判定没有
-      // 意义，数据由 `MpvWindow::debugText()` 直接输出 gpu-context。
+      expect(collector, contains('backendSupportsDv('));
+      expect(collector, contains("import 'package:himi_syncwatch/services/"
+          "debug/render_backend.dart'"));
+      // Qt 面板输出实际上下文（current-gpu-context 优先）
       final qtCpp =
           File('native/windows_qt_player/src/mpv_window.cpp').readAsStringSync();
-      expect(qtCpp, contains('gpu-context'));
+      expect(qtCpp, contains('current-gpu-context'));
     });
 
     test('6.2 后端标签给出能力结论而非光秃秃的 context 名', () {

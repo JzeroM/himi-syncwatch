@@ -213,6 +213,15 @@ data class AndroidNativePlayerState(
     val hdrComputePeak: String = "",
     val gpuApi: String = "",
     val gpuContext: String = "",
+
+    /**
+     * 实际生效的 GPU 上下文（mpv `current-gpu-context`）。
+     *
+     * 【697 真机回归】`gpu-context` 读回来是**配置列表**（例如
+     * `androidvk,android`），无法据此判断实际走了 Vulkan 还是 OpenGL。
+     * 判断后端能力必须用这个字段。
+     */
+    val gpuContextActual: String = "",
     val estimatedVfFps: Double = 0.0,
     val frameDropCount: Int = 0,
     val decoderFrameDropCount: Int = 0,
@@ -431,6 +440,7 @@ data class AndroidNativePlayerState(
             hdrComputePeak = json.optString("hdrComputePeak", ""),
             gpuApi = json.optString("gpuApi", ""),
             gpuContext = json.optString("gpuContext", ""),
+            gpuContextActual = json.optString("gpuContextActual", ""),
             estimatedVfFps = json.optDouble("estimatedVfFps", 0.0),
             frameDropCount = json.optInt("frameDropCount", 0),
             decoderFrameDropCount = json.optInt("decoderFrameDropCount", 0),

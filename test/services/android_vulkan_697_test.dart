@@ -129,7 +129,8 @@ void main() {
 
     test('3.2 _vulkanOk 控制 gpu-api 是否带 Vulkan 优先项', () {
       expect(androidDart, contains('static bool _vulkanOk = false'));
-      expect(androidDart, contains("_vulkanOk ? 'vulkan,opengl' : 'opengl'"));
+      expect(androidDart,
+          contains("(_vulkanOk && !_forceOpenGl) ? 'vulkan,opengl' : 'opengl'"));
     });
 
     test('3.3 _start 探测 Vulkan 并写入 _vulkanOk', () {
@@ -200,6 +201,80 @@ void main() {
 
     test('4.2 彩色元数据走标量子属性', () {
       expect(androidDart, contains("'video-params/sig-peak'"));
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 5. 渲染层自愈：Vulkan 能初始化但渲染不出帧
+  // ---------------------------------------------------------------------
+  //
+  // `gpu-api=vulkan,opengl` 只在**上下文创建失败**时回退。若 Vulkan
+  // 上下文创建成功但呈现不出帧，mpv 不会回退，表现为「有声音没画面」。
+  // 适配器的「有声无画」看门狗因此多了一级：软解仍无画面 → 判定为
+  // 渲染层问题 → 显式切 opengl 并重载，同时给插件置 `_forceOpenGl`
+  // 让后续会话直接走 opengl（不再每次黑 3 秒）。
+  group('5. 渲染层自愈：软解仍无画面 → 回退 opengl', () {
+    late String adapterDart;
+
+    setUpAll(() {
+      adapterDart = read('lib/services/player/mpv_player_adapter.dart');
+    });
+
+    test('5.1 适配器有单次 GPU 回退标志', () {
+      expect(adapterDart, contains('bool _gpuApiFallbackDone = false'));
+    });
+
+    test('5.2 软解无画面分支里显式切 gpu-api/gpu-context', () {
+      final idx = adapterDart.indexOf("_hwdec == 'no'");
+      expect(idx, greaterThan(0));
+      final block = adapterDart.substring(idx, idx + 1600);
+      expect(block, contains("setProperty('gpu-api', 'opengl')"));
+      expect(block, contains("setProperty('gpu-context', 'android')"));
+      expect(block, contains('_gpuApiFallbackDone = true'),
+          reason: '必须单次触发，否则会无限重载');
+    });
+
+    test('5.3 回退后重载并复位首帧标记', () {
+      final idx = adapterDart.indexOf('_gpuApiFallbackDone = true');
+      expect(idx, greaterThan(0));
+      final block = adapterDart.substring(idx, idx + 900);
+      expect(block, contains('firstFramePending.value = true'));
+      expect(block, contains('_videoParamsSeen = false'));
+      expect(block, contains('_player?.open('));
+    });
+
+    test('5.4 只在安卓触发（其他平台没有这套 gpu-api 语义）', () {
+      final idx = adapterDart.indexOf('_gpuApiFallbackDone = true');
+      final before = adapterDart.substring(idx - 600, idx);
+      expect(before, contains('defaultTargetPlatform == TargetPlatform.android'));
+    });
+
+    test('5.4b 只认 vo-configured=no（纯音频不误伤）', () {
+      final idx = adapterDart.indexOf('_gpuApiFallbackDone = true');
+      final before = adapterDart.substring(idx - 600, idx);
+      expect(before, contains("state.voConfigured == 'no'"));
+    });
+
+    test('5.5 跨会话记忆：插件侧 _forceOpenGl 生效', () {
+      expect(adapterDart,
+          contains('HimiMpvAndroidSession.disableVulkanRendering()'));
+      expect(androidDart, contains('static bool _forceOpenGl = false'));
+      expect(androidDart, contains('static void disableVulkanRendering()'));
+      // gpu-api / gpu-context 都必须同时受 _forceOpenGl 约束
+      expect(androidDart,
+          contains("(_vulkanOk && !_forceOpenGl) ? 'vulkan,opengl' : 'opengl'"));
+      expect(androidDart,
+          contains("(_vulkanOk && !_forceOpenGl) ? 'androidvk,android' : 'android'"));
+    });
+
+    test('5.6 mpv 源码语义：gpu-context 列表决定尝试顺序', () {
+      // video/out/gpu/context.c 的 ra_ctx_create 按 **context_list**
+      // 顺序逐个 create_in_contexts，再用 gpu-api 的 type 列表过滤。
+      // 所以 `androidvk,android` + `vulkan,opengl` 才是正确写法：
+      // androidvk(vulkan) 先试，失败后 android(opengl) 兜底。
+      // 反过来（api 列表驱动顺序）就不成立，必须锁住注释里的说明。
+      expect(androidDart, contains('mpv 的上下文名按 API 区分'));
+      expect(androidDart, contains('androidvk'));
     });
   });
 }

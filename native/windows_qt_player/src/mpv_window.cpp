@@ -1226,8 +1226,15 @@ QString MpvWindow::debugText() {
                  .arg(targetPrim, targetTrc, toneMapping);
 
     // ── 渲染管线 ──
+    // 上下文优先显示**实际值**（mpv `current-gpu-context` → vo->context_name）。
+    // `gpu-context` 是选项值：其余三端为了让 Vulkan 失败能回落，下发的是
+    // 逗号分隔的优先级列表（如 `androidvk,android`），据此看不出实际选了
+    // 哪个后端。Windows 目前固定 d3d11 没有歧义，但保持四端同源读法。
     const QString gpuApi = orDash(readMpvString("gpu-api"));
-    const QString gpuCtx = orDash(readMpvString("gpu-context"));
+    const QString gpuCtxConfigured = readMpvString("gpu-context");
+    const QString gpuCtxActual = readMpvString("current-gpu-context");
+    const QString gpuCtx =
+        orDash(gpuCtxActual.isEmpty() ? gpuCtxConfigured : gpuCtxActual);
     const QString vo = orDash(readMpvString("current-vo"));
     lines << QStringLiteral("管线  %1  %2 / %3").arg(vo, gpuApi, gpuCtx);
 

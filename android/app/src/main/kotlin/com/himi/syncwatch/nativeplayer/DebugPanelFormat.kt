@@ -25,18 +25,59 @@ internal object DebugPanelFormat {
     const val SEV_ERROR = "error"
 
     /**
+     * 上下文名 → 后端族（`vulkan` / `d3d11` / `opengl` / `unknown`）。
+     *
+     * 【697 真机回归】不能写 `ctx.contains("vulkan")`：安卓 Vulkan 的
+     * 上下文名是 **`androidvk`**，不含 `vulkan` 子串。旧判定把跑在
+     * Vulkan 上的 P5 内容误报成「后端不支持 DV，画面会偏色」。
+     *
+     * 入参可能是逗号分隔的**优先级列表**（`androidvk,android`）——只看
+     * 第一项：列表语义就是「第一个能起来的就是它」。若传的是实际值
+     * （mpv `current-gpu-context`），本来就只有一项。
+     */
+    fun renderBackendOf(context: String?): String {
+        val first = (context ?: "")
+            .lowercase()
+            .split(',')
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() } ?: return "unknown"
+        return when {
+            // `androidvk` / `ohosvk` / `vulkan` / `x11vk`……都带 `vk`
+            first.contains("vk") || first.contains("vulkan") -> "vulkan"
+            first.contains("d3d11") -> "d3d11"
+            first.contains("android") ||
+                first.contains("egl") ||
+                first.contains("glx") ||
+                first.contains("wayland") ||
+                first.contains("opengl") ||
+                first.contains("gl") -> "opengl"
+            else -> "unknown"
+        }
+    }
+
+    /**
      * 后端是否支持 DV 元数据（libplacebo 需要 compute shader）。
      *
-     * - D3D11（Windows）/ Vulkan（鸿蒙 ohosvk）→ 支持
-     * - OpenGL ES（安卓，libplacebo Vulkan 被禁用）→ 不支持
+     * - D3D11（Windows）/ Vulkan（安卓 androidvk、鸿蒙 ohosvk）→ 支持
+     * - OpenGL / OpenGL ES → 不支持（mpv 会关掉 hdr-compute-peak）
      *
      * 未知 context 保守判为不支持：误判成「支持」会让人以为 P5 没问题。
      */
-    fun backendSupportsDv(gpuContext: String): Boolean {
-        val ctx = gpuContext.lowercase()
-        return ctx.contains("d3d11") ||
-            ctx.contains("vulkan") ||
-            ctx.contains("ohosvk")
+    fun backendSupportsDv(gpuContext: String?): Boolean {
+        val backend = renderBackendOf(gpuContext)
+        return backend == "vulkan" || backend == "d3d11"
+    }
+
+    /**
+     * 面板判后端用的上下文：**实际值优先**，缺失才退回配置列表。
+     *
+     * 实际值来自 mpv `current-gpu-context`（`vo->context_name`）；配置列表
+     * 只说明我们「允许」哪些后端，不能证明实际选中了哪个。
+     */
+    fun effectiveRenderContext(actual: String?, configured: String?): String {
+        val a = (actual ?: "").trim()
+        if (a.isNotEmpty()) return a
+        return (configured ?: "").trim()
     }
 
     /**

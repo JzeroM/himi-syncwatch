@@ -309,10 +309,18 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
                     },
                     if (state.dvContent) fmt.SEV_GOOD else fmt.SEV_ERROR,
                 )
-                val supportsDv = fmt.backendSupportsDv(state.gpuContext)
+                // 【697 真机回归】必须用**实际**上下文（current-gpu-context）。
+                // `gpu-context` 是配置列表（`androidvk,android`），且安卓
+                // Vulkan 名是 `androidvk`（不含 "vulkan" 子串）——旧判定会
+                // 把跑在 Vulkan 上的 P5 误报成「不支持 DV，画面会偏色」。
+                val actualCtx = fmt.effectiveRenderContext(
+                    state.gpuContextActual,
+                    state.gpuContext,
+                )
+                val supportsDv = fmt.backendSupportsDv(actualCtx)
                 addRow(
                     "后端",
-                    fmt.orDash(state.gpuContext) +
+                    fmt.orDash(actualCtx) +
                         if (supportsDv) " · 支持 DV" else " · 不支持 DV",
                     if (supportsDv) fmt.SEV_GOOD else fmt.SEV_WARN,
                 )
@@ -328,7 +336,20 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
         if (!isCollapsed(KEY_PIPELINE)) {
             addRow("vo", fmt.orDash(state.currentVo, state.voConfigured))
             addRow("gpu-api", fmt.orDash(state.gpuApi))
-            addRow("gpu-context", fmt.orDash(state.gpuContext))
+            // 实际值优先；配置列表只在两者不同（Vulkan 回落时）才补一行，
+            // 否则同一份信息重复两遍反而干扰排障。
+            val actualCtx = fmt.effectiveRenderContext(
+                state.gpuContextActual,
+                state.gpuContext,
+            )
+            addRow(
+                "gpu-context",
+                fmt.orDash(actualCtx),
+                if (fmt.backendSupportsDv(actualCtx)) fmt.SEV_GOOD else fmt.SEV_NORMAL,
+            )
+            if (state.gpuContext.contains(',') && state.gpuContextActual.isNotEmpty()) {
+                addRow("gpu-context 配置", state.gpuContext)
+            }
             addRow("输出", fmt.orDash(state.videoOutputActual))
             val (sw, sh) = lastSurfaceSize
             if (sw > 0 && sh > 0) addRow("Surface 尺寸", "${sw}x$sh")
