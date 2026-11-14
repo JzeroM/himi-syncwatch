@@ -50,6 +50,37 @@ mpv-android 的 `buildscripts/scripts/libplacebo.sh` 控制：
 `mpv-kernels.yml` 产物。改了 `scripts/mpv/**` 后必须等 kernels 构建完
 再跑 release，否则 APK 里是旧 libmpv。
 
+### 安卓启用 Vulkan 的三个必踩坑
+
+697 真机回归：启用 libplacebo Vulkan 后 app **启动即白屏**。链路是：
+
+1. media_kit 插件静态初始化块 `System.loadLibrary("mpv")`
+   （在 Flutter 插件注册时执行，即启动阶段）
+2. `System.loadLibrary` 用 **RTLD_NOW** —— 要求所有符号立即可解析
+3. libmpv.so 里有未定义 Vulkan 符号 → `UnsatisfiedLinkError`
+4. Flutter 生成的 `GeneratedPluginRegistrant` 只 `catch (Exception)`，
+   而 `NoClassDefFoundError` 是 **Error** → 冒泡 → 首帧不出 → 白屏
+
+必踩的三个坑：
+
+| 坑 | 现象 | 解法 |
+|---|---|---|
+| meson 交叉编译只走 pkg-config，NDK 无 `vulkan.pc` | `vulkan found: NO` | 手写 `vulkan.pc` |
+| NDK 只有 API 24+ 目录才有 `libvulkan.so` stub（编译用 API 23） | 链接器 `unable to find library -lvulkan` | 倒序搜 36→24 拷到 prefix/lib |
+| `VK_KHR_display` 是桌面扩展，连 API 35 stub 都没有 | RTLD_NOW 失败 → 白屏 | `-Wl,--defsym=<sym>=0` 定义为绝对 0 |
+
+验证手段：用 Python 解析 APK 里 `libmpv.so` 的 `SHT_DYNSYM` 段，
+列出 `shndx==0` 的符号。**必须为 0 个 Vulkan 符号未定义。**
+
+另外两条硬化措施：
+- Manifest 加 `<uses-native-library android:name="libvulkan.so"
+  android:required="false"/>`（Android 12+ 可见性策略）
+- `hwdec` 显式写 `mediacodec`，不用 `auto`（否则 mpv 会把 vulkan 硬解
+  后端纳入候选，它调用 Vulkan 1.1 的
+  `vkGetPhysicalDeviceQueueFamilyProperties2`，API 28+ 才有）
+- MainActivity 用 `catch (Throwable)` 包住 `super.configureFlutterEngine`
+  ——再出问题也不会白屏，至少能打出可诊断日志
+
 ### mpv 属性字段名必须查源码，不能凭印象
 
 697 真机回归：面板把杜比 P5 显示成「非 DV 内容」。根因是凭空写了
