@@ -128,9 +128,12 @@ esac
 # 空的 shared library 满足 `-lvulkan` 链接即可。
 VULKAN_CLANG="$VULKAN_SYSROOT/../bin/clang"
 [ -x "$VULKAN_CLANG" ] || die "找不到 NDK clang: $VULKAN_CLANG"
+# 【必须带 API level + sysroot】否则找不到 crtbegin_so.o / crtend_so.o
+# （NDK 的 CRT 文件按 API level 分目录）。
 echo 'void _himi_vulkan_stub(void) {}' | \
-  "$VULKAN_CLANG" --target=$VULKAN_TRIPLE -shared -x c - -o \
-    "$PREFIX_DIR/lib/libvulkan.so" -Wl,-soname,libvulkan.so
+  "$VULKAN_CLANG" --target=${VULKAN_TRIPLE}23 --sysroot="$VULKAN_SYSROOT" \
+    -shared -x c - -o "$PREFIX_DIR/lib/libvulkan.so" \
+    -Wl,-soname,libvulkan.so
 log "libvulkan.so stub 已创建: $PREFIX_DIR/lib/libvulkan.so"
 
 log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
