@@ -156,7 +156,7 @@ require_file "$PREFIX/lib/libmpv.so"
 # libmpv.so 发布前会被 strip，HDR 符号只在未 strip 的前缀产物中可见。
 grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
 # libplacebo 是静态库（default_library=static），符号在 libmpv.so 里
-grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_vk' || die "libmpv 缺少 Vulkan 后端（DV compute shader 不可用）"
+grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_create_vk' || die "libmpv 缺少 Vulkan 后端（DV compute shader 不可用）"
 
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
 [ -n "$NDK_TOOLCHAIN" ] || die "找不到 Android NDK toolchain"

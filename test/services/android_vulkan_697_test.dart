@@ -52,7 +52,7 @@ void main() {
 
     test('1.3 构建后验证 Vulkan 符号', () {
       expect(buildScript, contains("grep_binary"));
-      expect(buildScript, contains("'pl_gpu_vk'"));
+      expect(buildScript, contains("'pl_gpu_create_vk'"));
       // libplacebo 是静态库，符号在 libmpv.so 里
       expect(buildScript, contains('libmpv 缺少 Vulkan 后端'));
     });
