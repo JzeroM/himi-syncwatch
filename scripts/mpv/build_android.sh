@@ -110,14 +110,11 @@ Name: Vulkan
 Description: Vulkan Graphics API (NDK sysroot stub)
 Version: 1.3.238
 Cflags: -I${includedir}
-# 【关键】不写 Libs: -lvulkan——那会让 libmpv.so 的 DT_NEEDED 依赖
-# libvulkan.so，运行时 Android linker namespace 可能找不到 → 白屏。
-# libplacebo 的 Vulkan 后端内部用 dlopen 运行时加载 Vulkan，
-# 链接时只需头文件，不需要链接库。
-#
-# --unresolved-symbols=ignore-all：允许 Vulkan 符号在链接时未定义
-# （运行时由 dlopen 从系统 libvulkan.so 解析）。
-Libs: -Wl,--unresolved-symbols=ignore-all
+# 【必须链接 -lvulkan】mpv 的 Vulkan context 直接调用
+# vkCreateAndroidSurfaceKHR / vkGetInstanceProcAddr 等 13 个符号。
+# 不给 -lvulkan 会留下未定义符号 → System.loadLibrary 用 RTLD_NOW
+# 解析失败 → 白屏。
+Libs: -L${libdir} -lvulkan
 VULKANPC
 
 # 【关键】NDK 的 libvulkan.so stub 在 `usr/lib/<triple>/`（无版本号目录），
@@ -130,19 +127,32 @@ case "$BUILD_ARCH" in
   x86_64)  VULKAN_TRIPLE=x86_64-linux-android ;;
   *)       die "未知架构: $BUILD_ARCH" ;;
 esac
-# 【NDK r30 不自带 libvulkan.so】只有 Vulkan 头文件，没有链接 stub。
-# 运行时由 Android 系统的 Vulkan loader 提供实现，构建时只需要一个
-# 空的 shared library 满足 `-lvulkan` 链接即可。
-VULKAN_CLANG="$VULKAN_SYSROOT/../bin/clang"
-[ -x "$VULKAN_CLANG" ] || die "找不到 NDK clang: $VULKAN_CLANG"
-# 【必须带 API level + sysroot】否则找不到 crtbegin_so.o / crtend_so.o
-# （NDK 的 CRT 文件按 API level 分目录）。
-# 【临时禁用】不创建 libvulkan.so stub（避免 DT_NEEDED 依赖）
-# echo 'void _himi_vulkan_stub(void) {}' | \
-#   "$VULKAN_CLANG" --target=${VULKAN_TRIPLE}23 --sysroot="$VULKAN_SYSROOT" \
-#     -shared -x c - -o "$PREFIX_DIR/lib/libvulkan.so" \
-#     -Wl,-soname,libvulkan.so
-log "libvulkan.so stub 已创建: $PREFIX_DIR/lib/libvulkan.so"
+# 【libvulkan.so 链接 stub】mpv 的 Vulkan context 直接调用
+# vkGetInstanceProcAddr / vkCreateAndroidSurfaceKHR 等 13 个符号，
+# 必须链接 libvulkan 才能解析（否则 System.loadLibrary 用 RTLD_NOW
+# 解析失败 → 白屏）。
+#
+# NDK 的 stub 按 API level 分目录，只有 API 24+ 才有（Vulkan 1.0 从
+# API 24 引入），而编译用 API 23 → 需要把 24+ 的 stub 拷到 prefix/lib。
+VULKAN_STUB=""
+for _api in 24 25 26 27 28 29 30 31 32 33 34 35 36; do
+  _cand="$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/$_api/libvulkan.so"
+  if [ -f "$_cand" ]; then VULKAN_STUB="$_cand"; break; fi
+done
+[ -z "$VULKAN_STUB" ] && [ -f "$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/libvulkan.so" ] \
+  && VULKAN_STUB="$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/libvulkan.so"
+if [ -n "$VULKAN_STUB" ]; then
+  cp -f "$VULKAN_STUB" "$PREFIX_DIR/lib/libvulkan.so"
+  log "libvulkan.so stub 已拷贝: $VULKAN_STUB"
+else
+  log "NDK 无 libvulkan.so stub，自建空 stub（仅满足链接，运行时由系统 loader 提供）"
+  VULKAN_CLANG="$VULKAN_SYSROOT/../bin/clang"
+  [ -x "$VULKAN_CLANG" ] || die "找不到 NDK clang: $VULKAN_CLANG"
+  echo 'void _himi_vulkan_stub(void) {}' | \
+    "$VULKAN_CLANG" --target=${VULKAN_TRIPLE}23 --sysroot="$VULKAN_SYSROOT" \
+      -shared -x c - -o "$PREFIX_DIR/lib/libvulkan.so" \
+      -Wl,-soname,libvulkan.so
+fi
 
 log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
 

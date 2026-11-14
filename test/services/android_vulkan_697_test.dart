@@ -60,9 +60,10 @@ void main() {
     test('1.3b 必须创建 vulkan.pc（meson 交叉编译只走 pkg-config）', () {
       expect(buildScript, contains('vulkan.pc'));
       expect(buildScript, contains('Name: Vulkan'));
-      // 不写 Libs: -lvulkan（避免 DT_NEEDED 硬依赖），用
-      // --unresolved-symbols=ignore-all 让 Vulkan 符号运行时 dlopen 解析
-      expect(buildScript, contains('--unresolved-symbols=ignore-all'));
+      // 必须链接 -lvulkan：mpv 的 Vulkan context 直接调用
+      // vkGetInstanceProcAddr 等 13 个符号，不链接会留下未定义符号 →
+      // System.loadLibrary 用 RTLD_NOW 解析失败 → 白屏
+      expect(buildScript, contains(r'Libs: -L${libdir} -lvulkan'));
       // 版本必须 >= 1.3.238（mpv 的 meson 要求），否则报
       // "Found 1.3 but need: '>= 1.3.238'"
       expect(buildScript, contains('Version: 1.3.238'));
@@ -71,12 +72,12 @@ void main() {
       expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/local"'));
     });
 
-    test('1.3c 不创建 libvulkan.so stub（避免 DT_NEEDED 白屏）', () {
-      // 创建 stub 会让 libmpv.so 依赖 libvulkan.so → 运行时找不到就白屏。
-      // libplacebo 的 Vulkan 后端用 dlopen 运行时加载，链接时只需头文件。
-      // stub 创建代码应被注释掉（不实际执行）
-      expect(buildScript, contains('# echo \'void _himi_vulkan_stub'));
-      expect(buildScript, contains('不创建 libvulkan.so stub'));
+    test('1.3c 从 NDK 找 libvulkan.so stub（API 24+ 目录）', () {
+      // NDK 只有 API 24+ 才有 libvulkan.so stub，而编译用 API 23。
+      // 必须搜 24~36 目录找到后拷到 prefix/lib。
+      expect(buildScript, contains('VULKAN_STUB'));
+      expect(buildScript, contains('for _api in 24 25 26'));
+      expect(buildScript, contains('libvulkan.so stub 已拷贝'));
     });
 
     test('1.3d NDK 定义在 Vulkan 检查之前', () {
