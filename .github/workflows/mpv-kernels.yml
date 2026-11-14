@@ -9,17 +9,19 @@ on:
   workflow_dispatch:
     inputs:
       build_ohos:
-        description: Build HarmonyOS libmpv
+        description: Build HarmonyOS libmpv（仅本地需要，CI 默认跳过）
         required: false
         type: boolean
-        default: true
+        # 鸿蒙只走本地 scripts/build_ohos_local.sh，CI 构建的产物不用。
+        # 默认 false：workflow_dispatch 手动触发时不跑 ohos（避免无谓失败）。
+        default: false
   workflow_call:
     inputs:
       build_ohos:
         description: Build HarmonyOS libmpv
         required: false
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: mpv-kernels-${{ github.ref }}
