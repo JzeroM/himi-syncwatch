@@ -81,6 +81,39 @@ else
   die "Android HDR colorspace 补丁无法应用"
 fi
 
+NDK="$SCRIPTS/sdk/android-ndk-$ANDROID_NDK"
+
+log "为 Vulkan 创建 pkg-config 文件（NDK sysroot 自带头文件和 stub）"
+# 【为什么需要】meson 交叉编译时 `dependency('vulkan')` 只走 pkg-config，
+# 不走编译器探测。NDK sysroot 自带 Vulkan 头文件和 libvulkan.so stub，
+# 但没有 vulkan.pc → meson 报 `vulkan found: NO`。
+VULKAN_SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+[ -d "$VULKAN_SYSROOT/usr/include/vulkan" ] \
+  || die "NDK 缺少 Vulkan 头文件: $VULKAN_SYSROOT/usr/include/vulkan"
+# 【必须先建目录+符号链接】buildall.sh 只在 prefix_dir 不存在时创建
+# `usr -> .` 和 `local -> .` 符号链接（PKG_CONFIG_SYSROOT_DIR 依赖它们
+# 解析 /usr/include 路径）。如果先 mkdir 导致目录已存在，buildall.sh
+# 会跳过符号链接创建 → 后续 pkg-config 路径全错。
+PREFIX_DIR="$SCRIPTS/prefix/$BUILD_ARCH"
+if [ ! -d "$PREFIX_DIR" ]; then
+  mkdir -p "$PREFIX_DIR"
+  ln -s . "$PREFIX_DIR/usr"
+  ln -s . "$PREFIX_DIR/local"
+fi
+mkdir -p "$PREFIX_DIR/lib/pkgconfig"
+cat > "$PREFIX_DIR/lib/pkgconfig/vulkan.pc" <<'VULKANPC'
+prefix=/usr
+includedir=${prefix}/include
+libdir=${prefix}/lib
+
+Name: Vulkan
+Description: Vulkan Graphics API (NDK sysroot stub)
+Version: 1.3
+Cflags: -I${includedir}
+Libs: -lvulkan
+VULKANPC
+log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
+
 log "启用 libplacebo Vulkan（DV 元数据处理需要 compute shader）"
 if ! grep -q -- '-Dvulkan=disabled' "$SCRIPTS/scripts/libplacebo.sh"; then
   die "libplacebo.sh 结构已变，Vulkan patch 需要更新"
@@ -98,9 +131,9 @@ PREFIX="$SCRIPTS/prefix/$BUILD_ARCH"
 require_file "$PREFIX/lib/libmpv.so"
 # libmpv.so 发布前会被 strip，HDR 符号只在未 strip 的前缀产物中可见。
 grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
-grep_binary "$PREFIX/lib/libplacebo.so" 'pl_gpu_vk' || die "libplacebo 缺少 Vulkan 后端（DV compute shader 不可用）"
+# libplacebo 是静态库（default_library=static），符号在 libmpv.so 里
+grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_vk' || die "libmpv 缺少 Vulkan 后端（DV compute shader 不可用）"
 
-NDK="$SCRIPTS/sdk/android-ndk-$ANDROID_NDK"
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
 [ -n "$NDK_TOOLCHAIN" ] || die "找不到 Android NDK toolchain"
 
