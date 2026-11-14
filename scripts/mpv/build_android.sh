@@ -110,7 +110,7 @@ Name: Vulkan
 Description: Vulkan Graphics API (NDK sysroot stub)
 Version: 1.3.238
 Cflags: -I${includedir}
-Libs: -lvulkan
+Libs: -L${libdir} -lvulkan
 VULKANPC
 
 # 【关键】NDK 的 libvulkan.so stub 在 `usr/lib/<triple>/`（无版本号目录），

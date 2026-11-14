@@ -60,7 +60,8 @@ void main() {
     test('1.3b 必须创建 vulkan.pc（meson 交叉编译只走 pkg-config）', () {
       expect(buildScript, contains('vulkan.pc'));
       expect(buildScript, contains('Name: Vulkan'));
-      expect(buildScript, contains('Libs: -lvulkan'));
+      // -L${libdir} 让链接器搜 prefix/lib（通过 usr -> . 符号链接解析）
+      expect(buildScript, contains(r'Libs: -L${libdir} -lvulkan'));
       // 版本必须 >= 1.3.238（mpv 的 meson 要求），否则报
       // "Found 1.3 but need: '>= 1.3.238'"
       expect(buildScript, contains('Version: 1.3.238'));
