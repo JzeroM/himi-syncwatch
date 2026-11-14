@@ -157,6 +157,22 @@ void main() {
     });
   });
 
+  group('3.8 硬解显式限定 mediacodec（避开 Vulkan 硬解路径）', () {
+    test('3.8.1 不用 hwdec=auto', () {
+      // 启用 Vulkan 后 mpv 编译了 vulkan 硬解后端，auto 会把它纳入候选，
+      // 而它在初始化时调用 vkGetPhysicalDeviceQueueFamilyProperties2
+      // （Vulkan 1.1，API 28+）。Android 硬解只有 MediaCodec，显式限定
+      // 可彻底避开这条依赖新版 Vulkan loader 的路径。
+      expect(androidDart, contains("'mediacodec'"));
+      expect(androidDart, contains("'mediacodec-copy'"));
+      // 不再用 auto（会纳入 vulkan 硬解后端）
+      final hwdecIdx = androidDart.indexOf("'hwdec':");
+      expect(hwdecIdx, greaterThan(0));
+      final hwdecBlock = androidDart.substring(hwdecIdx, hwdecIdx + 160);
+      expect(hwdecBlock, isNot(contains("'auto'")));
+    });
+  });
+
   group('3.7 白屏兜底：插件注册 catch Throwable', () {
     test('3.7.1 MainActivity 用 Throwable 包住插件注册', () {
       // Flutter 生成的 GeneratedPluginRegistrant 只 catch Exception，

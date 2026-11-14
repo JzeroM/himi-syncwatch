@@ -534,9 +534,16 @@ class HimiMpvAndroidSession implements MpvSession {
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
       // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。
       // copy-back 解到系统内存再上传 GPU。Surface 模式保留 auto（可直写）。
+      // 697：显式限定 mediacodec，不用 `auto`。
+      //
+      // 【为什么】启用 Vulkan 后 mpv 编译了 vulkan 硬解后端，`hwdec=auto`
+      // 会把它纳入候选。该后端在初始化时调用
+      // `vkGetPhysicalDeviceQueueFamilyProperties2`（Vulkan 1.1，API 28+
+      // 才有）——Android 硬解只有 MediaCodec，根本不需要它，显式限定可以
+      // 彻底避开这条会依赖新版 Vulkan loader 的代码路径。
       'hwdec': !effectiveSurface
-          ? 'auto-copy'
-          : (hwdecMode == 'software' ? 'no' : 'auto'),
+          ? 'mediacodec-copy'
+          : (hwdecMode == 'software' ? 'no' : 'mediacodec'),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',
