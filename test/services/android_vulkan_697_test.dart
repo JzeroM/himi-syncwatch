@@ -53,7 +53,24 @@ void main() {
     test('1.3 构建后验证 Vulkan 符号', () {
       expect(buildScript, contains("grep_binary"));
       expect(buildScript, contains("'pl_gpu_vk'"));
-      expect(buildScript, contains('libplacebo 缺少 Vulkan 后端'));
+      // libplacebo 是静态库，符号在 libmpv.so 里
+      expect(buildScript, contains('libmpv 缺少 Vulkan 后端'));
+    });
+
+    test('1.3b 必须创建 vulkan.pc（meson 交叉编译只走 pkg-config）', () {
+      expect(buildScript, contains('vulkan.pc'));
+      expect(buildScript, contains('Name: Vulkan'));
+      expect(buildScript, contains('Libs: -lvulkan'));
+      // 必须建符号链接（PKG_CONFIG_SYSROOT_DIR 依赖它们解析路径）
+      expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/usr"'));
+      expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/local"'));
+    });
+
+    test('1.3c NDK 定义在 Vulkan 检查之前', () {
+      final ndkIdx = buildScript.indexOf(r'NDK="$SCRIPTS/sdk/android-ndk-');
+      final vulkanIdx = buildScript.indexOf('VULKAN_SYSROOT=');
+      expect(ndkIdx, greaterThan(0));
+      expect(vulkanIdx, greaterThan(ndkIdx), reason: 'NDK 必须先于 Vulkan 检查定义');
     });
 
     test('1.4 patch 在构建之前（checkout 后、buildall 前）', () {
