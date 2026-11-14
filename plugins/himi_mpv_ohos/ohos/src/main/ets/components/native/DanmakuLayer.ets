@@ -20,18 +20,22 @@
 
 import {
 
+  HimiMpvNativeHost,
+  NativeDanmakuUi,
+} from './HimiMpvNativeHost';
+
 /** 0xAARRGGBB → CSS 颜色串（ArkUI 用 #RRGGBB / #AARRGGBB）。 */
 function argbToCss(argb: number): string {
   const a: number = (argb >>> 24) & 0xFF;
   const r: number = (argb >> 16) & 0xFF;
   const g: number = (argb >> 8) & 0xFF;
   const b: number = argb & 0xFF;
-  const hex = (v: number): string => v.toString(16).padStart(2, "0").toUpperCase();
+  const hex = (v: number): string => {
+    const h: string = v.toString(16).toUpperCase();
+    return h.length === 1 ? '0' + h : h;
+  };
   return `#${hex(a)}${hex(r)}${hex(g)}${hex(b)}`;
 }
-  HimiMpvNativeHost,
-  NativeDanmakuUi,
-} from './HimiMpvNativeHost';
 
 /** 单帧弹幕排布项（ArkTS 禁止对象字面量作 ForEach 泛型，用类承载）。 */
 class DanmakuFrameItem {
