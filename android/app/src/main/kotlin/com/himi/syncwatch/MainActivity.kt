@@ -28,7 +28,26 @@ class MainActivity : FlutterActivity() {
     private var nativePlayerChannel: AndroidNativePlayerChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
+        // 697：插件注册兜底。
+        //
+        // Flutter 生成的 GeneratedPluginRegistrant 对每个插件只 catch
+        // `Exception`，但 **`NoClassDefFoundError` 是 Error 而非 Exception**
+        // ——一旦某个插件的静态初始化块抛错（例如 media_kit 的
+        // `System.loadLibrary("mpv")` 因 RTLD_NOW 解析到未定义符号而失败），
+        // 后续对该类的引用抛 NoClassDefFoundError，直接冒泡出
+        // configureFlutterEngine → Flutter 首帧永远不出 → **白屏**。
+        //
+        // 这里用 Throwable 兜住：即使个别插件不可用，界面仍能正常启动，
+        // 用户至少能看到错误提示而不是纯白屏。
+        try {
+            super.configureFlutterEngine(flutterEngine)
+        } catch (t: Throwable) {
+            android.util.Log.e(
+                "MainActivity",
+                "插件注册失败（界面继续启动）: ${t.javaClass.simpleName}: ${t.message}",
+                t,
+            )
+        }
         dvChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             DolbyVisionPlugin.CHANNEL

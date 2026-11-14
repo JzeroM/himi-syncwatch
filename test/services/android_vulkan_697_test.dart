@@ -157,6 +157,18 @@ void main() {
     });
   });
 
+  group('3.7 白屏兜底：插件注册 catch Throwable', () {
+    test('3.7.1 MainActivity 用 Throwable 包住插件注册', () {
+      // Flutter 生成的 GeneratedPluginRegistrant 只 catch Exception，
+      // 而 NoClassDefFoundError 是 Error → 冒泡导致白屏。
+      final main =
+          read('android/app/src/main/kotlin/com/himi/syncwatch/MainActivity.kt');
+      expect(main, contains('catch (t: Throwable)'));
+      expect(main, contains('super.configureFlutterEngine(flutterEngine)'));
+      expect(main, contains('插件注册失败'));
+    });
+  });
+
   group('4. 与其他平台的一致性', () {
     test('4.1 DV 字段名与 mpv 源码一致', () {
       // DV 在 current-tracks/video 下（不在 video-params）
