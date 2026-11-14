@@ -61,6 +61,9 @@ void main() {
       expect(buildScript, contains('vulkan.pc'));
       expect(buildScript, contains('Name: Vulkan'));
       expect(buildScript, contains('Libs: -lvulkan'));
+      // 版本必须 >= 1.3.238（mpv 的 meson 要求），否则报
+      // "Found 1.3 but need: '>= 1.3.238'"
+      expect(buildScript, contains('Version: 1.3.238'));
       // 必须建符号链接（PKG_CONFIG_SYSROOT_DIR 依赖它们解析路径）
       expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/usr"'));
       expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/local"'));
