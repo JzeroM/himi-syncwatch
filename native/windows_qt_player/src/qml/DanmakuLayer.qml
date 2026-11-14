@@ -97,11 +97,14 @@ Item {
     /// 颜色模式：color（源色）/ white / custom（P3）。
     property string colorMode: "color"
     /// 自定义颜色（0xAARRGGBB）。
-    property int customColor: 0xFFFFFFFF
+    ///
+    /// 【必须用 var】QML 的 `int` 是 32 位**有符号**，`0xFFFFFFFF` 会报
+    /// "Invalid property assignment: int expected"（整个 Overlay 加载失败）。
+    property var customColor: 0xFFFFFFFF
     /// 描边宽度（0~4，0 = 无描边）。
     property real outlineWidth: 1.0
-    /// 描边颜色（0xAARRGGBB）。
-    property int outlineColor: 0xFF000000
+    /// 描边颜色（0xAARRGGBB）。同上，必须 `var`。
+    property var outlineColor: 0xFF000000
 
     /// 滚动速度倍率（`danmakuSpeed`，Flutter 默认 0.7）。
     property real speed: 0.7

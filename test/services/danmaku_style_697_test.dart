@@ -88,6 +88,14 @@ void main() {
       expect(e, contains('argbToCss('));
     });
 
+    test('3.4a QML 颜色属性必须用 var（int 是 32 位有符号，0xFF 开头会溢出）', () {
+      final q = read('native/windows_qt_player/src/qml/DanmakuLayer.qml');
+      expect(q, contains('property var customColor'));
+      expect(q, contains('property var outlineColor'));
+      expect(q, isNot(contains('property int customColor')));
+      expect(q, isNot(contains('property int outlineColor')));
+    });
+
     test('3.4 Qt 渲染器按模式取色 + 描边', () {
       final q = read('native/windows_qt_player/src/qml/DanmakuLayer.qml');
       expect(q, contains('effectiveColor('));
