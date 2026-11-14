@@ -157,13 +157,10 @@ class HimiMpvAndroidSession implements MpvSession {
     return session;
   }
 
-  /// 697：起播时使用的 GPU API。
+  /// 697：设备 Vulkan 是否可用（`_start` 时由 [isVulkanAvailable] 探测）。
   ///
-  /// Vulkan 可用 → `vulkan`（libplacebo compute shader → DV 元数据处理）；
-  /// 否则 → `opengl`（降级 tone-mapping，P5 可能偏色）。
-  ///
-  /// 在 [_start] 或首次 `buildMpvOptions` 前由 [isVulkanAvailable] 决定。
-  static String _gpuApi = 'opengl';
+  /// 决定 `gpu-api` / `gpu-context` 是否带上 Vulkan 优先项。
+  static bool _vulkanOk = false;
 
   /// 697：检测 Vulkan 是否可用（libplacebo DV 处理需要 compute shader）。
   ///
@@ -298,13 +295,13 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _start() async {
-    // 【697 真机回归：gpu-api=vulkan 在安卓黑屏有声】
-    // mpv 的 Android Vulkan 上下文能初始化，但渲染不出画面（音频正常）。
-    // 暂时固定 opengl（EGL/GLES），保证画面正常。
+    // 697：Vulkan 可用性检测（DV 的 libplacebo compute 需要它）。
     //
-    // libplacebo 的 DV 处理确实需要 Vulkan compute，但「能初始化 Vulkan」
-    // 与「能正确渲染」是两件事——安卓这条路径需要单独排查（见 AGENTS.md）。
-    _gpuApi = 'opengl';
+    // 【真机回归：黑屏有声 → 已定位】mpv 的 Vulkan Android 上下文名是
+    // **`androidvk`**，而 GL 的才叫 `android`。此前 `gpu-api=vulkan` +
+    // `gpu-context=android` 拿 GL 上下文配 Vulkan API → 必然报
+    // 「Failed initializing any suitable GPU context!」→ vo 起不来。
+    _vulkanOk = await isVulkanAvailable();
     // 655：不再探测 GLES 版本（见 _voOverride 注释）。`vo` 由设置决定。
     if (!nativeSurface) {
       await _ensurePlayer();
@@ -529,11 +526,18 @@ class HimiMpvAndroidSession implements MpvSession {
       // surfaceChanged 补。
       if (effectiveSurface && _surfaceWidth > 0 && _surfaceHeight > 0)
         'android-surface-size': '${_surfaceWidth}x$_surfaceHeight',
-      // 697：优先 Vulkan（libplacebo DV 处理需要 compute shader），
-      // 不支持的设备自动回退 OpenGL。`gpu-context=android` 表示用
-      // Android 原生 Surface 渲染，与 GPU API 无关。
-      if (effectiveSurface) 'gpu-api': _gpuApi,
-      if (effectiveSurface) 'gpu-context': 'android',
+      // 697：优先 Vulkan（libplacebo 的 DV compute 需要它），失败自动回退。
+      //
+      // 【关键】mpv 的上下文名按 API 区分：
+      //   OpenGL → `android`
+      //   Vulkan → `androidvk`
+      // 两个选项都支持逗号分隔的优先级列表：mpv 依次尝试，第一个能初始化
+      // 的生效。Vulkan 初始化失败（驱动/设备不支持）会自动落到 OpenGL，
+      // 不会出现「vo 起不来 → 黑屏有声」。
+      if (effectiveSurface)
+        'gpu-api': _vulkanOk ? 'vulkan,opengl' : 'opengl',
+      if (effectiveSurface)
+        'gpu-context': _vulkanOk ? 'androidvk,android' : 'android',
       // 纹理模式（!nativeSurface）必须 copy-back 硬解：渲染纹理没有真实
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
       // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。

@@ -127,23 +127,21 @@ void main() {
       expect(androidDart, contains('static Future<bool> isVulkanAvailable'));
     });
 
-    test('3.2 _gpuApi 字段控制 gpu-api 值', () {
-      expect(androidDart, contains("static String _gpuApi = 'opengl'"));
-      expect(androidDart, contains("'gpu-api': _gpuApi"));
+    test('3.2 _vulkanOk 控制 gpu-api 是否带 Vulkan 优先项', () {
+      expect(androidDart, contains('static bool _vulkanOk = false'));
+      expect(androidDart, contains("_vulkanOk ? 'vulkan,opengl' : 'opengl'"));
     });
 
-    test('3.3 gpu-api 固定 opengl（Vulkan 渲染安卓黑屏回归）', () {
-      // 真机回归：gpu-api=vulkan 能初始化但渲染不出画面（黑屏有声）
-      expect(androidDart, contains("_gpuApi = 'opengl';"));
-      expect(
-        androidDart,
-        isNot(contains('_gpuApi = await isVulkanAvailable()')),
-        reason: '安卓 Vulkan 渲染路径未打通前不能启用',
-      );
+    test('3.3 _start 探测 Vulkan 并写入 _vulkanOk', () {
+      expect(androidDart, contains('_vulkanOk = await isVulkanAvailable()'));
     });
 
-    test('3.4 gpu-context 保持 android（与 GPU API 无关）', () {
-      expect(androidDart, contains("'gpu-context': 'android'"));
+    test('3.4 gpu-context 按 API 选 androidvk / android', () {
+      // 【真机回归根因】mpv 的 Vulkan Android 上下文名是 `androidvk`，
+      // GL 的才叫 `android`。用错名字 → 「Failed initializing any
+      // suitable GPU context!」→ vo 起不来 → 黑屏有声。
+      expect(androidDart, contains('androidvk,android'));
+      expect(androidDart, contains('Vulkan → `androidvk`'));
     });
 
     test('3.5 检测结果缓存（只检测一次）', () {
