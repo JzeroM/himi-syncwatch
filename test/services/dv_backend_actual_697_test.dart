@@ -148,6 +148,14 @@ void main() {
     test('2.5 管线分组同时展示实际值与配置', () {
       expect(collector, contains('gpu-context 配置'));
     });
+
+    test('2.6 实际后端变化时打一条日志（无面板截图也能判断）', () {
+      // 之前的真机日志里只有配置列表，看日志判断不出实际后端。
+      expect(adapter, contains('_logActualRenderBackendOnce'));
+      expect(adapter, contains('实际渲染后端: gpu-context='));
+      // 同一值只记一次（2s 刷新一次，不去重会刷屏）
+      expect(adapter, contains('_loggedGpuContextActual'));
+    });
   });
 
   group('3. 安卓原生面板（Kotlin）', () {

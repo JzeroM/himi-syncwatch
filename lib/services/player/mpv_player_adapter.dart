@@ -394,6 +394,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 697：缓存最近一次结果——原生 UI 状态下发时复用，避免重复 IPC，
     // 也保证「Flutter 面板」与「原生面板」显示同一份数据。
     _debugProps = out;
+    _logActualRenderBackendOnce(out);
     // 标量子属性优先（鸿蒙/安卓可读），整块 JSON 只在 NODE 可读时兜底
     _colorInfo = VideoColorInfo.fromProperties(out) ??
         (out['video-params'] != null
@@ -1427,6 +1428,28 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 解析，顺序严格跟随 Emby 服务端流顺序。
   final List<int> _audioTrackIds = <int>[];
   final List<int> _subtitleTrackIds = <int>[];
+
+  /// 上一次已记录的实际渲染后端（避免每 2s 刷同一条日志）。
+  String? _loggedGpuContextActual;
+
+  /// 697：实际渲染后端变化时打一条日志。
+  ///
+  /// 【为什么值得单独记】`gpu-api` / `gpu-context` 是**配置列表**
+  /// （`vulkan,opengl` / `androidvk,android`），看日志根本判断不出
+  /// 实际走的是 Vulkan 还是回落到 OpenGL。`current-gpu-context` 是
+  /// mpv 的真实值（`vo->context_name`），记一次就能在没有面板截图时
+  /// 直接回答「DV 的 libplacebo compute 到底有没有跑起来」。
+  void _logActualRenderBackendOnce(Map<String, String> props) {
+    final actual = props['current-gpu-context'] ?? '';
+    if (actual.isEmpty || actual == _loggedGpuContextActual) return;
+    _loggedGpuContextActual = actual;
+    LogService().log(
+      'mpv',
+      '实际渲染后端: gpu-context=$actual '
+          'gpu-api=${props['gpu-api'] ?? '-'} '
+          'vo=${props['current-vo'] ?? '-'}',
+    );
+  }
 
   /// 把上层（Emby 索引）映射成 mpv track id；映射不到时返回 null。
   static int? _mapIndexToTrackId(List<int> ids, int index) {
