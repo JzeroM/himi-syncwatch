@@ -72,6 +72,22 @@ mpv-android 的 `buildscripts/scripts/libplacebo.sh` 控制：
 验证手段：用 Python 解析 APK 里 `libmpv.so` 的 `SHT_DYNSYM` 段，
 列出 `shndx==0` 的符号。**必须为 0 个 Vulkan 符号未定义。**
 
+**第四个坑（黑屏有声的真凶）**：mpv 的 Android 上下文名按 API 区分——
+
+    视频输出 API      上下文名
+    OpenGL            android
+    Vulkan            androidvk
+
+`gpu-api=vulkan` + `gpu-context=android` 等于拿 GL 上下文配 Vulkan API，
+必然报 `Failed initializing any suitable GPU context!` → vo 起不来
+→ **有音频无画面**。正确写法用优先级列表（逗号分隔，依次尝试）：
+
+    gpu-api      = vulkan,opengl
+    gpu-context  = androidvk,android
+
+这样 Vulkan 可用就走 Vulkan（DV 的 libplacebo compute），失败自动回落
+OpenGL，不会黑屏。
+
 另外两条硬化措施：
 - Manifest 加 `<uses-native-library android:name="libvulkan.so"
   android:required="false"/>`（Android 12+ 可见性策略）
