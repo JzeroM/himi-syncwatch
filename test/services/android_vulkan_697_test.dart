@@ -66,7 +66,15 @@ void main() {
       expect(buildScript, contains(r'ln -s . "$PREFIX_DIR/local"'));
     });
 
-    test('1.3c NDK 定义在 Vulkan 检查之前', () {
+    test('1.3c libvulkan.so stub 拷到 prefix/lib（链接器搜索路径）', () {
+      // NDK 的 libvulkan.so 在 <triple>/（API 无关），但编译用 API 23
+      // → 链接器只搜 <triple>/23/ → 找不到
+      expect(buildScript, contains('libvulkan.so'));
+      expect(buildScript, contains('VULKAN_TRIPLE'));
+      expect(buildScript, contains(r'cp -f "$VULKAN_SO" "$PREFIX_DIR/lib/libvulkan.so"'));
+    });
+
+    test('1.3d NDK 定义在 Vulkan 检查之前', () {
       final ndkIdx = buildScript.indexOf(r'NDK="$SCRIPTS/sdk/android-ndk-');
       final vulkanIdx = buildScript.indexOf('VULKAN_SYSROOT=');
       expect(ndkIdx, greaterThan(0));
