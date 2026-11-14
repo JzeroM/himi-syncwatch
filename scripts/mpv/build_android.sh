@@ -108,7 +108,7 @@ libdir=${prefix}/lib
 
 Name: Vulkan
 Description: Vulkan Graphics API (NDK sysroot stub)
-Version: 1.3
+Version: 1.3.238
 Cflags: -I${includedir}
 Libs: -lvulkan
 VULKANPC
