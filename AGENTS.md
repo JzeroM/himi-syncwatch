@@ -32,6 +32,24 @@ A value of type 'Tristate' can't be assigned to a variable of type 'bool'
 - `scripts/build_ohos_local.sh` 已内置 `trap`：构建结束（成功或失败）自动
   还原 `package_config.json` 并清 `build/test_cache`
 
+### 安卓 libmpv 的 Vulkan 开关在 mpv-android 上游
+
+libplacebo 的 Vulkan 后端（DV 元数据处理需要 compute shader）由
+mpv-android 的 `buildscripts/scripts/libplacebo.sh` 控制：
+
+    meson setup $build ... -Dvulkan=disabled
+
+`build_android.sh` 在构建前 sed 替换为 `-Dvulkan=enabled`，并在构建后
+用 `grep_binary libplacebo.so pl_gpu_vk` 验证。**改这个前先看上游**，
+不要凭印象改 mpv.sh 或 ffmpeg.sh——Vulkan 开关只在 libplacebo.sh。
+
+运行时由 `HimiMpvPlugin.isVulkanAvailable()`（Kotlin `System.loadLibrary`
+验证）决定 `gpu-api=vulkan` 还是 `opengl`。
+
+**CI 构建陷阱**：`release.yml` 的 `kernels` 任务复用最近一次成功的
+`mpv-kernels.yml` 产物。改了 `scripts/mpv/**` 后必须等 kernels 构建完
+再跑 release，否则 APK 里是旧 libmpv。
+
 ### mpv 属性字段名必须查源码，不能凭印象
 
 697 真机回归：面板把杜比 P5 显示成「非 DV 内容」。根因是凭空写了
