@@ -123,10 +123,15 @@ case "$BUILD_ARCH" in
   x86_64)  VULKAN_TRIPLE=x86_64-linux-android ;;
   *)       die "未知架构: $BUILD_ARCH" ;;
 esac
-VULKAN_SO="$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/libvulkan.so"
-[ -f "$VULKAN_SO" ] || die "NDK 缺少 libvulkan.so stub: $VULKAN_SO"
-cp -f "$VULKAN_SO" "$PREFIX_DIR/lib/libvulkan.so"
-log "libvulkan.so 已拷贝: $PREFIX_DIR/lib/libvulkan.so"
+# 【NDK r30 不自带 libvulkan.so】只有 Vulkan 头文件，没有链接 stub。
+# 运行时由 Android 系统的 Vulkan loader 提供实现，构建时只需要一个
+# 空的 shared library 满足 `-lvulkan` 链接即可。
+VULKAN_CLANG="$VULKAN_SYSROOT/../bin/clang"
+[ -x "$VULKAN_CLANG" ] || die "找不到 NDK clang: $VULKAN_CLANG"
+echo 'void _himi_vulkan_stub(void) {}' | \
+  "$VULKAN_CLANG" --target=$VULKAN_TRIPLE -shared -x c - -o \
+    "$PREFIX_DIR/lib/libvulkan.so" -Wl,-soname,libvulkan.so
+log "libvulkan.so stub 已创建: $PREFIX_DIR/lib/libvulkan.so"
 
 log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
 
