@@ -119,15 +119,16 @@ diff --git a/video/out/vulkan/context_android.c b/video/out/vulkan/context_andro
 index 512830db9f..6fa98ea0f4 100644
 --- a/video/out/vulkan/context_android.c
 +++ b/video/out/vulkan/context_android.c
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,8 @@
   */
  
  #include <vulkan/vulkan.h>
 +#include <android/data_space.h>
++#include "video/mp_image.h"
  #include <vulkan/vulkan_android.h>
  
  #include "video/out/android_common.h"
-@@ -53,7 +54,9 @@ static bool android_init(struct ra_ctx *ctx)
+@@ -53,7 +55,9 @@ static bool android_init(struct ra_ctx *ctx)
           .window = vo_android_native_window(ctx->vo)
      };
  
@@ -138,7 +139,7 @@ index 512830db9f..6fa98ea0f4 100644
  
      VkInstance inst = vk->vkinst->instance;
      VkResult res = vkCreateAndroidSurfaceKHR(inst, &info, NULL, &vk->surface);
-@@ -80,6 +83,13 @@ static bool android_reconfig(struct ra_ctx *ctx)
+@@ -80,6 +84,13 @@ static bool android_reconfig(struct ra_ctx *ctx)
      // Update window geometry to prevent screen tearing
      ANativeWindow *native_window = vo_android_native_window(ctx->vo);
      if (native_window) {
