@@ -111,10 +111,20 @@ Description: Vulkan Graphics API (NDK sysroot stub)
 Version: 1.3.238
 Cflags: -I${includedir}
 # 【必须链接 -lvulkan】mpv 的 Vulkan context 直接调用
-# vkCreateAndroidSurfaceKHR / vkGetInstanceProcAddr 等 13 个符号。
+# vkCreateAndroidSurfaceKHR / vkGetInstanceProcAddr 等符号。
 # 不给 -lvulkan 会留下未定义符号 → System.loadLibrary 用 RTLD_NOW
-# 解析失败 → 白屏。
-Libs: -L${libdir} -lvulkan
+# 解析失败 → 白屏（media_kit 插件静态块里 loadLibrary("mpv")）。
+#
+# 【VK_KHR_display 是桌面扩展，Android 永远没有】即使 API 35 的 NDK
+# stub 也缺这 5 个符号。用 --defsym 把它们定义成绝对地址 0，让链接器
+# 视为已定义 → RTLD_NOW 不再报错。mpv 只在检测到该扩展时才调用它们，
+# Android 上永不触发，所以不会跳到 0。
+Libs: -L${libdir} -lvulkan \
+  -Wl,--defsym=vkCreateDisplayPlaneSurfaceKHR=0 \
+  -Wl,--defsym=vkGetDisplayModePropertiesKHR=0 \
+  -Wl,--defsym=vkGetDisplayPlaneSupportedDisplaysKHR=0 \
+  -Wl,--defsym=vkGetPhysicalDeviceDisplayPlanePropertiesKHR=0 \
+  -Wl,--defsym=vkGetPhysicalDeviceDisplayPropertiesKHR=0
 VULKANPC
 
 # 【关键】NDK 的 libvulkan.so stub 在 `usr/lib/<triple>/`（无版本号目录），
@@ -135,7 +145,7 @@ esac
 # NDK 的 stub 按 API level 分目录，只有 API 24+ 才有（Vulkan 1.0 从
 # API 24 引入），而编译用 API 23 → 需要把 24+ 的 stub 拷到 prefix/lib。
 VULKAN_STUB=""
-for _api in 24 25 26 27 28 29 30 31 32 33 34 35 36; do
+for _api in 36 35 34 33 32 31 30 29 28 27 26 25 24; do
   _cand="$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/$_api/libvulkan.so"
   if [ -f "$_cand" ]; then VULKAN_STUB="$_cand"; break; fi
 done
