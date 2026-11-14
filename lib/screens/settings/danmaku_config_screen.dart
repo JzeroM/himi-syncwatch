@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_server.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -56,6 +57,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
+    String? danmakuServersJson,
     String? danmakuColorMode,
     int? danmakuCustomColor,
     double? danmakuOutlineWidth,
@@ -75,11 +77,74 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
           danmakuSpeed: danmakuSpeed,
           danmakuFontSize: danmakuFontSize,
           danmakuOpacity: danmakuOpacity,
+          danmakuServersJson: danmakuServersJson,
           danmakuColorMode: danmakuColorMode,
           danmakuCustomColor: danmakuCustomColor,
           danmakuOutlineWidth: danmakuOutlineWidth,
           danmakuOutlineColor: danmakuOutlineColor,
         );
+  }
+
+  /// 写回服务器列表（同时把「优先级最高且启用」同步到老字段，兼容旧逻辑）。
+  void _applyServers(List<DanmakuServer> servers) {
+    final reindexed = <DanmakuServer>[
+      for (var i = 0; i < servers.length; i++) servers[i].copyWith(priority: i),
+    ];
+    final active = reindexed.where((e) => e.enabled).toList();
+    _update(
+      danmakuServersJson: AppSettings.encodeDanmakuServers(reindexed),
+      danmakuApiUrl: active.isEmpty ? '' : active.first.baseUrl,
+    );
+    if (active.isNotEmpty) _apiUrl.text = active.first.baseUrl;
+  }
+
+  Future<void> _addServer() async {
+    final nameCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加弹幕服务器'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const ValueKey('danmakuServerNameField'),
+              controller: nameCtrl,
+              decoration: const InputDecoration(labelText: '名称'),
+            ),
+            TextField(
+              key: const ValueKey('danmakuServerUrlField'),
+              controller: urlCtrl,
+              decoration: const InputDecoration(
+                labelText: '地址',
+                hintText: 'http://192.168.1.10:9321/TOKEN',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(
+            key: const ValueKey('danmakuServerAddConfirm'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      final url = urlCtrl.text.trim();
+      if (url.isEmpty) return;
+      final server = DanmakuServer(
+        id: 'srv-${DateTime.now().microsecondsSinceEpoch}',
+        name: nameCtrl.text.trim().isEmpty ? url : nameCtrl.text.trim(),
+        baseUrl: url,
+      );
+      _applyServers([...ref.read(settingsProvider).danmakuServers, server]);
+    }
+    nameCtrl.dispose();
+    urlCtrl.dispose();
   }
 
   void _resetDefaults() {
@@ -101,6 +166,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuCustomColor: 0xFFFFFFFF,
       danmakuOutlineWidth: 1.0,
       danmakuOutlineColor: 0xFF000000,
+      danmakuServersJson: '',
     );
     _apiUrl.clear();
     _blockWords.clear();
@@ -216,6 +282,56 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 ),
               ),
             ],
+            const Divider(height: 1),
+            _sectionHeader('服务器（多源备用；优先级从上到下）'),
+            for (var i = 0; i < s.danmakuServers.length; i++)
+              ListTile(
+                key: ValueKey('danmakuServer-${s.danmakuServers[i].id}'),
+                dense: true,
+                leading: Checkbox(
+                  value: s.danmakuServers[i].enabled,
+                  onChanged: (v) {
+                    final list = [...s.danmakuServers];
+                    list[i] = list[i].copyWith(enabled: v ?? false);
+                    _applyServers(list);
+                  },
+                ),
+                title: Text(
+                  s.danmakuServers[i].name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  s.danmakuServers[i].baseUrl,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: IconButton(
+                  key: ValueKey('danmakuServerDelete-${s.danmakuServers[i].id}'),
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () {
+                    final list = [...s.danmakuServers]..removeAt(i);
+                    _applyServers(list);
+                  },
+                ),
+              ),
+            if (s.danmakuServers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  '未添加服务器；上面的「弹幕 API 地址」会作为默认服务器使用',
+                  style: TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const ValueKey('danmakuServerAdd'),
+                onPressed: _addServer,
+                icon: const Icon(Icons.add),
+                label: const Text('添加服务器'),
+              ),
+            ),
             const Divider(height: 1),
             _sectionHeader('行数（滚动按屏高自动铺满，此值为上限）'),
             _rowsSlider(

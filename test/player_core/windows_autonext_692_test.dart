@@ -268,7 +268,9 @@ void main() {
       final idx = src.indexOf('dirty |= assign(skipPrompt_, sp)');
       expect(idx, greaterThan(0));
       final after = src.substring(idx, idx + 300);
-      expect(after, contains('if (dirty) emit changed()'));
+      // P1：dirty 时先同步弹幕时钟再发信号（块内仍是 emit changed()）。
+      expect(after, contains('if (dirty) {'));
+      expect(after, contains('emit changed();'));
     });
 
     test('D4 QML 绑定依赖 skipPrompt 属性通知', () {

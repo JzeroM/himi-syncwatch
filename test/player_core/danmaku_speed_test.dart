@@ -77,10 +77,10 @@ void main() {
     });
 
     test('match 空结果时用 seriesFileName 重试', () {
-      final idx =
-          screen.indexOf('Future<void> _loadDanmaku({bool force = false}) async {');
+      // P2：单服务器匹配抽到 `_loadDanmakuFromClient`，重试逻辑随之移动。
+      final idx = screen.indexOf('Future<({int id, List<DanmakuComment> comments})?> _loadDanmakuFromClient(');
       expect(idx, greaterThan(0));
-      final end = screen.indexOf('/// 失败统一处理', idx);
+      final end = screen.indexOf('/// 匹配 → 拉弹幕 → 渲染', idx);
       final body = screen.substring(idx, end);
       expect(body, contains('if (matched.isEmpty)'));
       expect(body, contains('_danmakuSeriesMatchFileName()'));
@@ -132,8 +132,9 @@ void main() {
     test('去重后才更新快照与锚点', () {
       final body = bodyOf(danmaku, 'fun setClock(');
       expect(body, contains('lastClockPosMs = positionMs'));
-      expect(body, contains('snapPosMs = positionMs'));
-      expect(body, contains('snapAtMs = System.currentTimeMillis()'));
+      // P1：锚点写入统一走 hardResync（单调时钟），不再直接写墙钟字段。
+      expect(body, contains('hardResync(positionMs'));
+      expect(body, isNot(contains('System.currentTimeMillis()')));
     });
 
     test('注释记录「本地 tick 用旧快照重锚 → 回退 150ms」根因', () {

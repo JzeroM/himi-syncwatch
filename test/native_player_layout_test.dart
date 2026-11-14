@@ -1027,7 +1027,8 @@ void main() {
         'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
         'DanmakuLayer.ets',
       ).readAsStringSync();
-      expect(danmaku, contains('return HimiMpvNativeHost.getInstance().positionNowMs()'));
+      // P1：弹幕改用独立时钟（带死区/收敛），进度条时钟保持原样。
+      expect(danmaku, contains('danmakuPositionNowMs()'));
       expect(danmaku, isNot(contains('drift * 0.1')),
           reason: '漂移牵引 = 每帧注入额外位移，弹幕忽快忽慢');
       expect(danmaku, isNot(contains('clockAnchorMs')));
@@ -1081,7 +1082,9 @@ void main() {
         'DanmakuLayer.ets',
       ).readAsStringSync();
       expect(danmaku, contains('.fontWeight(500)'));
-      expect(danmaku, contains("shadow({ radius: 3, color: '#8A000000'"));
+      // P3：描边改由设置驱动（宽度/颜色可配），默认视觉与旧 blur3 接近。
+      expect(danmaku, contains('danmakuOutlineWidth * 1.5'));
+      expect(danmaku, contains('danmakuOutlineColor'),);
     });
 
     test('手势亮度：系统当前亮度初值 + 真正写窗口亮度', () {

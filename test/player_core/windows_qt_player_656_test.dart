@@ -181,7 +181,9 @@ void main() {
 
     test('状态只在字段真的变化时发信号（20Hz 推送下关键）', () {
       expect(stateCpp, contains('bool assign(T& target, const T& value)'));
-      expect(stateCpp, contains('if (dirty) emit changed();'));
+      // P1：dirty 块内先同步弹幕时钟再 emit（语义仍是「只在变化时发」）。
+      expect(stateCpp, contains('if (dirty) {'));
+      expect(stateCpp, contains('emit changed();'));
     });
   });
 

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:himi_syncwatch/models/top_bar_clock_format.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_server.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 
 class AppSettings {
@@ -344,6 +347,65 @@ class AppSettings {
   /// 弹幕整体透明度。
   final double danmakuOpacity;
 
+  /// 弹幕服务器列表（JSON 数组串）。
+  ///
+  /// 【为什么是字符串】`AppSettings` 是纯值模型，列表以 JSON 串存储可以
+  /// 免去为嵌套对象写一套序列化；解析失败一律回退空列表（不崩）。
+  final String danmakuServersJson;
+
+  /// 解析后的服务器列表（按优先级升序；解析失败返回空）。
+  List<DanmakuServer> get danmakuServers => parseDanmakuServers(
+        danmakuServersJson,
+        legacyApiUrl: danmakuApiUrl,
+      );
+
+  /// 当前生效的服务器：优先级最小且启用的那条；都没有则回退老字段。
+  DanmakuServer? get activeDanmakuServer {
+    final list = danmakuServers.where((s) => s.enabled).toList()
+      ..sort((a, b) => a.priority.compareTo(b.priority));
+    if (list.isNotEmpty) return list.first;
+    final legacy = danmakuApiUrl.trim();
+    if (legacy.isEmpty) return null;
+    return DanmakuServer(id: 'legacy', name: '默认', baseUrl: legacy);
+  }
+
+  /// 解析服务器列表；空串时用老 `danmakuApiUrl` 迁移出一条。
+  static List<DanmakuServer> parseDanmakuServers(
+    String raw, {
+    String? legacyApiUrl,
+  }) {
+    final out = <DanmakuServer>[];
+    if (raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final e in decoded) {
+            final srv = DanmakuServer.fromJson(e);
+            if (srv != null) out.add(srv);
+          }
+        }
+      } catch (_) {
+        // 存档损坏：忽略，走下面的迁移兜底。
+      }
+    }
+    if (out.isEmpty) {
+      final legacy = (legacyApiUrl ?? '').trim();
+      if (legacy.isNotEmpty) {
+        out.add(DanmakuServer(
+          id: 'legacy',
+          name: '默认',
+          baseUrl: legacy,
+        ));
+      }
+    }
+    out.sort((a, b) => a.priority.compareTo(b.priority));
+    return out;
+  }
+
+  /// 序列化服务器列表（供设置页写回）。
+  static String encodeDanmakuServers(List<DanmakuServer> servers) =>
+      jsonEncode(servers.map((e) => e.toJson()).toList());
+
   /// 弹幕颜色模式：`color`（源色，默认）/ `white`（统一白）/ `custom`。
   final String danmakuColorMode;
 
@@ -472,6 +534,7 @@ class AppSettings {
     this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.8,
+    this.danmakuServersJson = '',
     this.danmakuColorMode = 'color',
     this.danmakuCustomColor = 0xFFFFFFFF,
     this.danmakuOutlineWidth = 1.0,
@@ -597,6 +660,7 @@ class AppSettings {
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
+    String? danmakuServersJson,
     String? danmakuColorMode,
     int? danmakuCustomColor,
     double? danmakuOutlineWidth,
@@ -684,6 +748,7 @@ class AppSettings {
       danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
       danmakuFontSize: danmakuFontSize ?? this.danmakuFontSize,
       danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
+      danmakuServersJson: danmakuServersJson ?? this.danmakuServersJson,
       danmakuColorMode: danmakuColorMode ?? this.danmakuColorMode,
       danmakuCustomColor: danmakuCustomColor ?? this.danmakuCustomColor,
       danmakuOutlineWidth:
@@ -787,6 +852,7 @@ class AppSettings {
         'danmakuSpeed': danmakuSpeed,
         'danmakuFontSize': danmakuFontSize,
         'danmakuOpacity': danmakuOpacity,
+        'danmakuServersJson': danmakuServersJson,
         'danmakuColorMode': danmakuColorMode,
         'danmakuCustomColor': danmakuCustomColor,
         'danmakuOutlineWidth': danmakuOutlineWidth,
@@ -1073,6 +1139,17 @@ class AppSettings {
               danmakuOpacityMin,
               danmakuOpacityMax,
             ),
+      danmakuServersJson: (json['danmakuServersJson'] as String?) ??
+          // 迁移：老存档只有 danmakuApiUrl → 合成一条服务器
+          ((json['danmakuApiUrl'] as String?)?.trim().isNotEmpty == true
+              ? encodeDanmakuServers([
+                  DanmakuServer(
+                    id: 'legacy',
+                    name: '默认',
+                    baseUrl: json['danmakuApiUrl'] as String,
+                  ),
+                ])
+              : ''),
       danmakuColorMode: (json['danmakuColorMode'] is String &&
               danmakuColorModes.contains(json['danmakuColorMode']))
           ? json['danmakuColorMode'] as String

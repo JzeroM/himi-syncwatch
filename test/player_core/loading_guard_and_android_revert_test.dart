@@ -71,7 +71,8 @@ void main() {
   group('③ 安卓弹幕单层插值（对齐鸿蒙）', () {
     test('618 起改用无状态纯函数（Choreographer 帧驱动保留）', () {
       expect(danmaku, contains('Choreographer'));
-      expect(danmaku, contains('elapsed * snapSpeed'));
+      // P1：锚点 + 单调时钟投影（不再是墙钟裸外推）。
+      expect(danmaku, contains('elapsedMs * snapSpeed'));
       // 616 的锚点/收敛方案已移除（鸿蒙已验证会「忽快忽慢」）。
       expect(danmaku, isNot(contains('drift / 10')));
       // 614 的 positionProvider 方案已移除。

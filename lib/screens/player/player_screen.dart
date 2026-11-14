@@ -2167,7 +2167,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 实际拉取推迟到当前集就绪后（见 _loadEpisodeStream 完成 / 起播），
     // 避免集索引未就绪时误报「无法获取当前影片名称」。
     _danmakuOn = settings.danmakuDefaultOn &&
-        DandanplayClient.normalizeBaseUrl(settings.danmakuApiUrl) != null;
+        DandanplayClient.normalizeBaseUrl(
+              settings.activeDanmakuServer?.baseUrl ?? '',
+            ) !=
+            null;
     _applyAudioFilterPolicy();
     // 音频后端：OpenSL 时钟精度更高，可改善高复杂度音频的播放流畅度。
     // AAudio/OpenSL/AudioTrack 为 Android 专属（其余平台自动归一为 auto），
@@ -10897,54 +10900,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return null;
   }
 
-  /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
-  /// episodeId 与弹幕列表均有进程内缓存（6h TTL，key 为单集 id，
-  /// 换集不串缓存）。
-  Future<void> _loadDanmaku({bool force = false}) async {
-    if (_danmakuLoading) return;
-    // 当前集弹幕已就绪：起播/恢复/重复触发不再重载（避免闪烁）。
-    // force=true 用于静默重试，跳过该守卫。
-    if (!force &&
-        _danmakuComments.isNotEmpty &&
-        _danmakuLoadedIndex == _currentEpisodeIndex) {
-      return;
-    }
-    final client = _danmakuClientFor(
-      ref.read(settingsProvider).danmakuApiUrl,
-    );
-    if (!client.isConfigured) {
-      if (mounted) {
-        setState(() => _danmakuOn = false);
-        _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
-      }
-      return;
-    }
-    // 影片信息 / 集索引尚未就绪（初始化过早等）：静默跳过，
-    // 待集就绪后的触发点再拉取，不弹提示、不关开关。
-    final fileName = _danmakuMatchFileName();
-    if (fileName == null) {
-      LogService().log('Danmaku', 'skip: episode not ready');
-      return;
-    }
-    final seq = ++_danmakuLoadSeq;
-    setState(() {
-      _danmakuLoading = true;
-      // 重试时保留上一次弹幕（失败保留，观感不闪断）；换集正常加载才清空
-      if (!force) _danmakuComments = const [];
-    });
-    try {
-      // 单集 id 作缓存 key：换集后同 itemId 也可能指向不同节目
-      final cacheKey =
-          _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
-              ? _episodes[_currentEpisodeIndex].id
-              : widget.itemId;
-      ({int id, List<DanmakuComment> comments})? found;
-
+  /// 用**单个**弹幕服务器完成：缓存命中 → match → search → 逐候选尝试。
+  ///
+  /// 返回命中的弹幕；无命中/被取消返回 null（调用方决定换下一个服务器）。
+  Future<({int id, List<DanmakuComment> comments})?> _loadDanmakuFromClient({
+    required DandanplayClient client,
+    required String fileName,
+    required String cacheKey,
+    required int seq,
+  }) async {
+    ({int id, List<DanmakuComment> comments})? found;
       // 1) 复用上次成功的 episodeId（坏源已不复用：失败会继续找其它候选）
       final cachedId = DanmakuCaches.episode.get(cacheKey);
       if (cachedId != null) {
         found = await _tryDanmakuCandidates(client, [cachedId], seq);
-        if (!mounted || seq != _danmakuLoadSeq) return;
+        if (!mounted || seq != _danmakuLoadSeq) return null;
       }
 
       // 2) 并行 match + 搜索，合并后按「全局集号命中优先 + 错源排除」逐候选试。
@@ -10985,7 +10955,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             }
           }(),
         ]);
-        if (!mounted || seq != _danmakuLoadSeq) return;
+        if (!mounted || seq != _danmakuLoadSeq) return null;
 
         found = await _tryDanmakuCandidates(
           client,
@@ -10994,9 +10964,81 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               .toList(growable: false),
           seq,
         );
-        if (!mounted || seq != _danmakuLoadSeq) return;
+        if (!mounted || seq != _danmakuLoadSeq) return null;
       }
 
+
+    return found;
+  }
+
+  /// 匹配 → 拉弹幕 → 渲染（失败回弹开关并轻提示）。
+  /// episodeId 与弹幕列表均有进程内缓存（6h TTL，key 为单集 id，
+  /// 换集不串缓存）。
+  Future<void> _loadDanmaku({bool force = false}) async {
+    if (_danmakuLoading) return;
+    // 当前集弹幕已就绪：起播/恢复/重复触发不再重载（避免闪烁）。
+    // force=true 用于静默重试，跳过该守卫。
+    if (!force &&
+        _danmakuComments.isNotEmpty &&
+        _danmakuLoadedIndex == _currentEpisodeIndex) {
+      return;
+    }
+    // P5/P2：服务器列表（老配置已自动迁移）。只要有一条可用就继续，
+    // 真正「用哪条」由下面的优先级循环决定。
+    final settings = ref.read(settingsProvider);
+    final hasUsableServer = settings.danmakuServers
+        .where((e) => e.enabled)
+        .any((e) => DandanplayClient.normalizeBaseUrl(e.baseUrl) != null);
+    if (!hasUsableServer) {
+      if (mounted) {
+        setState(() => _danmakuOn = false);
+        _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
+      }
+      return;
+    }
+    // 影片信息 / 集索引尚未就绪（初始化过早等）：静默跳过，
+    // 待集就绪后的触发点再拉取，不弹提示、不关开关。
+    final fileName = _danmakuMatchFileName();
+    if (fileName == null) {
+      LogService().log('Danmaku', 'skip: episode not ready');
+      return;
+    }
+    final seq = ++_danmakuLoadSeq;
+    setState(() {
+      _danmakuLoading = true;
+      // 重试时保留上一次弹幕（失败保留，观感不闪断）；换集正常加载才清空
+      if (!force) _danmakuComments = const [];
+    });
+    try {
+      // 单集 id 作缓存 key：换集后同 itemId 也可能指向不同节目
+      final cacheKey =
+          _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
+              ? _episodes[_currentEpisodeIndex].id
+              : widget.itemId;
+      ({int id, List<DanmakuComment> comments})? found;
+      // P2：按优先级依次尝试**所有启用**的服务器（真正的多源回退）。
+      // 单源命中即停；全部失败才提示「未匹配到弹幕」。
+      final servers = settings.danmakuServers
+          .where((e) => e.enabled)
+          .toList()
+        ..sort((a, b) => a.priority.compareTo(b.priority));
+      for (final srv in servers) {
+        if (!mounted || seq != _danmakuLoadSeq) return;
+        final c = _danmakuClientFor(srv.baseUrl);
+        if (!c.isConfigured) continue;
+        found = await _loadDanmakuFromClient(
+          client: c,
+          fileName: fileName,
+          cacheKey: cacheKey,
+          seq: seq,
+        );
+        if (found != null) {
+          LogService().log('Danmaku', '命中服务器: ${srv.name}（${srv.baseUrl}）');
+          break;
+        }
+        LogService().log('Danmaku', '服务器无命中，尝试下一个: ${srv.name}');
+      }
+      if (!mounted || seq != _danmakuLoadSeq) return;
       if (found == null) {
         throw const DanmakuApiException(
           DanmakuApiError.business,

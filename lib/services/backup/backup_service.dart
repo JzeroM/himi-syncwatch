@@ -151,6 +151,7 @@ class BackupService {
           'apiUrl': settings.danmakuApiUrl,
           'blockWords': settings.danmakuBlockWords,
           // P3 样式（白名单只备份用户填写的项）
+          'servers': settings.danmakuServersJson,
           'colorMode': settings.danmakuColorMode,
           'customColor': settings.danmakuCustomColor,
           'outlineWidth': settings.danmakuOutlineWidth,
@@ -335,6 +336,7 @@ class BackupService {
           tmdbWatchRegion: tmdb?['watchRegion'] as String?,
           danmakuApiUrl: danmaku?['apiUrl'] as String?,
           danmakuBlockWords: danmaku?['blockWords'] as String?,
+          danmakuServersJson: danmaku?['servers'] as String?,
           danmakuColorMode: danmaku?['colorMode'] as String?,
           danmakuCustomColor: (danmaku?['customColor'] as num?)?.toInt(),
           danmakuOutlineWidth:
