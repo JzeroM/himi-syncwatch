@@ -79,6 +79,8 @@ class PlayerState : public QObject {
     Q_PROPERTY(double danmakuSpeed READ danmakuSpeed NOTIFY changed)
     Q_PROPERTY(double danmakuFontSize READ danmakuFontSize NOTIFY changed)
     Q_PROPERTY(double danmakuOpacity READ danmakuOpacity NOTIFY changed)
+    Q_PROPERTY(int danmakuTotal READ danmakuTotal NOTIFY changed)
+    Q_PROPERTY(int danmakuOnscreen READ danmakuOnscreen NOTIFY changed)
     Q_PROPERTY(QString danmakuColorMode READ danmakuColorMode NOTIFY changed)
     Q_PROPERTY(int danmakuCustomColor READ danmakuCustomColor NOTIFY changed)
     Q_PROPERTY(double danmakuOutlineWidth READ danmakuOutlineWidth NOTIFY changed)
@@ -256,6 +258,8 @@ public:
     double danmakuSpeed() const { return danmakuSpeed_; }
     double danmakuFontSize() const { return danmakuFontSize_; }
     double danmakuOpacity() const { return danmakuOpacity_; }
+    int danmakuTotal() const { return danmakuTotal_; }
+    int danmakuOnscreen() const { return danmakuOnscreen_; }
     QString danmakuColorMode() const { return danmakuColorMode_; }
     int danmakuCustomColor() const { return danmakuCustomColor_; }
     double danmakuOutlineWidth() const { return danmakuOutlineWidth_; }
@@ -434,6 +438,8 @@ private:
     double danmakuSpeed_ = 0.7;
     double danmakuFontSize_ = 0.5;
     double danmakuOpacity_ = 1.0;
+    int danmakuTotal_ = 0;
+    int danmakuOnscreen_ = 0;
     QString danmakuColorMode_ = QStringLiteral("color");
     int danmakuCustomColor_ = 0xFFFFFFFF;
     double danmakuOutlineWidth_ = 1.0;

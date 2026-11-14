@@ -149,6 +149,21 @@ export struct DebugPanel {
         severity: dropSeverity(s.frameDropCount, s.decoderFrameDropCount),
       },
     ];
+    // P4：弹幕实时统计（总条数 / 在屏 / 过滤）。
+    if (s.danmakuTotal > 0) {
+      playback.push({
+        label: '弹幕',
+        value: `总 ${s.danmakuTotal} · 在屏 ${s.danmakuOnscreen}`,
+        severity: s.danmakuOnscreen > 200 ? DebugSeverity.WARN : DebugSeverity.NORMAL,
+      });
+      if (s.danmakuBlocked > 0 || s.danmakuSampled > 0) {
+        playback.push({
+          label: '弹幕过滤',
+          value: `屏蔽 ${s.danmakuBlocked} · 采样丢弃 ${s.danmakuSampled}`,
+          severity: DebugSeverity.NORMAL,
+        });
+      }
+    }
     groups.push({
       key: KEY_PLAYBACK,
       title: '播放',

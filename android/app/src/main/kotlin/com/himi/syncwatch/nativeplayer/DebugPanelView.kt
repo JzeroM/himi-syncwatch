@@ -212,6 +212,21 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
                 "渲染 ${state.frameDropCount} / 解码 ${state.decoderFrameDropCount}",
                 fmt.dropSeverity(state.frameDropCount, state.decoderFrameDropCount),
             )
+            // P4：弹幕实时统计（排查卡顿/丢弹幕/屏蔽是否生效）
+            if (state.danmakuTotal > 0) {
+                addRow(
+                    "弹幕",
+                    "总 ${state.danmakuTotal} · 在屏 ${state.danmakuOnscreen}",
+                    if (state.danmakuOnscreen > 200) fmt.SEV_WARN else fmt.SEV_NORMAL,
+                )
+                if (state.danmakuBlocked > 0 || state.danmakuSampled > 0) {
+                    addRow(
+                        "弹幕过滤",
+                        "屏蔽 ${state.danmakuBlocked} · 采样丢弃 ${state.danmakuSampled}",
+                        fmt.SEV_NORMAL,
+                    )
+                }
+            }
         }
 
         // ── HDR 输入 ──

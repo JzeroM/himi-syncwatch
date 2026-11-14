@@ -294,6 +294,11 @@ data class AndroidNativePlayerState(
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
+    /** P4 统计：总条数 / 屏蔽 / 采样丢弃 / 在屏。 */
+    val danmakuTotal: Int = 0,
+    val danmakuBlocked: Int = 0,
+    val danmakuSampled: Int = 0,
+    val danmakuOnscreen: Int = 0,
     /** 弹幕颜色模式：color / white / custom。 */
     val danmakuColorMode: String = "color",
     /** 自定义弹幕颜色（0xAARRGGBB）。 */
@@ -500,6 +505,10 @@ data class AndroidNativePlayerState(
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),
+            danmakuTotal = json.optInt("danmakuTotal", 0),
+            danmakuBlocked = json.optInt("danmakuBlocked", 0),
+            danmakuSampled = json.optInt("danmakuSampled", 0),
+            danmakuOnscreen = json.optInt("danmakuOnscreen", 0),
             danmakuColorMode = json.optString("danmakuColorMode", "color"),
             danmakuCustomColor =
                 json.optLong("danmakuCustomColor", 0xFFFFFFFFL).toInt(),

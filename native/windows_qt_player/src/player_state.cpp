@@ -289,6 +289,12 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
                     readDouble(json, "danmakuFontSize", danmakuFontSize_));
     dirty |= assign(danmakuOpacity_,
                     readDouble(json, "danmakuOpacity", danmakuOpacity_));
+    dirty |= assign(danmakuTotal_,
+                    static_cast<int>(readInt64(json, "danmakuTotal",
+                                               danmakuTotal_)));
+    dirty |= assign(danmakuOnscreen_,
+                    static_cast<int>(readInt64(json, "danmakuOnscreen",
+                                               danmakuOnscreen_)));
     dirty |= assign(danmakuColorMode_,
                     readString(json, "danmakuColorMode", danmakuColorMode_));
     dirty |= assign(danmakuCustomColor_,

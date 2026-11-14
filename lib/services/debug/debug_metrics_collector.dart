@@ -89,6 +89,7 @@ class DebugMetricsCollector {
       _outputColorGroup(videoParams, props),
       _dvGroup(videoParams, props),
       _pipelineGroup(props),
+      _danmakuGroup(),
     ]);
   }
 
@@ -356,6 +357,39 @@ class DebugMetricsCollector {
         actual: props['current-gpu-context'] ?? '',
         configured: props['gpu-context'] ?? _adapter.mpvGpuContext ?? '',
       );
+
+  // ── 弹幕（P4 实时统计）─────────────────────────────────────
+
+  /// 弹幕统计：总条数 / 在屏 / 屏蔽 / 采样丢弃。
+  ///
+  /// 数值由适配器在**构建弹幕窗口时顺带算出**（原生 UI 与 Flutter 面板同源），
+  /// 用于排查「弹幕卡顿/丢弹幕/开了屏蔽没生效」。
+  DebugMetricGroup _danmakuGroup() {
+    final st = _adapter.danmakuStats;
+    if (st.total <= 0) {
+      return const DebugMetricGroup(
+        title: '弹幕',
+        rows: [DebugMetricRow('状态', '无弹幕')],
+      );
+    }
+    return DebugMetricGroup(
+      title: '弹幕',
+      rows: [
+        DebugMetricRow('总条数', '${st.total}'),
+        DebugMetricRow(
+          '在屏',
+          '${st.onscreen}',
+          severity: st.onscreen > 200 ? Severity.warn : Severity.normal,
+        ),
+        DebugMetricRow('已屏蔽', '${st.blocked}'),
+        DebugMetricRow(
+          '采样丢弃',
+          '${st.sampled}',
+          severity: st.sampled > 0 ? Severity.warn : Severity.normal,
+        ),
+      ],
+    );
+  }
 
   /// 渲染后端标签（带 DV 能力结论，而非光秃秃的 context 名）。
   ///

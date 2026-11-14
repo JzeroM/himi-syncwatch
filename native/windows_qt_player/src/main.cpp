@@ -760,7 +760,14 @@ int main(int argc, char* argv[]) {
     debugTimer->setInterval(2000);
     QObject::connect(debugTimer, &QTimer::timeout, &app, [&mpv, &state]() {
         if (!state.showDebug()) return;
-        state.setDebugText(mpv.debugText());
+        QString text = mpv.debugText();
+        // P4：弹幕实时统计（Dart 侧算好后下发；0 表示当前无弹幕）
+        if (state.danmakuTotal() > 0) {
+            text += QStringLiteral("\n弹幕  总 %1 · 在屏 %2")
+                        .arg(state.danmakuTotal())
+                        .arg(state.danmakuOnscreen());
+        }
+        state.setDebugText(text);
     });
     debugTimer->start();
 

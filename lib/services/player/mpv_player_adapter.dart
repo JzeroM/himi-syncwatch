@@ -1346,6 +1346,20 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 【保留时长必须覆盖整段驻留/穿屏】滚动 8s÷speed、驻留 4s。旧下界
   /// `pos-2s` 会把刚入屏 2 秒的滚动弹幕移出数据源 → 滚到一半就消失
   ///（真机回归）。
+  /// P4：弹幕统计（调试面板用）。
+  ({int total, int blocked, int sampled, int onscreen}) get danmakuStats => (
+        total: _dmTotal,
+        blocked: _dmBlocked,
+        sampled: _dmSampled,
+        onscreen: _dmOnscreen,
+      );
+
+  /// P4：最近一次弹幕统计（随窗口构建顺带算出，供调试面板）。
+  int _dmTotal = 0;
+  int _dmBlocked = 0;
+  int _dmSampled = 0;
+  int _dmOnscreen = 0;
+
   List<NativeDanmakuItem> _buildDanmakuWindow() {
     if (_nativeDanmakuComments.isEmpty) return const [];
     var comments = _nativeDanmakuComments;
@@ -1372,6 +1386,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 采样语义一致，且样本稳定（弹幕不会中途互换进出，防闪烁）。
     final maxCount = _nativeUiExtras.danmakuMaxCount;
     if (maxCount != null && maxCount > 0 && comments.length > maxCount) {
+      _dmSampled = comments.length - maxCount;
       final sorted = [...comments]..sort((a, b) => a.time.compareTo(b.time));
       final total = sorted.length;
       final sampled = <DanmakuComment>[];
@@ -1384,9 +1399,36 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     final speed = _nativeUiExtras.danmakuSpeed.clamp(0.25, 4.0);
     final travelSec = 8.0 / speed;
     final keepSec = (travelSec > 4.0 ? travelSec : 4.0) + 2.0;
+    // P4 统计：总条数 / 屏蔽数（按同一套规则再数一遍，只在每次构窗时算）。
+    _dmTotal = _nativeDanmakuComments.length;
+    var unblocked = 0;
+    for (final c in _nativeDanmakuComments) {
+      if (_nativeUiExtras.danmakuBlockTop && c.mode == DanmakuMode.top) {
+        continue;
+      }
+      if (_nativeUiExtras.danmakuBlockBottom && c.mode == DanmakuMode.bottom) {
+        continue;
+      }
+      var hitWord = false;
+      for (final w in _nativeUiExtras.danmakuBlockWords) {
+        if (w.isNotEmpty && c.text.contains(w)) {
+          hitWord = true;
+          break;
+        }
+      }
+      if (!hitWord) unblocked++;
+    }
+    _dmBlocked = _dmTotal - unblocked;
+    _dmSampled = 0;
+    _dmOnscreen = 0;
+
     final out = <NativeDanmakuItem>[];
     for (final c in comments) {
       if (c.time < posSec - keepSec || c.time > posSec + 30) continue;
+      // 在屏：已开始且未过生命周期（滚动用穿屏时长，顶/底用驻留 4s）。
+      final age = posSec - c.time;
+      final life = c.mode == DanmakuMode.scroll ? travelSec : 4.0;
+      if (age >= 0 && age <= life) _dmOnscreen++;
       out.add(NativeDanmakuItem(
         timeMs: (c.time * 1000).round(),
         text: c.text,
@@ -2517,6 +2559,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       danmakuSpeed: _nativeUiExtras.danmakuSpeed,
       danmakuFontSize: _nativeUiExtras.danmakuFontSize,
       danmakuOpacity: _nativeUiExtras.danmakuOpacity,
+      danmakuTotal: _dmTotal,
+      danmakuBlocked: _dmBlocked,
+      danmakuSampled: _dmSampled,
+      danmakuOnscreen: _dmOnscreen,
       danmakuColorMode: _nativeUiExtras.danmakuColorMode,
       danmakuCustomColor: _nativeUiExtras.danmakuCustomColor,
       danmakuOutlineWidth: _nativeUiExtras.danmakuOutlineWidth,

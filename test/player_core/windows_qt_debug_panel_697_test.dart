@@ -154,7 +154,10 @@ void main() {
     test('2.6 定时器驱动且受 showDebug 门控', () {
       expect(mainCpp, contains('debugTimer'));
       expect(mainCpp, contains('state.showDebug()'));
-      expect(mainCpp, contains('state.setDebugText(mpv.debugText())'));
+      // P4：先拼「弹幕统计」再 setDebugText（Qt 侧无 PlayerState 引用，
+      // 所以拼接放在 main.cpp，而不是 MpvWindow::debugText）。
+      expect(mainCpp, contains('QString text = mpv.debugText();'));
+      expect(mainCpp, contains('state.setDebugText(text);'));
       // 2s 一次（不是每帧）
       expect(mainCpp, contains('setInterval(2000)'));
     });

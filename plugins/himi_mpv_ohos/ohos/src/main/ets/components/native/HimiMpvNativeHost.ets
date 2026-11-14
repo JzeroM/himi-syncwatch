@@ -458,6 +458,11 @@ export class NativePlayerUiState {
   danmakuSpeed: number = 1.0;
   danmakuFontSize: number = 0.5;
   danmakuOpacity: number = 0.6;
+  /** P4 统计：总条数 / 屏蔽 / 采样丢弃 / 在屏。 */
+  danmakuTotal: number = 0;
+  danmakuBlocked: number = 0;
+  danmakuSampled: number = 0;
+  danmakuOnscreen: number = 0;
   /** 弹幕颜色模式：color / white / custom（P3）。 */
   danmakuColorMode: string = 'color';
   /** 自定义弹幕颜色（0xAARRGGBB）。 */
@@ -608,6 +613,10 @@ export class NativePlayerUiState {
     this.danmakuSpeed = jsonNum(obj.danmakuSpeed, this.danmakuSpeed);
     this.danmakuFontSize = jsonNum(obj.danmakuFontSize, this.danmakuFontSize);
     this.danmakuOpacity = jsonNum(obj.danmakuOpacity, this.danmakuOpacity);
+    this.danmakuTotal = jsonNum(obj.danmakuTotal, this.danmakuTotal);
+    this.danmakuBlocked = jsonNum(obj.danmakuBlocked, this.danmakuBlocked);
+    this.danmakuSampled = jsonNum(obj.danmakuSampled, this.danmakuSampled);
+    this.danmakuOnscreen = jsonNum(obj.danmakuOnscreen, this.danmakuOnscreen);
     this.danmakuColorMode = jsonStr(obj.danmakuColorMode, this.danmakuColorMode);
     this.danmakuCustomColor =
       jsonNum(obj.danmakuCustomColor, this.danmakuCustomColor);

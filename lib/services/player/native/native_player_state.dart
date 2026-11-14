@@ -437,6 +437,10 @@ class NativePlayerState {
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
     this.danmakuMaxCount,
+    this.danmakuTotal = 0,
+    this.danmakuBlocked = 0,
+    this.danmakuSampled = 0,
+    this.danmakuOnscreen = 0,
     this.roomCode,
     this.isHost = false,
     this.roomMembers = const <NativeRoomMember>[],
@@ -648,6 +652,12 @@ class NativePlayerState {
   /// 弹幕数量上限（null = 不限制；超限由 Dart 等间隔采样后入窗口）。
   final int? danmakuMaxCount;
 
+  /// P4 统计：总条数 / 屏蔽数 / 采样丢弃数 / 当前在屏数。
+  final int danmakuTotal;
+  final int danmakuBlocked;
+  final int danmakuSampled;
+  final int danmakuOnscreen;
+
   // ── 房间 ──
   final String? roomCode;
   final bool isHost;
@@ -787,6 +797,10 @@ class NativePlayerState {
       currentVersionIndex: (json['currentVersionIndex'] as num?)?.toInt() ?? 0,
       danmakuEnabled: json['danmakuEnabled'] == true,
       danmakuOpacity: (json['danmakuOpacity'] as num?)?.toDouble() ?? 1.0,
+      danmakuTotal: (json['danmakuTotal'] as num?)?.toInt() ?? 0,
+      danmakuBlocked: (json['danmakuBlocked'] as num?)?.toInt() ?? 0,
+      danmakuSampled: (json['danmakuSampled'] as num?)?.toInt() ?? 0,
+      danmakuOnscreen: (json['danmakuOnscreen'] as num?)?.toInt() ?? 0,
       danmakuColorMode: json['danmakuColorMode'] as String? ?? 'color',
       danmakuCustomColor:
           (json['danmakuCustomColor'] as num?)?.toInt() ?? 0xFFFFFFFF,
@@ -927,6 +941,10 @@ class NativePlayerState {
         'currentVersionIndex': currentVersionIndex,
         'danmakuEnabled': danmakuEnabled,
         'danmakuOpacity': danmakuOpacity,
+        'danmakuTotal': danmakuTotal,
+        'danmakuBlocked': danmakuBlocked,
+        'danmakuSampled': danmakuSampled,
+        'danmakuOnscreen': danmakuOnscreen,
         'danmakuColorMode': danmakuColorMode,
         'danmakuCustomColor': danmakuCustomColor,
         'danmakuOutlineWidth': danmakuOutlineWidth,
@@ -1045,6 +1063,10 @@ class NativePlayerState {
     int? currentVersionIndex,
     bool? danmakuEnabled,
     double? danmakuOpacity,
+    int? danmakuTotal,
+    int? danmakuBlocked,
+    int? danmakuSampled,
+    int? danmakuOnscreen,
     String? danmakuColorMode,
     int? danmakuCustomColor,
     double? danmakuOutlineWidth,
@@ -1163,6 +1185,10 @@ class NativePlayerState {
         currentVersionIndex: currentVersionIndex ?? this.currentVersionIndex,
         danmakuEnabled: danmakuEnabled ?? this.danmakuEnabled,
         danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
+        danmakuTotal: danmakuTotal ?? this.danmakuTotal,
+        danmakuBlocked: danmakuBlocked ?? this.danmakuBlocked,
+        danmakuSampled: danmakuSampled ?? this.danmakuSampled,
+        danmakuOnscreen: danmakuOnscreen ?? this.danmakuOnscreen,
         danmakuColorMode: danmakuColorMode ?? this.danmakuColorMode,
         danmakuCustomColor: danmakuCustomColor ?? this.danmakuCustomColor,
         danmakuOutlineWidth:
@@ -1273,6 +1299,10 @@ class NativePlayerState {
       other.currentVersionIndex == currentVersionIndex &&
       other.danmakuEnabled == danmakuEnabled &&
       other.danmakuOpacity == danmakuOpacity &&
+      other.danmakuTotal == danmakuTotal &&
+      other.danmakuBlocked == danmakuBlocked &&
+      other.danmakuSampled == danmakuSampled &&
+      other.danmakuOnscreen == danmakuOnscreen &&
       other.danmakuColorMode == danmakuColorMode &&
       other.danmakuCustomColor == danmakuCustomColor &&
       other.danmakuOutlineWidth == danmakuOutlineWidth &&
@@ -1367,6 +1397,10 @@ class NativePlayerState {
         currentVersionIndex,
         danmakuEnabled,
         danmakuOpacity,
+        danmakuTotal,
+        danmakuBlocked,
+        danmakuSampled,
+        danmakuOnscreen,
         danmakuColorMode,
         danmakuCustomColor,
         danmakuOutlineWidth,
