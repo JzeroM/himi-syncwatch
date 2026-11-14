@@ -132,9 +132,14 @@ void main() {
       expect(androidDart, contains("'gpu-api': _gpuApi"));
     });
 
-    test('3.3 _start 时检测 Vulkan 并设置 _gpuApi', () {
-      expect(androidDart, contains('_gpuApi = await isVulkanAvailable()'));
-      expect(androidDart, contains("? 'vulkan' : 'opengl'"));
+    test('3.3 gpu-api 固定 opengl（Vulkan 渲染安卓黑屏回归）', () {
+      // 真机回归：gpu-api=vulkan 能初始化但渲染不出画面（黑屏有声）
+      expect(androidDart, contains("_gpuApi = 'opengl';"));
+      expect(
+        androidDart,
+        isNot(contains('_gpuApi = await isVulkanAvailable()')),
+        reason: '安卓 Vulkan 渲染路径未打通前不能启用',
+      );
     });
 
     test('3.4 gpu-context 保持 android（与 GPU API 无关）', () {
@@ -163,13 +168,15 @@ void main() {
       // 而它在初始化时调用 vkGetPhysicalDeviceQueueFamilyProperties2
       // （Vulkan 1.1，API 28+）。Android 硬解只有 MediaCodec，显式限定
       // 可彻底避开这条依赖新版 Vulkan loader 的路径。
-      expect(androidDart, contains("'mediacodec'"));
-      expect(androidDart, contains("'mediacodec-copy'"));
-      // 不再用 auto（会纳入 vulkan 硬解后端）
+      // 真机回归：显式 mediacodec 要求直写 Surface，部分设备不回退 →
+      // 黑屏有声。恢复 auto/auto-copy（auto-copy 是 copy-back，兼容性最好）。
       final hwdecIdx = androidDart.indexOf("'hwdec':");
       expect(hwdecIdx, greaterThan(0));
-      final hwdecBlock = androidDart.substring(hwdecIdx, hwdecIdx + 160);
-      expect(hwdecBlock, isNot(contains("'auto'")));
+      final hwdecBlock = androidDart.substring(hwdecIdx, hwdecIdx + 200);
+      expect(hwdecBlock, contains("'auto-copy'"));
+      expect(hwdecBlock, contains("'auto'"));
+      // 软解回退必须保留
+      expect(androidDart, contains("'hwdec-software-fallback': 'yes'"));
     });
   });
 

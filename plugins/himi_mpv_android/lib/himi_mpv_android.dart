@@ -298,9 +298,13 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _start() async {
-    // 697：Vulkan 可用性检测（libplacebo DV 处理需要 compute shader）。
-    // 结果缓存，整个播放生命周期只检测一次。
-    _gpuApi = await isVulkanAvailable() ? 'vulkan' : 'opengl';
+    // 【697 真机回归：gpu-api=vulkan 在安卓黑屏有声】
+    // mpv 的 Android Vulkan 上下文能初始化，但渲染不出画面（音频正常）。
+    // 暂时固定 opengl（EGL/GLES），保证画面正常。
+    //
+    // libplacebo 的 DV 处理确实需要 Vulkan compute，但「能初始化 Vulkan」
+    // 与「能正确渲染」是两件事——安卓这条路径需要单独排查（见 AGENTS.md）。
+    _gpuApi = 'opengl';
     // 655：不再探测 GLES 版本（见 _voOverride 注释）。`vo` 由设置决定。
     if (!nativeSurface) {
       await _ensurePlayer();
@@ -534,16 +538,17 @@ class HimiMpvAndroidSession implements MpvSession {
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and
       // native_window are NULL" → 首帧解码失败 → 上层弹「播放失败」。
       // copy-back 解到系统内存再上传 GPU。Surface 模式保留 auto（可直写）。
-      // 697：显式限定 mediacodec，不用 `auto`。
+      // 【697 真机回归：改成 mediacodec 后黑屏有声】
+      // 显式 `mediacodec`（非 copy）要求硬解直写 Surface；部分设备/驱动
+      // 直写失败时不回退，表现为「有声无画」。`auto-copy` 是 copy-back
+      // 路径（解码到系统内存再上传 GPU），兼容性最好。
       //
-      // 【为什么】启用 Vulkan 后 mpv 编译了 vulkan 硬解后端，`hwdec=auto`
-      // 会把它纳入候选。该后端在初始化时调用
-      // `vkGetPhysicalDeviceQueueFamilyProperties2`（Vulkan 1.1，API 28+
-      // 才有）——Android 硬解只有 MediaCodec，根本不需要它，显式限定可以
-      // 彻底避开这条会依赖新版 Vulkan loader 的代码路径。
+      // 恢复 `auto`：`hwdec-software-fallback=yes` 保证硬解不可用时
+      // 自动退软解。Vulkan 硬解后端虽在候选里，但 mpv 只在 Vulkan 上下文
+      // 初始化成功后才用它；Android 的 gpu-api 默认 opengl，不会选中。
       'hwdec': !effectiveSurface
-          ? 'mediacodec-copy'
-          : (hwdecMode == 'software' ? 'no' : 'mediacodec'),
+          ? 'auto-copy'
+          : (hwdecMode == 'software' ? 'no' : 'auto'),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',
