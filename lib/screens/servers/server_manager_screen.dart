@@ -1379,7 +1379,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                     label: '路径（可选）',
                     controller: _pathController,
                     fieldKey: const Key('serverPathField'),
-                    hintText: 'Path（可选）',
+                    hintText: 'Path（如 emby）',
                   ),
                 ),
                 const SizedBox(width: 12),

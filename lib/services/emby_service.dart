@@ -49,6 +49,10 @@ class EmbyService {
   /// 后续查询直接走本地扫描，避免反复请求失败。
   bool _providerIdFilterUnsupported = false;
 
+  /// 根级 `/Items` 列表端点是否不存在；首次识别后记住，后续直接走
+  /// `/Users/{userId}/Items`（部分仿 Emby 网关只实现用户维度端点）。
+  bool _itemsListUnsupportedByServer = false;
+
   /// 不支持服务端过滤时的整库扫描缓存，按 IncludeItemTypes + Fields 区分。
   final Map<String, _ProviderScanCache> _providerScanCache = {};
   final Map<String, Future<List<MediaItem>>> _providerScanInFlight = {};
@@ -86,6 +90,7 @@ class EmbyService {
     _serverId = serverId;
     _deviceId = deviceId;
     _providerIdFilterUnsupported = false;
+    _itemsListUnsupportedByServer = false;
     _providerScanCache.clear();
     _providerScanInFlight.clear();
 
@@ -140,6 +145,16 @@ class EmbyService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// 登录并返回服务端原始响应（`User` / `AccessToken` / `ServerId`）。
+  ///
+  /// 路径使用 Emby 官方大小写 `Users/AuthenticateByName`：真 Emby / Jellyfin
+  /// 的路由大小写不敏感，而部分仿 Emby 网关（例如 Spring 实现）大小写敏感，
+  /// 小写 `authenticatebyname` 会命中其它路由并返回
+  /// `Request method 'POST' is not supported`。
+  ///
+  /// 这类网关还会用 HTTP 200 + 业务错误体（`{"code":"-1",...}`）表达失败，
+  /// Dio 不会抛异常，因此这里显式校验响应结构并抛 [EmbyException]，
+  /// 避免上层只能报「服务端返回数据异常」而无从排查。
   Future<Map<String, dynamic>> authenticate({
     required String serverUrl,
     required String username,
@@ -159,11 +174,22 @@ class EmbyService {
         'DeviceId="$deviceId", Version="1.0.0"';
 
     final response = await dio.post(
-      '/Users/authenticatebyname',
+      '/Users/AuthenticateByName',
       data: {'Username': username, 'Pw': password},
     );
 
-    return response.data as Map<String, dynamic>;
+    final data = response.data;
+    if (data is Map) {
+      final map = data.cast<String, dynamic>();
+      final user = map['User'];
+      final accessToken = map['AccessToken'];
+      if (user is Map && accessToken is String && accessToken.isNotEmpty) {
+        return map;
+      }
+    }
+    throw const EmbyException(
+      '服务器返回的不是标准 Emby 数据，请检查地址和路径（反代路径如 /emby）是否正确',
+    );
   }
 
   Future<MediaItem?> validateToken() async {
@@ -174,6 +200,61 @@ class EmbyService {
       if (e.response?.statusCode == 401) return null;
       return null;
     }
+  }
+
+  /// 是否为「端点不存在」的伪成功响应体。
+  ///
+  /// 真 Emby 的列表响应一定包含 `Items` 键（哪怕是空数组），因此这里要求
+  /// 不含 `Items`，再匹配 `code == -1` 或 `No static resource` 文案，
+  /// 避免把正常空列表误判成端点缺失。
+  static bool _isEndpointMissingBody(dynamic data) {
+    if (data is! Map || data.containsKey('Items')) return false;
+    if (data['code']?.toString() == '-1') return true;
+    final message = data['message'];
+    return message is String &&
+        message.toLowerCase().contains('no static resource');
+  }
+
+  /// 从列表响应中取 `Items`；异常响应体（非 Map）按空列表处理。
+  static List<dynamic> _itemsOf(dynamic data) =>
+      (data is Map ? data['Items'] : null) as List<dynamic>? ?? const [];
+
+  /// 条目列表查询：优先官方 `GET /Items`；端点不存在时回退
+  /// `GET /Users/{userId}/Items`（查询参数原样透传）。
+  ///
+  /// 部分仿 Emby 网关（如 Spring 实现的 HX-NewEmby）只实现用户维度端点，
+  /// 且用 HTTP 200 + `{"code":"-1","message":"No static resource ..."}`
+  /// 表达「接口不存在」——Dio 不会抛异常，若直接解析会得到空列表，
+  /// 表现为首页/分类页全空且无任何报错。
+  Future<dynamic> _getItemsData(Map<String, dynamic> queryParameters) async {
+    final userId = _userId;
+    if (!_itemsListUnsupportedByServer) {
+      try {
+        final response = await _dio.get(
+          '/Items',
+          queryParameters: queryParameters,
+        );
+        if (!_isEndpointMissingBody(response.data)) return response.data;
+      } on DioException catch (e) {
+        final code = e.response?.statusCode;
+        if (code != 404 && code != 405) rethrow;
+      }
+      _itemsListUnsupportedByServer = true;
+      debugPrint('EmbyService: /Items 不可用，回退 /Users/$userId/Items');
+    }
+    if (userId == null || userId.isEmpty) {
+      // 没有 userId 无法构造用户维度路径，保持官方端点（错误照常上抛）。
+      final response = await _dio.get(
+        '/Items',
+        queryParameters: queryParameters,
+      );
+      return response.data;
+    }
+    final response = await _dio.get(
+      '/Users/$userId/Items',
+      queryParameters: queryParameters,
+    );
+    return response.data;
   }
 
   /// 条目列表查询。筛选四参数全部可选：null/空不注入查询串（向后兼容）。
@@ -205,34 +286,31 @@ class EmbyService {
       return const [];
     }
     try {
-      final response = await _dio.get(
-        '/Items',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          if (parentId != null) 'ParentId': parentId,
-          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
-          if (limit != null) 'Limit': limit,
-          if (startIndex != null) 'StartIndex': startIndex,
-          if (sortBy != null) 'SortBy': sortBy,
-          if (sortOrder != null) 'SortOrder': sortOrder,
-          if (filters != null && filters.isNotEmpty) 'Filters': filters,
-          if (ids != null && ids.isNotEmpty) 'Ids': ids,
-          if (providerIds != null && providerIds.isNotEmpty)
-            'AnyProviderIdEquals': providerIds.join(','),
-          if (genres != null && genres.isNotEmpty) 'Genres': genres,
-          if (years != null && years.isNotEmpty) 'Years': years,
-          if (officialRatings != null && officialRatings.isNotEmpty)
-            'OfficialRatings': officialRatings,
-          'Recursive': true,
-          'Fields': fields ??
-              // AlternateMediaSources：Emby 4.9.x 批量端点对非管理员每条
-              // 只回 1 个 MediaSource，需显式请求才返回全部版本
-              'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources',
-          'ImageTypeLimit': 1,
-        },
-      );
+      final data = await _getItemsData({
+        if (_userId != null) 'UserId': _userId,
+        if (parentId != null) 'ParentId': parentId,
+        if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+        if (limit != null) 'Limit': limit,
+        if (startIndex != null) 'StartIndex': startIndex,
+        if (sortBy != null) 'SortBy': sortBy,
+        if (sortOrder != null) 'SortOrder': sortOrder,
+        if (filters != null && filters.isNotEmpty) 'Filters': filters,
+        if (ids != null && ids.isNotEmpty) 'Ids': ids,
+        if (providerIds != null && providerIds.isNotEmpty)
+          'AnyProviderIdEquals': providerIds.join(','),
+        if (genres != null && genres.isNotEmpty) 'Genres': genres,
+        if (years != null && years.isNotEmpty) 'Years': years,
+        if (officialRatings != null && officialRatings.isNotEmpty)
+          'OfficialRatings': officialRatings,
+        'Recursive': true,
+        'Fields': fields ??
+            // AlternateMediaSources：Emby 4.9.x 批量端点对非管理员每条
+            // 只回 1 个 MediaSource，需显式请求才返回全部版本
+            'ImageTags,PrimaryImageAspectRatio,ProductionYear,Overview,Genres,MediaStreams,MediaSources,AlternateMediaSources',
+        'ImageTypeLimit': 1,
+      });
 
-      final items = response.data['Items'] as List<dynamic>? ?? [];
+      final items = _itemsOf(data);
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
@@ -339,9 +417,9 @@ class EmbyService {
   Future<MediaCounts?> _countsFromItemsQuery(
       {bool includeVersions = false}) async {
     const types = ['Movie', 'Series', 'Episode'];
-    final responses = await Future.wait([
+    final results = await Future.wait([
       for (final type in types)
-        _dio.get('/Items', queryParameters: {
+        _getItemsData({
           if (!includeVersions && _userId != null) 'UserId': _userId,
           'Recursive': true,
           'IncludeItemTypes': type,
@@ -349,7 +427,7 @@ class EmbyService {
         }),
     ]);
     int countOf(int index) {
-      final data = responses[index].data;
+      final data = results[index];
       if (data is! Map) return 0;
       final total = data['TotalRecordCount'] ?? data['TotalRecords'];
       return total is num ? total.toInt() : 0;
@@ -413,20 +491,17 @@ class EmbyService {
 
   Future<List<MediaItem>> searchItems(String query) async {
     try {
-      final response = await _dio.get(
-        '/Items',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          'Recursive': true,
-          'IncludeItemTypes': 'Movie,Series',
-          'searchTerm': query,
-          'Limit': 30,
-          'Fields': 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
-          'ImageTypeLimit': 1,
-        },
-      );
+      final data = await _getItemsData({
+        if (_userId != null) 'UserId': _userId,
+        'Recursive': true,
+        'IncludeItemTypes': 'Movie,Series',
+        'searchTerm': query,
+        'Limit': 30,
+        'Fields': 'ImageTags,PrimaryImageAspectRatio,ProductionYear',
+        'ImageTypeLimit': 1,
+      });
 
-      final items = response.data['Items'] as List<dynamic>? ?? [];
+      final items = _itemsOf(data);
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
@@ -652,25 +727,22 @@ class EmbyService {
       final filterValue = (filters == null || filters.isEmpty)
           ? 'IsFavorite'
           : 'IsFavorite,$filters';
-      final response = await _dio.get(
-        '/Items',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          'Recursive': true,
-          'IncludeItemTypes': includeItemTypes ?? 'Movie,Series,Episode',
-          'Filters': filterValue,
-          if (genres != null && genres.isNotEmpty) 'Genres': genres,
-          if (years != null && years.isNotEmpty) 'Years': years,
-          if (officialRatings != null && officialRatings.isNotEmpty)
-            'OfficialRatings': officialRatings,
-          'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
-          'ImageTypeLimit': 1,
-          'SortBy': sortBy ?? 'SortName',
-          'SortOrder': sortOrder ?? 'Ascending',
-        },
-      );
-      final items = response.data['Items'] as List<dynamic>? ?? [];
+      final data = await _getItemsData({
+        if (_userId != null) 'UserId': _userId,
+        'Recursive': true,
+        'IncludeItemTypes': includeItemTypes ?? 'Movie,Series,Episode',
+        'Filters': filterValue,
+        if (genres != null && genres.isNotEmpty) 'Genres': genres,
+        if (years != null && years.isNotEmpty) 'Years': years,
+        if (officialRatings != null && officialRatings.isNotEmpty)
+          'OfficialRatings': officialRatings,
+        'Fields':
+            'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
+        'ImageTypeLimit': 1,
+        'SortBy': sortBy ?? 'SortName',
+        'SortOrder': sortOrder ?? 'Ascending',
+      });
+      final items = _itemsOf(data);
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))
           .toList();
@@ -756,22 +828,17 @@ class EmbyService {
     final ratings = <String>{};
     try {
       for (var page = 0; page < _scanMaxPages; page++) {
-        final response = await _dio.get(
-          '/Items',
-          queryParameters: {
-            if (_userId != null) 'UserId': _userId,
-            if (parentId != null) 'ParentId': parentId,
-            if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
-            'Recursive': true,
-            'Fields': 'ProductionYear,OfficialRating',
-            'EnableTotalRecordCount': false,
-            'Limit': _scanPageSize,
-            'StartIndex': page * _scanPageSize,
-          },
-        );
-        final data = response.data;
-        final items =
-            (data is Map ? data['Items'] : null) as List<dynamic>? ?? const [];
+        final data = await _getItemsData({
+          if (_userId != null) 'UserId': _userId,
+          if (parentId != null) 'ParentId': parentId,
+          if (includeItemTypes != null) 'IncludeItemTypes': includeItemTypes,
+          'Recursive': true,
+          'Fields': 'ProductionYear,OfficialRating',
+          'EnableTotalRecordCount': false,
+          'Limit': _scanPageSize,
+          'StartIndex': page * _scanPageSize,
+        });
+        final items = _itemsOf(data);
         for (final raw in items) {
           if (raw is! Map) continue;
           final year = raw['ProductionYear'];
@@ -925,19 +992,16 @@ class EmbyService {
       return _scanByProviderIds(ids, includeItemTypes, fields);
     }
     try {
-      final response = await _dio.get(
-        '/Items',
-        queryParameters: {
-          if (_userId != null) 'UserId': _userId,
-          'Recursive': true,
-          'IncludeItemTypes': includeItemTypes,
-          'AnyProviderIdEquals': ids.map((e) => 'tmdb.$e').join(','),
-          'Fields': fields,
-          'ImageTypeLimit': 1,
-          'Limit': 500,
-        },
-      );
-      final items = response.data['Items'] as List<dynamic>? ?? [];
+      final data = await _getItemsData({
+        if (_userId != null) 'UserId': _userId,
+        'Recursive': true,
+        'IncludeItemTypes': includeItemTypes,
+        'AnyProviderIdEquals': ids.map((e) => 'tmdb.$e').join(','),
+        'Fields': fields,
+        'ImageTypeLimit': 1,
+        'Limit': 500,
+      });
+      final items = _itemsOf(data);
       final wanted = ids.toSet();
       return items
           .map((item) => MediaItem.fromJson(item, serverUrl: _serverUrl))

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 
 /// 把登录/请求异常翻译成简短中文提示，避免把 Dio/网络英文异常串直接展示给用户。
@@ -7,6 +8,9 @@ import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 /// 各登录入口（添加/编辑服务器、重新登录、扫码配置）统一使用，保证文案一致。
 String friendlyEmbyError(Object error) {
   if (error is EmbySetupException) return error.message;
+  // 非标准 Emby 网关（200 + 业务错误体）在 authenticate 里已带可读文案，
+  // 原样透出，避免被误翻成「登录失败，请稍后重试」。
+  if (error is EmbyException) return error.message;
 
   if (error is DioException) {
     final code = error.response?.statusCode;
