@@ -36,13 +36,13 @@ void main() {
   });
 
   group('1. 构建脚本：libplacebo Vulkan 必须启用', () {
-    test('1.1 patch libplacebo.sh 从 disabled 改为 enabled', () {
+    test('1.1 patch libplacebo.sh 从 disabled 改为 enabled（并带 shaderc）', () {
       expect(buildScript, contains('-Dvulkan=disabled'));
       expect(buildScript, contains('-Dvulkan=enabled'));
       expect(
         buildScript,
-        contains("sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled/'"),
-        reason: '必须有 sed 命令把 disabled 改成 enabled',
+        contains(r's/-Dvulkan=disabled/-Dvulkan=enabled -Dshaderc=enabled/'),
+        reason: '必须同时启用 shaderc，否则 Vulkan 上下文起不来',
       );
     });
 
@@ -171,9 +171,11 @@ void main() {
       // 黑屏有声。恢复 auto/auto-copy（auto-copy 是 copy-back，兼容性最好）。
       final hwdecIdx = androidDart.indexOf("'hwdec':");
       expect(hwdecIdx, greaterThan(0));
-      final hwdecBlock = androidDart.substring(hwdecIdx, hwdecIdx + 200);
+      final hwdecBlock = androidDart.substring(hwdecIdx, hwdecIdx + 520);
+      // 纹理模式 copy-back / 非 Vulkan 用 auto / Vulkan 用 copy-back 列表
       expect(hwdecBlock, contains("'auto-copy'"));
       expect(hwdecBlock, contains("'auto'"));
+      expect(hwdecBlock, contains("'mediacodec,mediacodec-copy,no'"));
       // 软解回退必须保留
       expect(androidDart, contains("'hwdec-software-fallback': 'yes'"));
     });
@@ -275,6 +277,116 @@ void main() {
       // 反过来（api 列表驱动顺序）就不成立，必须锁住注释里的说明。
       expect(androidDart, contains('mpv 的上下文名按 API 区分'));
       expect(androidDart, contains('androidvk'));
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 6. SPIR-V 编译器（真机「Vulkan 静默回落 OpenGL」的真正根因）
+  // ---------------------------------------------------------------------
+  //
+  // libplacebo `src/glsl/spirv.c`：
+  //
+  //   static const struct spirv_compiler *compilers[] = {
+  //   #ifdef PL_HAVE_SHADERC
+  //       &pl_spirv_shaderc,
+  //   #endif
+  //   #ifdef PL_HAVE_GLSLANG
+  //       &pl_spirv_glslang,
+  //   #endif
+  //   };
+  //
+  // 两者都没有时 `pl_spirv_create()` 返回 NULL →
+  // `src/vulkan/gpu.c` 的 `pl_gpu_create_vk()` 失败 → mpv 报
+  // `Failed initializing any suitable GPU context!` → 回落到 OpenGL。
+  //
+  // 我们之前只把 libplacebo.sh 的 `-Dvulkan=disabled` 改成 enabled，
+  // 却没补 SPIR-V 编译器（mpv-android 上游关着 Vulkan，从来不需要）。
+  group('6. libplacebo 必须有 SPIR-V 编译器（shaderc）', () {
+    test('6.1 versions.env 固定 shaderc 版本', () {
+      final versions = read('scripts/mpv/versions.env');
+      expect(versions, contains('ANDROID_SHADERC=v'));
+    });
+
+    test('6.2 构建脚本同步并固定 shaderc（v2025 起走 DEPS）', () {
+      expect(buildScript, contains('google/shaderc'));
+      expect(buildScript, contains(r'checkout_ref "$SCRIPTS/deps/shaderc"'));
+      // shaderc v2025.x 不再用 git submodule，依赖清单在 DEPS 里
+      expect(buildScript, contains('utils/git-sync-deps'));
+      expect(buildScript, contains('third_party/glslang'));
+    });
+
+    test('6.3 生成 scripts/shaderc.sh（CMake + Ninja + 静态）', () {
+      expect(buildScript, contains(r'cat > "$SCRIPTS/scripts/shaderc.sh"'));
+      expect(buildScript, contains('-DBUILD_SHARED_LIBS=OFF'));
+      expect(buildScript, contains('-DSHADERC_SKIP_TESTS=ON'));
+      expect(buildScript, contains('-DSHADERC_SKIP_EXAMPLES=ON'));
+      expect(buildScript, contains('android.toolchain.cmake'));
+    });
+
+    test('6.4 静态构建必须把 shaderc_combined.pc 改名成 shaderc.pc', () {
+      // dependency('shaderc') 读 shaderc.pc，而默认那个指向 -lshaderc_shared
+      expect(buildScript, contains('shaderc_combined.pc'));
+      expect(buildScript, contains('shaderc_shared.pc'));
+    });
+
+    test('6.4b 安装必须走 DESTDIR（否则 .pc 会被二次加前缀）', () {
+      // shaderc 的 .pc 模板是 prefix=@CMAKE_INSTALL_PREFIX@，而 buildall 给
+      // pkg-config 设了 PKG_CONFIG_SYSROOT_DIR=$prefix_dir。若 prefix 直接写
+      // $prefix_dir，路径会变成 $prefix_dir/$prefix_dir/... → 找不到库。
+      expect(buildScript, contains('-DCMAKE_INSTALL_PREFIX=/usr/local'));
+      expect(buildScript, contains(r'DESTDIR="$prefix_dir" ninja install'));
+      expect(
+        buildScript,
+        isNot(contains(r'-DCMAKE_INSTALL_PREFIX="$prefix_dir"')),
+        reason: '会把 sysroot 前缀叠两次',
+      );
+    });
+
+    test('6.5 buildall 的依赖图必须把 shaderc 挂在 libplacebo 前', () {
+      expect(buildScript, contains(r'^dep_libplacebo=()$'));
+      expect(buildScript, contains('dep_libplacebo=(shaderc)'));
+    });
+
+    test('6.6 libplacebo 同时开 vulkan 与 shaderc', () {
+      expect(buildScript, contains('-Dvulkan=enabled -Dshaderc=enabled'));
+      expect(buildScript, contains(r"grep -q -- '-Dshaderc=enabled'"));
+    });
+
+    test('6.7 构建后断言 SPIR-V 编译器真的链进去了', () {
+      // 这条 slog 在 compilers[] 为空时是死代码，字符串会被编译器消除——
+      // 所以「存在」等价于「至少编译进了一个 SPIR-V 编译器」。
+      expect(buildScript, contains("'Initialized SPIR-V compiler'"));
+      expect(buildScript, contains("'shaderc_compile_into_spv'"));
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 7. Vulkan 下的硬解必须是 copy-back
+  // ---------------------------------------------------------------------
+  //
+  // MediaCodec 直通（HW+）输出 ANativeWindow Surface，Vulkan 没有帧导入
+  // 互操作 → 解码成功但画面出不来（有声无画）。上游 mpv-android 的
+  // Vulkan tracking PR 明确写「HW+ will not work with Vulkan enabled」。
+  group('7. Vulkan 渲染时 hwdec 收敛到 copy-back', () {
+    test('7.1 插件暴露 vulkanRenderingPreferred', () {
+      expect(androidDart,
+          contains('static bool get vulkanRenderingPreferred'));
+      expect(androidDart, contains('_vulkanOk && !_forceOpenGl'));
+    });
+
+    test('7.2 插件创建期选项：Vulkan → mediacodec,mediacodec-copy,no', () {
+      expect(androidDart, contains("'mediacodec,mediacodec-copy,no'"));
+    });
+
+    test('7.3 适配器起播与运行时切换都走同一收敛', () {
+      late String adapter;
+      adapter = read('lib/services/player/mpv_player_adapter.dart');
+      expect(adapter, contains('String _sessionHwdec('));
+      expect(adapter, contains('_sessionHwdec('));
+      // 两处调用：prepare 与解码器切换
+      expect('_sessionHwdec('.allMatches(adapter).length, greaterThanOrEqualTo(3));
+      // 软解档不被改写
+      expect(adapter, contains("if (requested == 'no') return 'no';"));
     });
   });
 }

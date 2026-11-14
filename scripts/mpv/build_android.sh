@@ -48,6 +48,31 @@ checkout_ref "$SCRIPTS/deps/libass" "$ANDROID_LIBASS_COMMIT"
 checkout_ref "$SCRIPTS/deps/dav1d" "$ANDROID_DAV1D_COMMIT"
 git -C "$SCRIPTS/deps/libplacebo" submodule update --init --recursive --depth 1
 
+# 【697 真机根因】mpv-android 上游不构建 shaderc —— 因为它把 libplacebo 的
+# Vulkan 关掉了（`-Dvulkan=disabled`），从不需要 SPIR-V 编译器。我们打开了
+# Vulkan，就必须补上：libplacebo `src/glsl/spirv.c` 的 `pl_spirv_create()`
+# 在既无 shaderc 又无 glslang 时直接返回 NULL 并打
+# `Failed initializing any SPIR-V compiler!`，随后 `pl_gpu_create_vk()`
+# 失败 → mpv 报 `Failed initializing any suitable GPU context!` → 回落 GL。
+#
+# 证据：我们旧 APK 的 libmpv.so 里 `Initialized SPIR-V compiler` 出现 0 次
+# （该 slog 在编译器数组为空时被编译期消除），而带 Vulkan 可用的构建是 1 次。
+log "同步 shaderc（libplacebo Vulkan 的 SPIR-V 编译器）"
+if [ ! -d "$SCRIPTS/deps/shaderc/.git" ]; then
+  git clone --depth 1 --branch "$ANDROID_SHADERC" \
+    https://github.com/google/shaderc "$SCRIPTS/deps/shaderc"
+fi
+checkout_ref "$SCRIPTS/deps/shaderc" "$ANDROID_SHADERC"
+# shaderc v2025.x 起依赖不再用 git submodule，而是 DEPS + utils/git-sync-deps
+# （glslang / spirv-tools / spirv-headers 都在 third_party/ 下）
+if [ -f "$SCRIPTS/deps/shaderc/utils/git-sync-deps" ]; then
+  ( cd "$SCRIPTS/deps/shaderc" && python3 utils/git-sync-deps )
+else
+  git -C "$SCRIPTS/deps/shaderc" submodule update --init --recursive --depth 1
+fi
+[ -f "$SCRIPTS/deps/shaderc/third_party/glslang/CMakeLists.txt" ] \
+  || die "shaderc 依赖没同步全（缺 third_party/glslang）"
+
 if ! grep -q -- '--cxx=$CXX' "$SCRIPTS/scripts/ffmpeg.sh"; then
   sed -i 's/--cc=$CC --pkg-config=pkg-config/--cc=$CC --cxx=$CXX --pkg-config=pkg-config/' \
     "$SCRIPTS/scripts/ffmpeg.sh"
@@ -166,11 +191,103 @@ fi
 
 log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
 
-log "启用 libplacebo Vulkan（DV 元数据处理需要 compute shader）"
-if ! grep -q -- '-Dvulkan=disabled' "$SCRIPTS/scripts/libplacebo.sh"; then
-  die "libplacebo.sh 结构已变，Vulkan patch 需要更新"
+log "写入 buildscripts/scripts/shaderc.sh"
+cat > "$SCRIPTS/scripts/shaderc.sh" <<'SHADERC_SCRIPT'
+#!/bin/bash -e
+
+# 697：shaderc 静态构建（Android NDK）。
+#
+# mpv-android 上游没有这个依赖，因为它的 libplacebo 关着 Vulkan。我们开了
+# Vulkan，就必须提供 GLSL→SPIR-V 编译器，否则 Vulkan 上下文起不来。
+#
+# 参考 mpv-ohos/libmpv-ohos-build 的同名脚本（那边 Vulkan 一直是好的）：
+# CMake + Ninja、静态、跳过测试/示例/命令行工具，最后把 `shaderc_combined.pc`
+# 改名成 `shaderc.pc`——libplacebo 的 meson 用 `dependency('shaderc')`，
+# 而 shaderc 默认生成的 `shaderc.pc` 指向动态库 `-lshaderc_shared`。
+
+. ../../include/path.sh
+
+build=_build$ndk_suffix
+
+if [ "$1" == "build" ]; then
+	true
+elif [ "$1" == "clean" ]; then
+	rm -rf "$build"
+	exit 0
+else
+	exit 255
 fi
-sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled/' "$SCRIPTS/scripts/libplacebo.sh"
+
+# NDK 的 ABI 名与 mpv-android 的 arch 名不同，按 triple 映射
+case "$ndk_triple" in
+	aarch64-*) android_abi=arm64-v8a ;;
+	arm-*)     android_abi=armeabi-v7a ;;
+	i686-*)    android_abi=x86 ;;
+	x86_64-*)  android_abi=x86_64 ;;
+	*) echo "未知 ndk_triple: $ndk_triple" >&2; exit 1 ;;
+esac
+
+mkdir -p "$build"
+cd "$build"
+
+cmake -GNinja \
+	-DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" \
+	-DANDROID_ABI="$android_abi" \
+	-DANDROID_PLATFORM=android-23 \
+	-DANDROID_STL=c++_shared \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_PREFIX=/usr/local \
+	-DCMAKE_SKIP_RPATH=TRUE \
+	-DBUILD_SHARED_LIBS=OFF \
+	-DSHADERC_SKIP_TESTS=ON \
+	-DSHADERC_SKIP_EXAMPLES=ON \
+	-DSHADERC_SKIP_EXECUTABLES=ON \
+	-DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
+	-DSHADERC_ENABLE_WERROR_COMPILE=OFF \
+	..
+
+ninja -j"$cores"
+# 【必须用 DESTDIR 而不是把 prefix 指到 $prefix_dir】shaderc 的 .pc 模板是
+#   prefix=@CMAKE_INSTALL_PREFIX@
+# 而 buildall 会给 pkg-config 设 PKG_CONFIG_SYSROOT_DIR=$prefix_dir：若 .pc 里
+# 写的已经是 $prefix_dir 绝对路径，就会被二次前缀成
+# `$prefix_dir/$prefix_dir/...` → 头文件/库全部找不到。
+# 与其它 meson 依赖一致，写成 /usr/local，再靠 setup_prefix 建的
+# usr→. / local→. 软链落到平铺前缀。
+DESTDIR="$prefix_dir" ninja install
+
+pcdir="$prefix_dir/usr/local/lib/pkgconfig"
+[ -d "$pcdir" ] || pcdir="$prefix_dir/lib/pkgconfig"
+[ -f "$pcdir/shaderc_combined.pc" ] || {
+	echo "shaderc_combined.pc 缺失，静态构建异常" >&2
+	exit 1
+}
+# 静态库只有 shaderc_combined；把 shaderc.pc 让给 combined，供 meson 使用
+mv -f "$pcdir/shaderc.pc" "$pcdir/shaderc_shared.pc" 2>/dev/null || true
+cp -f "$pcdir/shaderc_combined.pc" "$pcdir/shaderc.pc"
+SHADERC_SCRIPT
+chmod +x "$SCRIPTS/scripts/shaderc.sh"
+
+# buildall.sh 只会构建 depinfo.sh 里声明为依赖的目录，且要求 deps/<name> 存在
+if grep -q '^dep_libplacebo=()$' "$SCRIPTS/include/depinfo.sh"; then
+  sed -i 's/^dep_libplacebo=()$/dep_shaderc=()\ndep_libplacebo=(shaderc)/' \
+    "$SCRIPTS/include/depinfo.sh"
+fi
+grep -q '^dep_libplacebo=(shaderc)$' "$SCRIPTS/include/depinfo.sh" \
+  || die "depinfo.sh 结构已变，shaderc 依赖注入失败"
+
+log "启用 libplacebo Vulkan + shaderc（SPIR-V 编译器是 Vulkan 的硬依赖）"
+if grep -q -- '-Dvulkan=disabled' "$SCRIPTS/scripts/libplacebo.sh"; then
+  sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled -Dshaderc=enabled/' \
+    "$SCRIPTS/scripts/libplacebo.sh"
+elif ! grep -q -- '-Dshaderc=enabled' "$SCRIPTS/scripts/libplacebo.sh"; then
+  sed -i 's/-Dvulkan=enabled/-Dvulkan=enabled -Dshaderc=enabled/' \
+    "$SCRIPTS/scripts/libplacebo.sh"
+fi
+grep -q -- '-Dvulkan=enabled' "$SCRIPTS/scripts/libplacebo.sh" \
+  || die "libplacebo.sh 结构已变，Vulkan patch 需要更新"
+grep -q -- '-Dshaderc=enabled' "$SCRIPTS/scripts/libplacebo.sh" \
+  || die "libplacebo.sh 未启用 shaderc（Vulkan 会静默回落 OpenGL）"
 
 log "构建 Android 依赖 ($ABI)"
 (
@@ -185,6 +302,14 @@ require_file "$PREFIX/lib/libmpv.so"
 grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
 # libplacebo 是静态库（default_library=static），符号在 libmpv.so 里
 grep_binary "$PREFIX/lib/libmpv.so" 'pl_gpu_create_vk' || die "libmpv 缺少 Vulkan 后端（DV compute shader 不可用）"
+# 【必须有】SPIR-V 编译器：`Initialized SPIR-V compiler '%s'` 只在
+# compilers[] 非空时才会生成（数组为空时整段循环是死代码，字符串会被
+# 编译器消除）。这条断言能挡住「有 Vulkan 后端但起不来」的假成功——
+# 697 真机就是这么静默回落 OpenGL 的。
+grep_binary "$PREFIX/lib/libmpv.so" 'Initialized SPIR-V compiler' \
+  || die "libmpv 缺少 SPIR-V 编译器（shaderc 未链接）→ Vulkan 上下文必然初始化失败"
+grep_binary "$PREFIX/lib/libmpv.so" 'shaderc_compile_into_spv' \
+  || die "libmpv 缺少 shaderc_compile_into_spv（shaderc 未静态链接）"
 
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
 [ -n "$NDK_TOOLCHAIN" ] || die "找不到 Android NDK toolchain"

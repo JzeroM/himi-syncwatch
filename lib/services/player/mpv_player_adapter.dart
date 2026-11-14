@@ -644,6 +644,22 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 当前输出是否走原生 Surface（平台视图）。
   bool get usesNativeSurface => _player?.usesNativeSurface ?? false;
 
+  /// 697：安卓 Vulkan 渲染下把 hwdec 收敛到 copy-back。
+  ///
+  /// MediaCodec 直通（HW+）输出 ANativeWindow Surface，Vulkan 没有对应的
+  /// 帧导入互操作——解码会成功，但vo 拿不到帧，表现为「有声音没画面」。
+  /// 上游 mpv-android 的 Vulkan 分支同样要求 copy-back（详见 AGENTS.md）。
+  ///
+  /// 列表 `mediacodec,mediacodec-copy,no` 的语义是「依次尝试」：对 Vulkan
+  /// 渲染器不可用的直通档会被 mpv 跳过，落到 copy-back；再不行由
+  /// `hwdec-software-fallback=yes` 兜底。
+  String _sessionHwdec(String requested) {
+    if (requested == 'no') return 'no';
+    if (defaultTargetPlatform != TargetPlatform.android) return requested;
+    if (!HimiMpvAndroidSession.vulkanRenderingPreferred) return requested;
+    return 'mediacodec,mediacodec-copy,no';
+  }
+
   /// 把 X-Emby-Token 拼进 URL 的 api_key 参数（Emby 流端点原生支持）。
   ///
   /// 真机（v1.2.77）证实 header 两条传递路径均不可靠，而 app 内同域名
@@ -786,9 +802,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 所有内容（含 HDR10 / DV P5）先按用户档位硬解；ohosvk 提供
     // OHCodec 10bit Vulkan 零拷贝互操作。硬解失败时由「媒体在播但无
     // video-params」的自动软解回退兜底（见 _maybeFallbackToSoftwareDecode）。
-    final effectiveHwdec = resolveWindowsHwdec(
-      _hwdec,
-      windows: defaultTargetPlatform == TargetPlatform.windows,
+    final effectiveHwdec = _sessionHwdec(
+      resolveWindowsHwdec(
+        _hwdec,
+        windows: defaultTargetPlatform == TargetPlatform.windows,
+      ),
     );
     try {
       await player.setProperty('hwdec', effectiveHwdec);
@@ -2076,9 +2094,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     if (next == _hwdec) return;
     _hwdec = next;
     // 运行时属性：写入即对当前媒体生效（decoder 重建），无需重载流。
-    final effective = resolveWindowsHwdec(
-      next,
-      windows: defaultTargetPlatform == TargetPlatform.windows,
+    final effective = _sessionHwdec(
+      resolveWindowsHwdec(
+        next,
+        windows: defaultTargetPlatform == TargetPlatform.windows,
+      ),
     );
     unawaited(_player?.setProperty('hwdec', effective));
     LogService().log(

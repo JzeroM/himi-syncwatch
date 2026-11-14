@@ -126,6 +126,44 @@ OpenGL，不会黑屏。
 - MainActivity 用 `catch (Throwable)` 包住 `super.configureFlutterEngine`
   ——再出问题也不会白屏，至少能打出可诊断日志
 
+**第六个坑（Vulkan 起不来的真因）：libplacebo 有 Vulkan 后端 ≠ Vulkan 能用。**
+
+`pl_gpu_create_vk()` 里第一件事是建 GLSL→SPIR-V 编译器
+（`src/vulkan/gpu.c` → `pl_spirv_create()`）。libplacebo 只在
+
+    #ifdef PL_HAVE_SHADERC   → src/glsl/spirv_shaderc.c
+    #ifdef PL_HAVE_GLSLANG   → src/glsl/spirv_glslang.c
+
+两个宏之一存在时才把编译器放进 `compilers[]`；都没有时：
+
+    pl_fatal("Failed initializing any SPIR-V compiler! ...");
+    return NULL;            // → pl_gpu_create_vk() 失败
+                            // → mpv: Failed initializing any suitable GPU context!
+                            // → 静默回落 OpenGL（有声有画，只是 DV 退化成静态峰值）
+
+上游 mpv-android 的 `libplacebo.sh` 是 `-Dvulkan=disabled`，所以它从不需要
+SPIR-V 编译器；**我们只把 vulkan 改成 enabled、没补 shaderc，就等于开了个
+永远起不来的 Vulkan**。正确做法（照抄 mpv-ohos 的构建）：
+
+    -Dvulkan=enabled -Dshaderc=enabled   # libplacebo
+    # 另需独立构建 shaderc（CMake+Ninja，静态），并把
+    # shaderc_combined.pc 改名成 shaderc.pc（默认那个指向 -lshaderc_shared）
+
+**怎么判断编没编进去**（比看 meson 日志可靠）：
+
+    grep -a 'Initialized SPIR-V compiler' libmpv.so
+
+这条 slog 在 `compilers[]` 为空时是死代码，字符串会被编译器消除。所以
+**有 = 至少一个编译器在；没有 = Vulkan 必然起不来**。`build_android.sh`
+已把这条做成构建期断言（还有 `shaderc_compile_into_spv`）。
+
+> 反例参考：`NextPlayerCloud/NeoPlayer` 自带的 libmpv 两个字符串都有、
+> 并且链了 glslang（`_ZN7glslang` 上千个符号），所以它的 `androidvk` 能用。
+
+**Vulkan 下 hwdec 必须 copy-back**：MediaCodec 直通（HW+）输出的是
+ANativeWindow Surface，Vulkan 没有帧导入互操作 → 解码成功但出不了画面。
+`_sessionHwdec()` 因此收敛到 `mediacodec,mediacodec-copy,no`。
+
 ### mpv 属性字段名必须查源码，不能凭印象
 
 697 真机回归：面板把杜比 P5 显示成「非 DV 内容」。根因是凭空写了

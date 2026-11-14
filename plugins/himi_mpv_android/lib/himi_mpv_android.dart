@@ -172,6 +172,12 @@ class HimiMpvAndroidSession implements MpvSession {
   /// 标记 Vulkan 渲染不可用（幂等）。
   static void disableVulkanRendering() => _forceOpenGl = true;
 
+  /// 697：当前是否打算走 Vulkan 渲染。
+  ///
+  /// 适配器据此把 `hwdec` 切成 copy-back（`mediacodec-copy`）——Vulkan
+  /// 没有 MediaCodec 的直通互操作，HW+（直写 Surface）会「有声音没画面」。
+  static bool get vulkanRenderingPreferred => _vulkanOk && !_forceOpenGl;
+
   /// 697：检测 Vulkan 是否可用（libplacebo DV 处理需要 compute shader）。
   ///
   /// 结果缓存在 [_vulkanAvailable]，只需检测一次。
@@ -561,9 +567,17 @@ class HimiMpvAndroidSession implements MpvSession {
       // 恢复 `auto`：`hwdec-software-fallback=yes` 保证硬解不可用时
       // 自动退软解。Vulkan 硬解后端虽在候选里，但 mpv 只在 Vulkan 上下文
       // 初始化成功后才用它；Android 的 gpu-api 默认 opengl，不会选中。
+      // 697：Vulkan 渲染时**必须**走 copy-back。MediaCodec 直通（HW+，
+      // 即 `mediacodec`）输出的是 ANativeWindow Surface，Vulkan 没有对应
+      // 的导入互操作 → 解码正常但画面出不来（有声无画）。
+      // 列表语义：依次尝试，mpv 对 Vulkan RA 会跳过不可用的直通档。
       'hwdec': !effectiveSurface
           ? 'auto-copy'
-          : (hwdecMode == 'software' ? 'no' : 'auto'),
+          : (hwdecMode == 'software'
+              ? 'no'
+              : (vulkanRenderingPreferred
+                  ? 'mediacodec,mediacodec-copy,no'
+                  : 'auto')),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
       'demuxer-max-bytes': '${256 * 1024 * 1024}',
