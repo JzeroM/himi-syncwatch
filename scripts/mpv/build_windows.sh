@@ -68,11 +68,17 @@ fi
 sed -i '/^[[:space:]]*curl$/d' "$SRC/packages/mpv.cmake"
 sed -i 's/autoupdate -f && //' "$SRC/packages/lame.cmake"
 sed -i '/PATCH_COMMAND.*luajit-\*\.patch/d; /PATCH_COMMAND.*mujs-\*\.patch/d' "$SRC/packages/luajit.cmake" "$SRC/packages/mujs.cmake"
-# 【跳过 fontconfig 补丁】上游 fontconfig 更新后补丁无法应用
-# （sha1 information is lacking），且该补丁非必需。与 luajit/mujs 同理。
-if [ -f "$SRC/packages/fontconfig.cmake" ]; then
-  sed -i '/PATCH_COMMAND/d' "$SRC/packages/fontconfig.cmake"
-fi
+# 【跳过过时补丁】上游依赖更新后多个补丁无法应用
+# （sha1 information is lacking + stale rebase），且这些补丁非必需。
+# 与 luajit/mujs 同理。逐个检查，缺失时跳过。
+for _pkg in fontconfig libvpl libass libplacebo; do
+  if [ -f "$SRC/packages/${_pkg}.cmake" ]; then
+    sed -i '/PATCH_COMMAND/d' "$SRC/packages/${_pkg}.cmake"
+  fi
+done
+# 清理残留的 git rebase 状态（补丁应用中断会留下，导致后续 git apply 失败）
+find "$WORK" -name 'rebase-apply' -type d -exec rm -rf {} + 2>/dev/null || true
+find "$WORK" -name 'rebase-merge' -type d -exec rm -rf {} + 2>/dev/null || true
 
 if [ ! -f "$BUILD/build.ninja" ]; then
   log "配置 Windows 交叉工具链"
