@@ -68,6 +68,9 @@ class HimiMpvAndroidPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Eve
                 currentSurface?.releaseSurface()
                 result.success(null)
             }
+            "isVulkanAvailable" -> {
+                result.success(isVulkanAvailable())
+            }
             else -> result.notImplemented()
         }
     }
@@ -87,6 +90,30 @@ class HimiMpvAndroidPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Eve
         } catch (_: Throwable) {
         }
         return mapOf("formats" to formats)
+    }
+
+    /**
+     * 697：检测 Vulkan 是否可用。
+     *
+     * 【为什么需要】libplacebo 的 DV 处理（`bt.2390` tone-mapping +
+     * compute shader）需要 Vulkan。启用后 `gpu-api=vulkan` 让 libplacebo
+     * 走 Vulkan 后端；不支持 Vulkan 的设备自动回退 OpenGL。
+     *
+     * 检测策略：
+     * 1. API 24+ 保证 Vulkan 1.0（我们的 minSdk 26，所以恒真）
+     * 2. dlopen `libvulkan.so` 验证 Vulkan loader 可加载
+     *
+     * 这比「只看 API 级别」可靠——个别设备虽有 Vulkan API 但 loader
+     * 损坏或 GPU 驱动缺失。
+     */
+    private fun isVulkanAvailable(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        return try {
+            System.loadLibrary("vulkan")
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun currentContext(): android.content.Context? = appContext

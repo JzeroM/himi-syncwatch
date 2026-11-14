@@ -157,6 +157,30 @@ class HimiMpvAndroidSession implements MpvSession {
     return session;
   }
 
+  /// 697：起播时使用的 GPU API。
+  ///
+  /// Vulkan 可用 → `vulkan`（libplacebo compute shader → DV 元数据处理）；
+  /// 否则 → `opengl`（降级 tone-mapping，P5 可能偏色）。
+  ///
+  /// 在 [_start] 或首次 `buildMpvOptions` 前由 [isVulkanAvailable] 决定。
+  static String _gpuApi = 'opengl';
+
+  /// 697：检测 Vulkan 是否可用（libplacebo DV 处理需要 compute shader）。
+  ///
+  /// 结果缓存在 [_vulkanAvailable]，只需检测一次。
+  static bool? _vulkanAvailable;
+
+  static Future<bool> isVulkanAvailable() async {
+    if (_vulkanAvailable != null) return _vulkanAvailable!;
+    try {
+      final result = await _methods.invokeMethod<bool>('isVulkanAvailable');
+      _vulkanAvailable = result ?? false;
+    } catch (_) {
+      _vulkanAvailable = false;
+    }
+    return _vulkanAvailable!;
+  }
+
   static Future<MpvHdrCapabilities> queryHdrCapabilities() async {
     try {
       final raw = await _methods.invokeMapMethod<String, Object?>(
@@ -274,6 +298,9 @@ class HimiMpvAndroidSession implements MpvSession {
   }
 
   Future<void> _start() async {
+    // 697：Vulkan 可用性检测（libplacebo DV 处理需要 compute shader）。
+    // 结果缓存，整个播放生命周期只检测一次。
+    _gpuApi = await isVulkanAvailable() ? 'vulkan' : 'opengl';
     // 655：不再探测 GLES 版本（见 _voOverride 注释）。`vo` 由设置决定。
     if (!nativeSurface) {
       await _ensurePlayer();
@@ -498,10 +525,10 @@ class HimiMpvAndroidSession implements MpvSession {
       // surfaceChanged 补。
       if (effectiveSurface && _surfaceWidth > 0 && _surfaceHeight > 0)
         'android-surface-size': '${_surfaceWidth}x$_surfaceHeight',
-      // The stock Android libmpv build used by media_kit is built without
-      // Vulkan (libplacebo HAVE_VULKAN=0). Use the EGL/GLES Android context;
-      // the HDR data-space patch tags the native window as BT.2020 PQ/HLG.
-      if (effectiveSurface) 'gpu-api': 'opengl',
+      // 697：优先 Vulkan（libplacebo DV 处理需要 compute shader），
+      // 不支持的设备自动回退 OpenGL。`gpu-context=android` 表示用
+      // Android 原生 Surface 渲染，与 GPU API 无关。
+      if (effectiveSurface) 'gpu-api': _gpuApi,
       if (effectiveSurface) 'gpu-context': 'android',
       // 纹理模式（!nativeSurface）必须 copy-back 硬解：渲染纹理没有真实
       // Surface 给 MediaCodec 直写，`auto` 会先试零拷贝 → "Both surface and

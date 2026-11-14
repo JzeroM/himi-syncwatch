@@ -81,6 +81,12 @@ else
   die "Android HDR colorspace 补丁无法应用"
 fi
 
+log "启用 libplacebo Vulkan（DV 元数据处理需要 compute shader）"
+if ! grep -q -- '-Dvulkan=disabled' "$SCRIPTS/scripts/libplacebo.sh"; then
+  die "libplacebo.sh 结构已变，Vulkan patch 需要更新"
+fi
+sed -i 's/-Dvulkan=disabled/-Dvulkan=enabled/' "$SCRIPTS/scripts/libplacebo.sh"
+
 log "构建 Android 依赖 ($ABI)"
 (
   cd "$SCRIPTS"
@@ -92,6 +98,7 @@ PREFIX="$SCRIPTS/prefix/$BUILD_ARCH"
 require_file "$PREFIX/lib/libmpv.so"
 # libmpv.so 发布前会被 strip，HDR 符号只在未 strip 的前缀产物中可见。
 grep_binary "$PREFIX/lib/libmpv.so" 'vo_android_preferred_csp' || die "libmpv 缺少 Android HDR colorspace 支持"
+grep_binary "$PREFIX/lib/libplacebo.so" 'pl_gpu_vk' || die "libplacebo 缺少 Vulkan 后端（DV compute shader 不可用）"
 
 NDK="$SCRIPTS/sdk/android-ndk-$ANDROID_NDK"
 NDK_TOOLCHAIN=$(find "$NDK/toolchains/llvm/prebuilt" -maxdepth 1 -mindepth 1 -type d | head -1)
