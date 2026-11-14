@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../../services/danmaku/danmaku_clock.dart';
 import '../../../services/danmaku/danmaku_comment.dart';
 import '../../../services/danmaku/danmaku_timeline.dart';
 
@@ -24,6 +25,11 @@ class DanmakuOverlay extends StatefulWidget {
     this.speed = 1.0,
     this.fontSizeScale = 1.0,
     this.opacity = 1.0,
+    this.playbackRate = 1.0,
+    this.colorMode = 'color',
+    this.customColor = 0xFFFFFFFF,
+    this.outlineWidth = 1.0,
+    this.outlineColor = 0xFF000000,
   });
 
   /// 弹幕列表（解析后；空列表渲染空层）。
@@ -47,6 +53,22 @@ class DanmakuOverlay extends StatefulWidget {
   /// 整体不透明度 0~1。
   final double opacity;
 
+  /// 播放速率（不是弹幕滚动速度）。投影必须乘它，否则非 1x 播放时
+  /// 每来一次位置快照就会被拽前/拽后一下（真机表现为周期性抖动）。
+  final double playbackRate;
+
+  /// 颜色模式：`color`（源色）/ `white`（统一白）/ `custom`。
+  final String colorMode;
+
+  /// 自定义颜色（`0xAARRGGBB`，[colorMode] == custom 时生效）。
+  final int customColor;
+
+  /// 描边宽度（0~4，0 = 无描边）。
+  final double outlineWidth;
+
+  /// 描边颜色（`0xAARRGGBB`）。
+  final int outlineColor;
+
   /// 弹幕基准字号（逻辑 px）。
   static const double baseFontSize = 25;
 
@@ -64,13 +86,10 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
 
-  /// 最近一次 position 跳变值。
-  Duration _lastPosition = Duration.zero;
+  /// 播放时钟（锚点 + 单调时钟投影 + 死区/收敛，四端同构）。
+  final DanmakuClock _clock = DanmakuClock();
 
-  /// 与 [lastPosition] 对齐时的 ticker 经过时长。
-  Duration _alignElapsed = Duration.zero;
-
-  /// ticker 最近回调的经过时长。
+  /// ticker 最近回调的经过时长（单调时钟，暂停时归零）。
   Duration _elapsed = Duration.zero;
 
   // 时间轴缓存（四元组变化才重建）
@@ -86,7 +105,12 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   @override
   void initState() {
     super.initState();
-    _lastPosition = widget.position.value;
+    _clock.onAuthoritative(
+      position: widget.position.value,
+      monoUs: 0,
+      paused: !widget.playing.value,
+      baseRate: widget.playbackRate,
+    );
     _ticker = createTicker((elapsed) {
       _elapsed = elapsed;
       setState(() {});
@@ -112,6 +136,14 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     if (old.fontSizeScale != widget.fontSizeScale) {
       _measureCache.clear();
     }
+    if (old.playbackRate != widget.playbackRate) {
+      _clock.onAuthoritative(
+        position: widget.position.value,
+        monoUs: _elapsed.inMicroseconds,
+        paused: !widget.playing.value,
+        baseRate: widget.playbackRate,
+      );
+    }
   }
 
   @override
@@ -123,27 +155,46 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
   }
 
   void _onPositionChanged() {
-    _lastPosition = widget.position.value;
-    _alignElapsed = _elapsed;
+    // 位置快照只是「权威值」；时钟自己决定是平滑收敛还是硬对齐。
+    _clock.onAuthoritative(
+      position: widget.position.value,
+      monoUs: _elapsed.inMicroseconds,
+      paused: !widget.playing.value,
+      baseRate: widget.playbackRate,
+    );
   }
 
   /// 播放/暂停切换：暂停停走 Ticker（冻结画面，位置不再推进）；恢复时
   /// 重锚到最新位置再启动——`Ticker.stop()` 会清 `_startTime`，重启后
-  /// `elapsed` 从 0 计，故须同时归零 `_elapsed/_alignElapsed` 防跳。
+  /// `elapsed` 从 0 计，故须同时归零 `_elapsed` 并让时钟按新基准重锚。
   void _onPlayingChanged() {
-    if (widget.playing.value) {
-      _lastPosition = widget.position.value;
-      _elapsed = Duration.zero;
-      _alignElapsed = Duration.zero;
-      if (!_ticker.isActive) _ticker.start();
+    final playing = widget.playing.value;
+    if (playing) {
+      if (!_ticker.isActive) {
+        // Ticker 重启后 elapsed 从 0 计，时钟基准同步归零。
+        _elapsed = Duration.zero;
+        _ticker.start();
+      }
+      _clock.onAuthoritative(
+        position: widget.position.value,
+        monoUs: _elapsed.inMicroseconds,
+        paused: false,
+        baseRate: widget.playbackRate,
+      );
       if (mounted) setState(() {});
     } else {
+      _clock.onAuthoritative(
+        position: widget.position.value,
+        monoUs: _elapsed.inMicroseconds,
+        paused: true,
+        baseRate: widget.playbackRate,
+      );
       if (_ticker.isActive) _ticker.stop();
     }
   }
 
-  /// 当前插值播放位置 = 最近跳变值 + 对齐后的 ticker 增量。
-  Duration get _nowPosition => _lastPosition + (_elapsed - _alignElapsed);
+  /// 当前播放位置 = 时钟投影（锚点 + 单调增量 × 速率，带死区/收敛）。
+  Duration get _nowPosition => _clock.positionAt(_elapsed.inMicroseconds);
 
   DanmakuTimeline _timelineFor(double width, DanmakuTimelineConfig config) {
     final comments = widget.comments;
@@ -251,8 +302,16 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     final baseAlpha = (widget.opacity.clamp(0.0, 1.0) * 255).round();
     final alpha = (baseAlpha * fade).round();
     if (alpha <= 0) return null;
-    final color = Color(
-      (comment.color & 0x00FFFFFF) | (alpha << 24),
+    final int rgb = switch (widget.colorMode) {
+      'white' => 0xFFFFFF,
+      'custom' => widget.customColor & 0x00FFFFFF,
+      _ => comment.color & 0x00FFFFFF,
+    };
+    final color = Color(rgb | (alpha << 24));
+    final outlineAlpha =
+        ((widget.outlineColor >> 24) & 0xFF) * (alpha / 255.0);
+    final shadowColor = Color(
+      (widget.outlineColor & 0x00FFFFFF) | (outlineAlpha.round() << 24),
     );
     return Positioned(
       left: x,
@@ -265,9 +324,32 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
           height: 1.2,
           color: color,
           fontWeight: FontWeight.w500,
-          shadows: const [
-            Shadow(color: Colors.black54, blurRadius: 3),
-          ],
+          // 描边用多层阴影近似（Flutter 没有原生 stroke 文字）：
+          // 宽度 0 → 无阴影；否则四向偏移 + 模糊，视觉上等同描边。
+          shadows: widget.outlineWidth <= 0
+              ? const []
+              : [
+                  Shadow(
+                    color: shadowColor,
+                    blurRadius: widget.outlineWidth * 1.5,
+                    offset: Offset(widget.outlineWidth * 0.6, 0),
+                  ),
+                  Shadow(
+                    color: shadowColor,
+                    blurRadius: widget.outlineWidth * 1.5,
+                    offset: Offset(-widget.outlineWidth * 0.6, 0),
+                  ),
+                  Shadow(
+                    color: shadowColor,
+                    blurRadius: widget.outlineWidth * 1.5,
+                    offset: Offset(0, widget.outlineWidth * 0.6),
+                  ),
+                  Shadow(
+                    color: shadowColor,
+                    blurRadius: widget.outlineWidth * 1.5,
+                    offset: Offset(0, -widget.outlineWidth * 0.6),
+                  ),
+                ],
         ),
       ),
     );

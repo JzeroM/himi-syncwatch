@@ -344,6 +344,22 @@ class AppSettings {
   /// 弹幕整体透明度。
   final double danmakuOpacity;
 
+  /// 弹幕颜色模式：`color`（源色，默认）/ `white`（统一白）/ `custom`。
+  final String danmakuColorMode;
+
+  /// 自定义弹幕颜色（`0xAARRGGBB`，`colorMode == custom` 时生效）。
+  final int danmakuCustomColor;
+
+  /// 弹幕描边宽度（0~4，0 = 无描边）。
+  final double danmakuOutlineWidth;
+
+  /// 弹幕描边颜色（`0xAARRGGBB`）。
+  final int danmakuOutlineColor;
+
+  static const List<String> danmakuColorModes = ['color', 'white', 'custom'];
+  static const double danmakuOutlineWidthMin = 0.0;
+  static const double danmakuOutlineWidthMax = 4.0;
+
   /// 弹幕行数范围（滑杆/存档钳制共用）。
   /// 滚动行数为「最大行数上限」：实际按画面高度自动铺满，
   /// 不超过该上限；默认给到上限即默认铺满，下压可减少密度。
@@ -456,6 +472,10 @@ class AppSettings {
     this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.8,
+    this.danmakuColorMode = 'color',
+    this.danmakuCustomColor = 0xFFFFFFFF,
+    this.danmakuOutlineWidth = 1.0,
+    this.danmakuOutlineColor = 0xFF000000,
   });
 
   bool get hardwareDecoding => decodeMode != 'sw';
@@ -577,6 +597,10 @@ class AppSettings {
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
+    String? danmakuColorMode,
+    int? danmakuCustomColor,
+    double? danmakuOutlineWidth,
+    int? danmakuOutlineColor,
     Object? themeColor = unsetValue,
     Object? appIcon = unsetValue,
     Object? categoryColumns = unsetValue,
@@ -660,6 +684,12 @@ class AppSettings {
       danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
       danmakuFontSize: danmakuFontSize ?? this.danmakuFontSize,
       danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
+      danmakuColorMode: danmakuColorMode ?? this.danmakuColorMode,
+      danmakuCustomColor: danmakuCustomColor ?? this.danmakuCustomColor,
+      danmakuOutlineWidth:
+          danmakuOutlineWidth ?? this.danmakuOutlineWidth,
+      danmakuOutlineColor:
+          danmakuOutlineColor ?? this.danmakuOutlineColor,
       themeColor: identical(themeColor, unsetValue)
           ? this.themeColor
           : themeColor as int?,
@@ -757,6 +787,10 @@ class AppSettings {
         'danmakuSpeed': danmakuSpeed,
         'danmakuFontSize': danmakuFontSize,
         'danmakuOpacity': danmakuOpacity,
+        'danmakuColorMode': danmakuColorMode,
+        'danmakuCustomColor': danmakuCustomColor,
+        'danmakuOutlineWidth': danmakuOutlineWidth,
+        'danmakuOutlineColor': danmakuOutlineColor,
         if (themeColor != null) 'themeColor': themeColor,
         if (appIcon != null) 'appIcon': appIcon,
         if (categoryColumns != null) 'categoryColumns': categoryColumns,
@@ -1039,6 +1073,20 @@ class AppSettings {
               danmakuOpacityMin,
               danmakuOpacityMax,
             ),
+      danmakuColorMode: (json['danmakuColorMode'] is String &&
+              danmakuColorModes.contains(json['danmakuColorMode']))
+          ? json['danmakuColorMode'] as String
+          : 'color',
+      danmakuCustomColor:
+          (json['danmakuCustomColor'] as num?)?.toInt() ?? 0xFFFFFFFF,
+      danmakuOutlineWidth: _clampDouble(
+        json['danmakuOutlineWidth'],
+        1.0,
+        danmakuOutlineWidthMin,
+        danmakuOutlineWidthMax,
+      ),
+      danmakuOutlineColor:
+          (json['danmakuOutlineColor'] as num?)?.toInt() ?? 0xFF000000,
       // 玻璃可调参数：缺失/null = 走包默认；存盘可能为 int → num 归一
       glassBlur: (json['glassBlur'] as num?)?.toDouble(),
       glassThickness: (json['glassThickness'] as num?)?.toDouble(),

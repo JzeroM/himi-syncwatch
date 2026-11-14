@@ -1,6 +1,7 @@
 #ifndef PLAYER_STATE_H
 #define PLAYER_STATE_H
 
+#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QList>
 #include <QSet>
@@ -23,6 +24,18 @@ class PlayerState : public QObject {
 
     // ── 播放 ──
     Q_PROPERTY(qint64 positionMs READ positionMs NOTIFY changed)
+
+    /// 弹幕专用插值位置（P1）：锚点 + 单调时钟 + 死区/平滑收敛。
+    ///
+    /// 【为什么与 positionMs 分开】`positionMs` 是「权威值」，进度条要跟手
+    /// （seek 立刻响应）；弹幕要的是「平滑」，直接吃权威值会随着上报节奏
+    /// 一段一段往前蹦。QML 的 `DanmakuLayer.tick()` 每帧以命令式读取本属性
+    /// （不是绑定，故不受 NOTIFY 节流影响）。
+    Q_PROPERTY(qint64 danmakuPositionMs READ danmakuPositionMs NOTIFY changed)
+    /// 最近一次「权威位置 - 投影位置」误差（ms）——调试面板用。
+    Q_PROPERTY(int danmakuClockErrorMs READ danmakuClockErrorMs NOTIFY changed)
+    /// 硬对齐次数（seek / 卡顿恢复）——调试面板用。
+    Q_PROPERTY(int danmakuHardResyncs READ danmakuHardResyncs NOTIFY changed)
     Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY changed)
     /// 697：已缓冲毫秒数（调试面板显示）。
     Q_PROPERTY(qint64 bufferedMs READ bufferedMs NOTIFY changed)
@@ -66,6 +79,10 @@ class PlayerState : public QObject {
     Q_PROPERTY(double danmakuSpeed READ danmakuSpeed NOTIFY changed)
     Q_PROPERTY(double danmakuFontSize READ danmakuFontSize NOTIFY changed)
     Q_PROPERTY(double danmakuOpacity READ danmakuOpacity NOTIFY changed)
+    Q_PROPERTY(QString danmakuColorMode READ danmakuColorMode NOTIFY changed)
+    Q_PROPERTY(int danmakuCustomColor READ danmakuCustomColor NOTIFY changed)
+    Q_PROPERTY(double danmakuOutlineWidth READ danmakuOutlineWidth NOTIFY changed)
+    Q_PROPERTY(int danmakuOutlineColor READ danmakuOutlineColor NOTIFY changed)
 
     // ── 弹幕行数（697，QML 自绘层用；对齐 Flutter AppSettings）──
     Q_PROPERTY(int danmakuScrollRows READ danmakuScrollRows NOTIFY changed)
@@ -195,6 +212,9 @@ public:
     void applyJson(const QJsonObject& json, bool remote = false);
 
     qint64 positionMs() const { return positionMs_; }
+    qint64 danmakuPositionMs() const;
+    int danmakuClockErrorMs() const { return dmErrorMs_; }
+    int danmakuHardResyncs() const { return dmHardResyncs_; }
     qint64 durationMs() const { return durationMs_; }
     qint64 bufferedMs() const { return bufferedMs_; }
     bool paused() const { return paused_; }
@@ -236,6 +256,10 @@ public:
     double danmakuSpeed() const { return danmakuSpeed_; }
     double danmakuFontSize() const { return danmakuFontSize_; }
     double danmakuOpacity() const { return danmakuOpacity_; }
+    QString danmakuColorMode() const { return danmakuColorMode_; }
+    int danmakuCustomColor() const { return danmakuCustomColor_; }
+    double danmakuOutlineWidth() const { return danmakuOutlineWidth_; }
+    int danmakuOutlineColor() const { return danmakuOutlineColor_; }
 
     // 弹幕行数（697，QML 自绘层用）
     int danmakuScrollRows() const { return danmakuScrollRows_; }
@@ -350,6 +374,20 @@ signals:
     void danmakuChanged();
 
 private:
+    /// 收到权威位置后同步弹幕时钟（死区 / 收敛 / 硬对齐）。
+    void danmakuClockSync();
+    /// 立即对齐到当前权威位置（seek / 暂停与倍速变化）。
+    void danmakuClockHardResync();
+
+    qint64 dmAnchorPosMs_ = 0;
+    QElapsedTimer dmAnchorTimer_;   ///< 单调时钟（不受 NTP 校时影响）
+    double dmBaseRate_ = 1.0;
+    double dmEffRate_ = 1.0;
+    bool dmPaused_ = true;
+    qint64 dmDurationMs_ = 0;
+    int dmErrorMs_ = 0;
+    int dmHardResyncs_ = 0;
+
     void setEpisodes(const QJsonArray& arr);
     void setTracks(const QJsonArray& arr);
     void setVersions(const QJsonArray& arr);
@@ -396,6 +434,10 @@ private:
     double danmakuSpeed_ = 0.7;
     double danmakuFontSize_ = 0.5;
     double danmakuOpacity_ = 1.0;
+    QString danmakuColorMode_ = QStringLiteral("color");
+    int danmakuCustomColor_ = 0xFFFFFFFF;
+    double danmakuOutlineWidth_ = 1.0;
+    int danmakuOutlineColor_ = 0xFF000000;
 
     // 弹幕行数（697，对齐 Flutter AppSettings 默认：滚动 30 / 顶 4 / 底 4）
     int danmakuScrollRows_ = 30;

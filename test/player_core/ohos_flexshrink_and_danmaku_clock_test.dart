@@ -118,16 +118,19 @@ void main() {
       expect(kotlinScreen, contains('无状态纯函数'));
     });
 
-    test('Flutter 参考实现（_lastPosition + 增量）', () {
+    test('Flutter 参考实现（DanmakuClock 锚点投影）', () {
       final flutter = File('lib/screens/player/widgets/danmaku_overlay.dart').readAsStringSync();
-      expect(flutter, contains('_lastPosition + (_elapsed - _alignElapsed)'));
+      // P1：从「快照 + 增量」升级为共享的 DanmakuClock（死区/收敛/单调时钟）。
+      expect(flutter, contains('DanmakuClock'));
+      expect(flutter, contains('_clock.positionAt('));
     });
 
     test('弹幕层用无状态纯函数 + Choreographer 帧驱动（618）', () {
       final danmaku = File(
         'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/DanmakuLayerView.kt',
       ).readAsStringSync();
-      expect(danmaku, contains('elapsed * snapSpeed'));
+      // P1：锚点 + 单调时钟投影（不再是墙钟 × 倍速的裸外推）。
+      expect(danmaku, contains('SystemClock.elapsedRealtimeNanos()'));
       expect(danmaku, contains('Choreographer'));
     });
   });

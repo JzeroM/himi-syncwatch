@@ -4434,6 +4434,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuEnabled: _danmakuOn,
         danmakuSpeed: settings.danmakuSpeed,
         danmakuFontSize: settings.danmakuFontSize,
+        danmakuColorMode: settings.danmakuColorMode,
+        danmakuCustomColor: settings.danmakuCustomColor,
+        danmakuOutlineWidth: settings.danmakuOutlineWidth,
+        danmakuOutlineColor: settings.danmakuOutlineColor,
         danmakuOpacity: settings.danmakuOpacity,
         danmakuScrollRows: settings.danmakuScrollRows,
         danmakuTopRows: settings.danmakuTopRows,
@@ -9995,6 +9999,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     speed: s.danmakuSpeed,
                     fontSizeScale: s.danmakuFontSize,
                     opacity: s.danmakuOpacity,
+                    // 播放速率必须参与投影：否则非 1x 时每来一次位置快照
+                    // 就会被拽前/拽后一次（周期性抖动）。
+                    playbackRate: _speed,
+                    colorMode: s.danmakuColorMode,
+                    customColor: s.danmakuCustomColor,
+                    outlineWidth: s.danmakuOutlineWidth,
+                    outlineColor: s.danmakuOutlineColor,
                   );
                 },
               ),

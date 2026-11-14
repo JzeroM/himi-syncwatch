@@ -294,6 +294,14 @@ data class AndroidNativePlayerState(
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
+    /** 弹幕颜色模式：color / white / custom。 */
+    val danmakuColorMode: String = "color",
+    /** 自定义弹幕颜色（0xAARRGGBB）。 */
+    val danmakuCustomColor: Int = 0xFFFFFFFF.toInt(),
+    /** 描边宽度（0~4）。 */
+    val danmakuOutlineWidth: Double = 1.0,
+    /** 描边颜色（0xAARRGGBB）。 */
+    val danmakuOutlineColor: Int = 0xFF000000.toInt(),
     /** 弹幕行数（滚动 = 上限按屏高自适应；顶/底 = 行数）与数量上限（null = 不限）。 */
     val danmakuScrollRows: Int = 30,
     val danmakuTopRows: Int = 4,
@@ -492,6 +500,12 @@ data class AndroidNativePlayerState(
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),
+            danmakuColorMode = json.optString("danmakuColorMode", "color"),
+            danmakuCustomColor =
+                json.optLong("danmakuCustomColor", 0xFFFFFFFFL).toInt(),
+            danmakuOutlineWidth = json.optDouble("danmakuOutlineWidth", 1.0),
+            danmakuOutlineColor =
+                json.optLong("danmakuOutlineColor", 0xFF000000L).toInt(),
             danmakuScrollRows = json.optInt("danmakuScrollRows", 30),
             danmakuTopRows = json.optInt("danmakuTopRows", 4),
             danmakuBottomRows = json.optInt("danmakuBottomRows", 4),

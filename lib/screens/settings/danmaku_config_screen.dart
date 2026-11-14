@@ -56,6 +56,10 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
+    String? danmakuColorMode,
+    int? danmakuCustomColor,
+    double? danmakuOutlineWidth,
+    int? danmakuOutlineColor,
   }) {
     ref.read(settingsProvider.notifier).update(
           danmakuDefaultOn: danmakuDefaultOn,
@@ -71,6 +75,10 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
           danmakuSpeed: danmakuSpeed,
           danmakuFontSize: danmakuFontSize,
           danmakuOpacity: danmakuOpacity,
+          danmakuColorMode: danmakuColorMode,
+          danmakuCustomColor: danmakuCustomColor,
+          danmakuOutlineWidth: danmakuOutlineWidth,
+          danmakuOutlineColor: danmakuOutlineColor,
         );
   }
 
@@ -89,6 +97,10 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuSpeed: 0.7,
       danmakuFontSize: 0.5,
       danmakuOpacity: 0.8,
+      danmakuColorMode: 'color',
+      danmakuCustomColor: 0xFFFFFFFF,
+      danmakuOutlineWidth: 1.0,
+      danmakuOutlineColor: 0xFF000000,
     );
     _apiUrl.clear();
     _blockWords.clear();
@@ -286,6 +298,98 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                     AppSettings.danmakuMaxCountMin,
                 onChanged: (v) => _update(danmakuMaxCount: v),
               ),
+            const Divider(height: 1),
+            _sectionHeader('样式'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: SegmentedButton<String>(
+                key: const ValueKey('danmakuColorMode'),
+                segments: const [
+                  ButtonSegment(value: 'color', label: Text('源色')),
+                  ButtonSegment(value: 'white', label: Text('白色')),
+                  ButtonSegment(value: 'custom', label: Text('自定义')),
+                ],
+                selected: {s.danmakuColorMode},
+                onSelectionChanged: (v) =>
+                    _update(danmakuColorMode: v.first),
+              ),
+            ),
+            if (s.danmakuColorMode == 'custom')
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final c in const [
+                      0xFFFFFFFF,
+                      0xFFFFD54F,
+                      0xFF81C784,
+                      0xFF64B5F6,
+                      0xFFBA68C8,
+                      0xFFFF8A65,
+                      0xFF4DD0E1,
+                      0xFFE57373,
+                    ])
+                      InkWell(
+                        key: ValueKey('danmakuColor-$c'),
+                        onTap: () => _update(danmakuCustomColor: c),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Color(c),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: s.danmakuCustomColor == c
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.white24,
+                              width: s.danmakuCustomColor == c ? 3 : 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            // 描边宽度是小数（0~4），用原生 Slider（`_rowsSlider` 只收 int）。
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 76,
+                    child: Text(
+                      '描边宽度',
+                      style: TextStyle(fontSize: 13, color: Colors.white70),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      key: const ValueKey('danmakuOutlineWidthSlider'),
+                      min: AppSettings.danmakuOutlineWidthMin,
+                      max: AppSettings.danmakuOutlineWidthMax,
+                      divisions: 8,
+                      value: s.danmakuOutlineWidth.clamp(
+                        AppSettings.danmakuOutlineWidthMin,
+                        AppSettings.danmakuOutlineWidthMax,
+                      ),
+                      onChanged: (v) => _update(danmakuOutlineWidth: v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 40,
+                    child: Text(
+                      s.danmakuOutlineWidth.toStringAsFixed(1),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const Divider(height: 1),
             Center(
               child: TextButton(

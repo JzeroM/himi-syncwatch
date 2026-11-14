@@ -72,9 +72,12 @@ void main() {
   });
 
   group('安卓弹幕：时钟（618 无状态纯函数，对齐鸿蒙）', () {
-    test('位置 = 快照 + 墙钟×倍速', () {
-      // 618：删除 616 的锚点 + 平滑收敛（鸿蒙已证明会「忽快忽慢」）。
-      expect(kotlinDanmaku, contains('elapsed * snapSpeed'));
+    test('位置 = 锚点 + 单调时钟×有效速率（P1）', () {
+      // 618 的「墙钟裸外推」已被 P1 取代：墙钟会被 NTP 拨动，
+      // 且快照硬覆盖会让弹幕前后弹。现在用单调时钟 + 死区/收敛，
+      // 换速率前先 rebase（这才是 616 抽搐的真正原因）。
+      expect(kotlinDanmaku, contains('SystemClock.elapsedRealtimeNanos()'));
+      expect(kotlinDanmaku, contains('anchorPosMs'));
       expect(kotlinDanmaku, contains('Choreographer'));
       expect(kotlinDanmaku, isNot(contains('drift / 10')));
     });
@@ -96,10 +99,12 @@ void main() {
       expect(kotlinDanmaku, contains('(1.0 - progress) / 0.1'));
     });
 
-    test('w500 字重 + 黑 54% blur3 描影（禁粗描边）', () {
+    test('w500 字重 + 可配置描边（P3）', () {
       expect(kotlinDanmaku, contains('Typeface.create("sans-serif-medium"'));
-      expect(kotlinDanmaku, contains('setShadowLayer(3f * density'));
-      expect(kotlinDanmaku, contains('0x8A000000'));
+      // P3：描边宽度/颜色改为用户可配（默认 1.0 → 半径 1.5×density，
+      // 与旧硬编码 3f 视觉接近），宽度 0 时显式关闭。
+      expect(kotlinDanmaku, contains('outlineWidthDp * 1.5f * density'));
+      expect(kotlinDanmaku, contains('clearShadowLayer()'));
       // 旧的 strokePaint 粗描边必须消失。
       expect(kotlinDanmaku, isNot(contains('strokePaint')));
     });

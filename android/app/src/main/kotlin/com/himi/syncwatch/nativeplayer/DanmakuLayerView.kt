@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.Log
+import android.os.SystemClock
 import android.view.Choreographer
 import android.view.View
 
@@ -192,11 +193,16 @@ class DanmakuLayerView(context: Context) : View(context) {
      */
     private var frameCallback: Choreographer.FrameCallback? = null
 
-    /** 最新快照位置（ms）。 */
-    private var snapPosMs = 0L
+    /** 锚点位置（ms）。 */
+    private var anchorPosMs = 0L
 
-    /** 快照落地时刻（墙钟 ms）——外推基准。 */
-    private var snapAtMs = 0L
+    /**
+     * 锚点落地时刻——**单调时钟**（`SystemClock.elapsedRealtimeNanos()`）。
+     *
+     * 【为什么不能用墙钟】`System.currentTimeMillis()` 会被 NTP 校时拨动，
+     * 一拨动整屏弹幕就瞬移一次；而且它不保证单调。
+     */
+    private var anchorAtNs = 0L
 
     /** 快照时长（ms）：未知（<=0）时**不外推**（同鸿蒙 600 的防御）。 */
     private var snapDurationMs = 0L
@@ -204,8 +210,37 @@ class DanmakuLayerView(context: Context) : View(context) {
     /** 快照暂停态（暂停/缓冲/播完 三态合并，由调用方传入）。 */
     private var snapPaused = true
 
-    /** 快照倍速（<=0 时按 1.0 兜底）。 */
+    /** 播放速率基准（<=0 时按 1.0 兜底）。 */
+    private var snapBaseSpeed = 1.0
+
+    /** 当前生效速率（基准 + 收敛修正）。 */
     private var snapSpeed = 1.0
+
+    /** 误差死区：小于该值不修正（ms）。 */
+    private val DEADBAND_MS = 40L
+
+    /** 硬对齐阈值：seek / 卡顿恢复（ms）。 */
+    private val HARD_RESYNC_MS = 400L
+
+    /** 收敛窗口：把中等误差在该时长内消化（ms）。 */
+    private val CONVERGE_MS = 600.0
+
+    /** 速率修正上限：±5%。 */
+    private val MAX_RATE_ADJUST = 0.05
+
+    /** 弹幕样式（P3）：颜色模式 / 自定义色 / 描边宽度与颜色。 */
+    private var colorMode: String = "color"
+    private var customColor: Int = 0xFFFFFFFF.toInt()
+    private var outlineWidthDp: Double = 1.0
+    private var outlineColor: Int = 0xFF000000.toInt()
+
+    /** 弹幕时钟：最近一次权威位置与投影的误差（ms）——面板统计用。 */
+    var clockErrorMs: Long = 0L
+        private set
+
+    /** 弹幕时钟：硬对齐次数（seek / 卡顿恢复）——面板统计用。 */
+    var clockHardResyncs: Int = 0
+        private set
 
     /** 618 诊断：上一次算出的位置（仅在回退时打日志，正常播放不刷屏）。 */
     private var lastDiagPosMs = 0L
@@ -243,19 +278,37 @@ class DanmakuLayerView(context: Context) : View(context) {
     private var lastClockSpeed = 1.0
 
     /**
-     * 当前播放位置：**无状态纯函数**，与鸿蒙 `positionNowMs()` 逐条等价。
+     * 当前播放位置：锚点 + **单调时钟**增量 × 有效速率。
      *
-     * 幂等性保证：同一份快照 + 同一墙钟时刻 → 同一结果；重复调用同一份
-     * 快照（本地 tick 场景）不会产生任何位置变化。
+     * 与 Dart `DanmakuClock.positionAt()`、鸿蒙 `danmakuPositionNowMs()` 同构。
+     * 幂等：同一份快照 + 同一时刻 → 同一结果。
      */
     private fun currentPositionMs(): Long {
-        if (snapPaused || snapSpeed <= 0.0) return snapPosMs
+        if (snapPaused || snapSpeed <= 0.0) return anchorPosMs
         // 起播早期时长未解析：不外推（否则位置会一路跑到时长上限）。
-        if (snapDurationMs <= 0) return snapPosMs
-        val elapsed = System.currentTimeMillis() - snapAtMs
-        val projected = snapPosMs + (elapsed * snapSpeed).toLong()
+        if (snapDurationMs <= 0) return anchorPosMs
+        val elapsedMs =
+            (SystemClock.elapsedRealtimeNanos() - anchorAtNs) / 1_000_000.0
+        val projected = anchorPosMs + (elapsedMs * snapSpeed).toLong()
         val capped = if (projected > snapDurationMs) snapDurationMs else projected
         return if (capped < 0) 0 else capped
+    }
+
+    /** 把锚点挪到「当前投影位置」，保证位置连续（只改后续斜率）。 */
+    private fun rebaseAnchor() {
+        anchorPosMs = currentPositionMs()
+        anchorAtNs = SystemClock.elapsedRealtimeNanos()
+    }
+
+    /** 立即对齐到权威位置（seek / 卡顿恢复 / 暂停与倍速变化）。 */
+    private fun hardResync(positionMs: Long, paused: Boolean, speed: Double) {
+        anchorPosMs = if (positionMs < 0) 0 else positionMs
+        anchorAtNs = SystemClock.elapsedRealtimeNanos()
+        snapPaused = paused
+        snapBaseSpeed = if (speed > 0.0) speed else 1.0
+        snapSpeed = if (paused) 0.0 else snapBaseSpeed
+        clockErrorMs = 0
+        clockHardResyncs++
     }
 
     /**
@@ -265,6 +318,39 @@ class DanmakuLayerView(context: Context) : View(context) {
      * 的冻结条件一致（这几种状态不外推）。
      * [durationMs] 为 0 时本层不外推（防起播早期位置跑到时长上限）。
      */
+    /**
+     * 设置弹幕样式（P3）。
+     *
+     * [colorMode] color（源色）/ white / custom；[outlineWidthDp] 0~4（0 = 无描边）。
+     * 与 Flutter `DanmakuOverlay`、鸿蒙 `DanmakuLayer`、Qt `DanmakuLayer.qml` 同语义。
+     */
+    fun setStyle(
+        colorMode: String,
+        customColor: Int,
+        outlineWidthDp: Double,
+        outlineColor: Int,
+    ) {
+        if (this.colorMode == colorMode &&
+            this.customColor == customColor &&
+            this.outlineWidthDp == outlineWidthDp &&
+            this.outlineColor == outlineColor
+        ) {
+            return
+        }
+        this.colorMode = colorMode
+        this.customColor = customColor
+        this.outlineWidthDp = outlineWidthDp
+        this.outlineColor = outlineColor
+        if (visibility == VISIBLE) invalidate()
+    }
+
+    /** 按颜色模式取实际颜色（不含 alpha）。 */
+    private fun effectiveRgb(itemColor: Int): Int = when (colorMode) {
+        "white" -> 0xFFFFFF
+        "custom" -> customColor and 0x00FFFFFF
+        else -> itemColor and 0x00FFFFFF
+    }
+
     fun setClock(
         positionMs: Long,
         paused: Boolean,
@@ -285,11 +371,34 @@ class DanmakuLayerView(context: Context) : View(context) {
         lastClockPaused = paused
         lastClockSpeed = speed
 
-        snapPosMs = positionMs
-        snapAtMs = System.currentTimeMillis()
-        snapPaused = paused
-        snapSpeed = if (speed > 0.0) speed else 1.0
-        snapDurationMs = durationMs
+        if (durationMs > 0) snapDurationMs = durationMs
+
+        val rate = if (speed > 0.0) speed else 1.0
+        if (paused || paused != snapPaused || rate != snapBaseSpeed) {
+            // 暂停/恢复、倍速变化：语义变化，直接重锚。
+            hardResync(positionMs, paused, rate)
+        } else {
+            val errMs = positionMs - currentPositionMs()
+            clockErrorMs = errMs
+            if (errMs > HARD_RESYNC_MS || errMs < -HARD_RESYNC_MS) {
+                // seek / 卡顿恢复：允许瞬移。
+                hardResync(positionMs, false, rate)
+            } else {
+                // 换速率前先重锚，保证位置连续（否则整段 elapsed 被重缩放 → 抽搐）。
+                rebaseAnchor()
+                snapBaseSpeed = rate
+                snapSpeed = if (errMs > DEADBAND_MS) {
+                    rate + (errMs.toDouble() / CONVERGE_MS)
+                        .coerceIn(-MAX_RATE_ADJUST, MAX_RATE_ADJUST)
+                } else if (errMs < -DEADBAND_MS) {
+                    rate + (errMs.toDouble() / CONVERGE_MS)
+                        .coerceIn(-MAX_RATE_ADJUST, MAX_RATE_ADJUST)
+                } else {
+                    rate
+                }
+            }
+        }
+
         this.paused = paused
         if (paused) {
             stopFrameLoop()
@@ -567,8 +676,9 @@ class DanmakuLayerView(context: Context) : View(context) {
             Log.w(
                 "HimiDanmaku",
                 "位置回退 ${lastDiagPosMs}ms -> ${pos}ms " +
-                    "snap=${snapPosMs} at=${snapAtMs} dur=${snapDurationMs} " +
-                    "speed=$snapSpeed paused=$snapPaused",
+                    "anchor=${anchorPosMs} at=$anchorAtNs dur=${snapDurationMs} " +
+                    "base=$snapBaseSpeed eff=$snapSpeed paused=$snapPaused " +
+                    "err=$clockErrorMs resync=$clockHardResyncs",
             )
         }
         lastDiagPosMs = pos
@@ -589,8 +699,17 @@ class DanmakuLayerView(context: Context) : View(context) {
         assignLanes(all, fontSizePx, screenW, screenH)
 
         fillPaint.textSize = fontSizePx
-        // Flutter `Shadow(color: Colors.black54, blurRadius: 3)`。
-        fillPaint.setShadowLayer(3f * density, 0f, 0f, 0x8A000000.toInt())
+        // 描边宽度 0 → 不设阴影；否则用阴影近似描边（与 Flutter 同做法）。
+        if (outlineWidthDp <= 0.0) {
+            fillPaint.clearShadowLayer()
+        } else {
+            fillPaint.setShadowLayer(
+                (outlineWidthDp * 1.5f * density).toFloat(),
+                0f,
+                0f,
+                outlineColor,
+            )
+        }
 
         val baseAlpha = (opacity * 255).toInt().coerceIn(0, 255)
         var drewAny = false
@@ -599,7 +718,7 @@ class DanmakuLayerView(context: Context) : View(context) {
             val elapsed = pos - item.timeMs
             val lane = laneOf[keyOf(item)] ?: continue
             if (lane < 0) continue // 轨道满丢弃
-            val color = parseColor(item.color)
+            val color = 0xFF000000.toInt() or effectiveRgb(parseColor(item.color))
             if (item.mode == "top" || item.mode == "bottom") {
                 if (elapsed < 0 || elapsed > fixedMs) continue
                 val progress = (elapsed / fixedMs).coerceIn(0.0, 1.0)

@@ -150,6 +150,11 @@ class BackupService {
         'danmaku': <String, Object?>{
           'apiUrl': settings.danmakuApiUrl,
           'blockWords': settings.danmakuBlockWords,
+          // P3 样式（白名单只备份用户填写的项）
+          'colorMode': settings.danmakuColorMode,
+          'customColor': settings.danmakuCustomColor,
+          'outlineWidth': settings.danmakuOutlineWidth,
+          'outlineColor': settings.danmakuOutlineColor,
         },
         'trakt': <String, Object?>{
           'token': traktTokens?.toJson(),
@@ -330,6 +335,12 @@ class BackupService {
           tmdbWatchRegion: tmdb?['watchRegion'] as String?,
           danmakuApiUrl: danmaku?['apiUrl'] as String?,
           danmakuBlockWords: danmaku?['blockWords'] as String?,
+          danmakuColorMode: danmaku?['colorMode'] as String?,
+          danmakuCustomColor: (danmaku?['customColor'] as num?)?.toInt(),
+          danmakuOutlineWidth:
+              (danmaku?['outlineWidth'] as num?)?.toDouble(),
+          danmakuOutlineColor:
+              (danmaku?['outlineColor'] as num?)?.toInt(),
           traktDisabledServerIds: trakt?['disabledServerIds'] as String?,
         );
       }

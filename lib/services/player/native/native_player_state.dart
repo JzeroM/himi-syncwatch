@@ -424,6 +424,10 @@ class NativePlayerState {
     this.currentVersionIndex = 0,
     this.danmakuEnabled = false,
     this.danmakuOpacity = 1.0,
+    this.danmakuColorMode = 'color',
+    this.danmakuCustomColor = 0xFFFFFFFF,
+    this.danmakuOutlineWidth = 1.0,
+    this.danmakuOutlineColor = 0xFF000000,
     this.danmakuFontSize = 16.0,
     this.danmakuSpeed = 0.7,
     this.danmakuArea = 'scroll',
@@ -617,6 +621,18 @@ class NativePlayerState {
   // ── 弹幕 ──
   final bool danmakuEnabled;
   final double danmakuOpacity;
+
+  /// 弹幕颜色模式：color / white / custom。
+  final String danmakuColorMode;
+
+  /// 自定义弹幕颜色（0xAARRGGBB）。
+  final int danmakuCustomColor;
+
+  /// 描边宽度（0~4）。
+  final double danmakuOutlineWidth;
+
+  /// 描边颜色（0xAARRGGBB）。
+  final int danmakuOutlineColor;
   final double danmakuFontSize;
   final double danmakuSpeed;
   final String danmakuArea;
@@ -771,6 +787,13 @@ class NativePlayerState {
       currentVersionIndex: (json['currentVersionIndex'] as num?)?.toInt() ?? 0,
       danmakuEnabled: json['danmakuEnabled'] == true,
       danmakuOpacity: (json['danmakuOpacity'] as num?)?.toDouble() ?? 1.0,
+      danmakuColorMode: json['danmakuColorMode'] as String? ?? 'color',
+      danmakuCustomColor:
+          (json['danmakuCustomColor'] as num?)?.toInt() ?? 0xFFFFFFFF,
+      danmakuOutlineWidth:
+          (json['danmakuOutlineWidth'] as num?)?.toDouble() ?? 1.0,
+      danmakuOutlineColor:
+          (json['danmakuOutlineColor'] as num?)?.toInt() ?? 0xFF000000,
       danmakuFontSize: (json['danmakuFontSize'] as num?)?.toDouble() ?? 16.0,
       danmakuSpeed: (json['danmakuSpeed'] as num?)?.toDouble() ?? 0.7,
       danmakuArea: json['danmakuArea'] as String? ?? 'scroll',
@@ -904,6 +927,10 @@ class NativePlayerState {
         'currentVersionIndex': currentVersionIndex,
         'danmakuEnabled': danmakuEnabled,
         'danmakuOpacity': danmakuOpacity,
+        'danmakuColorMode': danmakuColorMode,
+        'danmakuCustomColor': danmakuCustomColor,
+        'danmakuOutlineWidth': danmakuOutlineWidth,
+        'danmakuOutlineColor': danmakuOutlineColor,
         'danmakuFontSize': danmakuFontSize,
         'danmakuSpeed': danmakuSpeed,
         'danmakuArea': danmakuArea,
@@ -1018,6 +1045,10 @@ class NativePlayerState {
     int? currentVersionIndex,
     bool? danmakuEnabled,
     double? danmakuOpacity,
+    String? danmakuColorMode,
+    int? danmakuCustomColor,
+    double? danmakuOutlineWidth,
+    int? danmakuOutlineColor,
     double? danmakuFontSize,
     double? danmakuSpeed,
     String? danmakuArea,
@@ -1132,6 +1163,12 @@ class NativePlayerState {
         currentVersionIndex: currentVersionIndex ?? this.currentVersionIndex,
         danmakuEnabled: danmakuEnabled ?? this.danmakuEnabled,
         danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
+        danmakuColorMode: danmakuColorMode ?? this.danmakuColorMode,
+        danmakuCustomColor: danmakuCustomColor ?? this.danmakuCustomColor,
+        danmakuOutlineWidth:
+            danmakuOutlineWidth ?? this.danmakuOutlineWidth,
+        danmakuOutlineColor:
+            danmakuOutlineColor ?? this.danmakuOutlineColor,
         danmakuFontSize: danmakuFontSize ?? this.danmakuFontSize,
         danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
         danmakuArea: danmakuArea ?? this.danmakuArea,
@@ -1236,6 +1273,10 @@ class NativePlayerState {
       other.currentVersionIndex == currentVersionIndex &&
       other.danmakuEnabled == danmakuEnabled &&
       other.danmakuOpacity == danmakuOpacity &&
+      other.danmakuColorMode == danmakuColorMode &&
+      other.danmakuCustomColor == danmakuCustomColor &&
+      other.danmakuOutlineWidth == danmakuOutlineWidth &&
+      other.danmakuOutlineColor == danmakuOutlineColor &&
       other.danmakuFontSize == danmakuFontSize &&
       other.danmakuSpeed == danmakuSpeed &&
       other.danmakuArea == danmakuArea &&
@@ -1326,6 +1367,10 @@ class NativePlayerState {
         currentVersionIndex,
         danmakuEnabled,
         danmakuOpacity,
+        danmakuColorMode,
+        danmakuCustomColor,
+        danmakuOutlineWidth,
+        danmakuOutlineColor,
         danmakuFontSize,
         danmakuSpeed,
         danmakuArea,
@@ -1506,6 +1551,10 @@ class NativePlayerUiExtras {
     this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.6,
+    this.danmakuColorMode = 'color',
+    this.danmakuCustomColor = 0xFFFFFFFF,
+    this.danmakuOutlineWidth = 1.0,
+    this.danmakuOutlineColor = 0xFF000000,
     this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
@@ -1551,6 +1600,12 @@ class NativePlayerUiExtras {
   final double danmakuSpeed;
   final double danmakuFontSize;
   final double danmakuOpacity;
+
+  /// 弹幕样式（P3）：颜色模式 / 自定义色 / 描边。
+  final String danmakuColorMode;
+  final int danmakuCustomColor;
+  final double danmakuOutlineWidth;
+  final int danmakuOutlineColor;
 
   /// 弹幕行数/数量上限（弹幕设置页）：滚动 = 上限按屏高自适应；
   /// [danmakuMaxCount] null = 不限制。

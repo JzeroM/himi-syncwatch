@@ -267,10 +267,15 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1
         danmakuItems: playerState.danmakuItems
+        playerState: playerState
         positionMs: playerState.positionMs
         // 属性是 `paused`（无 playing）；取反得到「播放中」
         playing: !playerState.paused
         danmakuEnabled: root.danmakuOn
+        colorMode: playerState.danmakuColorMode
+        customColor: playerState.danmakuCustomColor
+        outlineWidth: playerState.danmakuOutlineWidth
+        outlineColor: playerState.danmakuOutlineColor
         fontSizeScale: playerState.danmakuFontSize
         speed: playerState.danmakuSpeed
         opacity: playerState.danmakuOpacity

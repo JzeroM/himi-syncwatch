@@ -458,6 +458,14 @@ export class NativePlayerUiState {
   danmakuSpeed: number = 1.0;
   danmakuFontSize: number = 0.5;
   danmakuOpacity: number = 0.6;
+  /** 弹幕颜色模式：color / white / custom（P3）。 */
+  danmakuColorMode: string = 'color';
+  /** 自定义弹幕颜色（0xAARRGGBB）。 */
+  danmakuCustomColor: number = 0xFFFFFFFF;
+  /** 描边宽度（0~4，0 = 无描边）。 */
+  danmakuOutlineWidth: number = 1;
+  /** 描边颜色（0xAARRGGBB）。 */
+  danmakuOutlineColor: number = 0xFF000000;
   /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
   danmakuItems: NativeDanmakuUi[] = [];
   /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
@@ -600,6 +608,13 @@ export class NativePlayerUiState {
     this.danmakuSpeed = jsonNum(obj.danmakuSpeed, this.danmakuSpeed);
     this.danmakuFontSize = jsonNum(obj.danmakuFontSize, this.danmakuFontSize);
     this.danmakuOpacity = jsonNum(obj.danmakuOpacity, this.danmakuOpacity);
+    this.danmakuColorMode = jsonStr(obj.danmakuColorMode, this.danmakuColorMode);
+    this.danmakuCustomColor =
+      jsonNum(obj.danmakuCustomColor, this.danmakuCustomColor);
+    this.danmakuOutlineWidth =
+      jsonNum(obj.danmakuOutlineWidth, this.danmakuOutlineWidth);
+    this.danmakuOutlineColor =
+      jsonNum(obj.danmakuOutlineColor, this.danmakuOutlineColor);
     if (obj.danmakuItems !== undefined) {
       this.danmakuItems = parseDanmakuItems(obj.danmakuItems);
     }
@@ -668,6 +683,28 @@ export class HimiMpvNativeHost {
 
   /** 最近一次快照落地时刻（本地插值基准）。 */
   lastStateAtMs: number = Date.now();
+
+  // ── 弹幕专用时钟（P1）────────────────────────────────────────
+  //
+  // 与进度条 `positionNowMs()` **分离**：进度条要「跟手」（seek 立即响应），
+  // 弹幕要「平滑」（不跳）。共用一份会让两边都做不好。
+  //
+  // 规则与 Dart `DanmakuClock` / 安卓 `DanmakuLayerView` 同构：
+  //   锚点 + 时钟投影 × 速率；误差 ≤40ms 不修正；40~400ms 只改速率缓慢
+  //   收敛；>400ms 视为 seek/卡顿恢复才允许瞬移。
+  dmAnchorPosMs: number = 0;
+  dmAnchorAtMs: number = Date.now();
+  dmBaseSpeed: number = 1;
+  dmEffSpeed: number = 1;
+  dmPaused: boolean = true;
+  dmDurationMs: number = 0;
+  dmErrorMs: number = 0;
+  dmHardResyncs: number = 0;
+
+  private readonly DM_DEADBAND_MS: number = 40;
+  private readonly DM_HARD_RESYNC_MS: number = 400;
+  private readonly DM_CONVERGE_MS: number = 600;
+  private readonly DM_MAX_ADJUST: number = 0.05;
 
   /** 控件层显隐（点屏切换 / 自动隐藏 / 返回键第一段）。 */
   controlsVisible: boolean = true;
@@ -785,6 +822,7 @@ export class HimiMpvNativeHost {
       const obj: ESObject = JSON.parse(json);
       this.state.update(obj);
       this.lastStateAtMs = Date.now();
+      this.danmakuClockSync();
       this.notify();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'applyStateJson 失败: %{public}s', String(e));
@@ -821,6 +859,75 @@ export class HimiMpvNativeHost {
       return s.durationMs;
     }
     return projected < 0 ? 0 : Math.round(projected);
+  }
+
+  // ── 弹幕时钟（P1）────────────────────────────────────────────
+
+  /** 弹幕层当前的播放位置（带死区与平滑收敛，不跳）。 */
+  danmakuPositionNowMs(): number {
+    if (this.dmPaused || this.dmEffSpeed <= 0) return this.dmAnchorPosMs;
+    if (this.dmDurationMs <= 0) return this.dmAnchorPosMs;
+    const now = Date.now();
+    // 墙钟回拨（NTP 校时）：把锚点时刻拉到 now，保证增量非负。
+    if (now < this.dmAnchorAtMs) this.dmAnchorAtMs = now;
+    const projected = this.dmAnchorPosMs +
+      (now - this.dmAnchorAtMs) * this.dmEffSpeed;
+    const capped = this.dmDurationMs > 0 && projected > this.dmDurationMs
+      ? this.dmDurationMs : projected;
+    return capped < 0 ? 0 : capped;
+  }
+
+  /** 收到权威位置：死区内不动、中等误差缓慢收敛、大误差硬对齐。 */
+  danmakuClockSync(): void {
+    const s = this.state;
+    const paused: boolean = s.paused || s.buffering || s.ended || s.speed <= 0;
+    const rate: number = s.speed > 0 ? s.speed : 1;
+    if (s.durationMs > 0) this.dmDurationMs = s.durationMs;
+
+    // 语义变化（暂停/恢复、倍速）：直接重锚。
+    if (paused || paused !== this.dmPaused || rate !== this.dmBaseSpeed) {
+      this.danmakuClockHardResync(paused, rate);
+      return;
+    }
+
+    const err: number = s.positionMs - this.danmakuPositionNowMs();
+    this.dmErrorMs = err;
+    if (Math.abs(err) > this.DM_HARD_RESYNC_MS) {
+      this.danmakuClockHardResync(false, rate);
+      return;
+    }
+
+    // 换速率前先重锚：投影是 anchor + elapsed×rate，直接改 rate 会把
+    // 整段 elapsed 重缩放 → 位置瞬移（抽搐）。
+    this.dmAnchorPosMs = this.danmakuPositionNowMs();
+    this.dmAnchorAtMs = Date.now();
+    this.dmBaseSpeed = rate;
+    if (Math.abs(err) > this.DM_DEADBAND_MS) {
+      const adj: number = Math.min(
+        Math.max(err / this.DM_CONVERGE_MS, -this.DM_MAX_ADJUST),
+        this.DM_MAX_ADJUST,
+      );
+      this.dmEffSpeed = rate + adj;
+    } else {
+      this.dmEffSpeed = rate;
+    }
+  }
+
+  /** 立即对齐到当前状态（seek / 暂停切换 / 倍速变化后调用）。 */
+  danmakuClockHardResync(
+    paused: boolean = this.state.paused || this.state.buffering ||
+      this.state.ended || this.state.speed <= 0,
+    rate: number = this.state.speed > 0 ? this.state.speed : 1,
+  ): void {
+    const pos: number = this.state.positionMs;
+    this.dmAnchorPosMs = pos < 0 ? 0 : pos;
+    this.dmAnchorAtMs = Date.now();
+    this.dmPaused = paused;
+    this.dmBaseSpeed = rate;
+    this.dmEffSpeed = paused ? 0 : rate;
+    if (this.state.durationMs > 0) this.dmDurationMs = this.state.durationMs;
+    this.dmErrorMs = 0;
+    this.dmHardResyncs++;
   }
 
   setControlsVisible(visible: boolean): void {
@@ -973,6 +1080,7 @@ export class HimiMpvNativeHost {
   optimisticTogglePaused(): void {
     this.state.paused = !this.state.paused;
     this.lastStateAtMs = Date.now();
+    this.danmakuClockHardResync();
     this.sendCommand('togglePlay', null);
     this.notify();
   }
@@ -983,6 +1091,7 @@ export class HimiMpvNativeHost {
       : Math.max(positionMs, 0);
     this.state.positionMs = clamped;
     this.lastStateAtMs = Date.now();
+    this.danmakuClockHardResync();
     const fields: Map<string, Object> = new Map<string, Object>();
     fields.set('positionMs', clamped);
     this.sendCommand('seekTo', fields);
@@ -995,6 +1104,7 @@ export class HimiMpvNativeHost {
   optimisticSetSpeed(speed: number): void {
     this.state.speed = speed;
     this.lastStateAtMs = Date.now();
+    this.danmakuClockHardResync();
     const fields: Map<string, Object> = new Map<string, Object>();
     fields.set('speed', speed);
     this.sendCommand('setSpeed', fields);

@@ -118,6 +118,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
+    String? danmakuColorMode,
+    int? danmakuCustomColor,
+    double? danmakuOutlineWidth,
+    int? danmakuOutlineColor,
   }) async {
     final wasTvMode = state.tvMode;
     state = state.copyWith(
@@ -198,6 +202,10 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       danmakuSpeed: danmakuSpeed,
       danmakuFontSize: danmakuFontSize,
       danmakuOpacity: danmakuOpacity,
+      danmakuColorMode: danmakuColorMode,
+      danmakuCustomColor: danmakuCustomColor,
+      danmakuOutlineWidth: danmakuOutlineWidth,
+      danmakuOutlineColor: danmakuOutlineColor,
     );
     // 手动开启 TV 模式：立即应用 TV 专属默认（硬解/AudioTrack/SurfaceView，
     // 未手动设置过才改写）；关闭 TV 不回写（单向默认）。

@@ -19,6 +19,16 @@
  */
 
 import {
+
+/** 0xAARRGGBB → CSS 颜色串（ArkUI 用 #RRGGBB / #AARRGGBB）。 */
+function argbToCss(argb: number): string {
+  const a: number = (argb >>> 24) & 0xFF;
+  const r: number = (argb >> 16) & 0xFF;
+  const g: number = (argb >> 8) & 0xFF;
+  const b: number = argb & 0xFF;
+  const hex = (v: number): string => v.toString(16).padStart(2, "0").toUpperCase();
+  return `#${hex(a)}${hex(r)}${hex(g)}${hex(b)}`;
+}
   HimiMpvNativeHost,
   NativeDanmakuUi,
 } from './HimiMpvNativeHost';
@@ -75,7 +85,8 @@ export struct DanmakuLayer {
    * positionNowMs 冻结（同 Flutter playing=false 停 Ticker）。
    */
   private posOf(): number {
-    return HimiMpvNativeHost.getInstance().positionNowMs();
+    // 弹幕专用时钟（P1）：带死区与平滑收敛，不跟随进度条的「跟手」语义。
+    return HimiMpvNativeHost.getInstance().danmakuPositionNowMs();
   }
   /**
    * 行号绑定表（`timeMs:text` → lane）——**一旦分配不再变**。
@@ -306,16 +317,30 @@ export struct DanmakuLayer {
     return out;
   }
 
+  /** 颜色模式：源色 / 统一白 / 自定义（P3）。 */
+  private effectiveColor(itemColor: string): string {
+    const mode: string = HimiMpvNativeHost.getInstance().state.danmakuColorMode;
+    if (mode === 'white') return '#FFFFFF';
+    if (mode === 'custom') {
+      return argbToCss(HimiMpvNativeHost.getInstance().state.danmakuCustomColor);
+    }
+    return itemColor;
+  }
+
   build() {
     Stack() {
       ForEach(this.items, (it: DanmakuFrameItem) => {
         Text(it.text)
           .fontSize(it.fontSize)
-          // 观感照抄 Flutter DanmakuOverlay 的 TextStyle：w500 + 黑 54%
-          // blur3 描影（深色背景下可读性一致）。
+          // 观感照抄 Flutter DanmakuOverlay：w500 + 描边（颜色/宽度可配）。
           .fontWeight(500)
-          .shadow({ radius: 3, color: '#8A000000', offsetX: 0, offsetY: 0 })
-          .fontColor(it.color)
+          .shadow({
+            radius: HimiMpvNativeHost.getInstance().state.danmakuOutlineWidth * 1.5,
+            color: argbToCss(HimiMpvNativeHost.getInstance().state.danmakuOutlineColor),
+            offsetX: 0,
+            offsetY: 0,
+          })
+          .fontColor(effectiveColor(it.color))
           .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
           .position({ x: it.x, y: it.y })
       }, (it: DanmakuFrameItem): string => it.key);

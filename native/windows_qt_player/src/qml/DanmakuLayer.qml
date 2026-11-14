@@ -56,8 +56,35 @@ Item {
 
     /// 弹幕数据（`playerState.danmakuItems`）。
     property var danmakuItems: []
-    /// 播放位置（毫秒）。
+    /// 播放位置（毫秒，权威值；仅在没有 playerState 时兜底）。
     property real positionMs: 0
+    /// PlayerState 引用：优先读它的「弹幕专用插值位置」。
+    property var playerState: null
+
+    /// 0xAARRGGBB → "#AARRGGBB"（QML 颜色串）。
+    function cssColor(argb) {
+        var a = (argb >>> 24) & 0xFF
+        var r = (argb >> 16) & 0xFF
+        var g = (argb >> 8) & 0xFF
+        var b = argb & 0xFF
+        function h(v) { return ("0" + v.toString(16)).slice(-2) }
+        return "#" + h(a) + h(r) + h(g) + h(b)
+    }
+
+    /// 颜色模式：color（源色）/ white / custom（P3）。
+    function effectiveColor(itemColor) {
+        if (root.colorMode === "white") return "#FFFFFF"
+        if (root.colorMode === "custom") return root.cssColor(root.customColor)
+        return itemColor || "#FFFFFF"
+    }
+
+    /// 当前弹幕位置：优先用 PlayerState 的插值值（带死区/收敛），
+    /// 没有则退回权威值。命令式读取（不是绑定），每帧都能拿到新值。
+    function currentPos() {
+        if (playerState && playerState.danmakuPositionMs !== undefined)
+            return playerState.danmakuPositionMs
+        return positionMs
+    }
     /// 是否正在播放（暂停时冻结）。
     property bool playing: false
     /// 弹幕总开关。
@@ -67,6 +94,15 @@ Item {
     property bool danmakuEnabled: true
     /// 字号倍率（`danmakuFontSize`，Flutter 默认 0.5）。
     property real fontSizeScale: 0.5
+    /// 颜色模式：color（源色）/ white / custom（P3）。
+    property string colorMode: "color"
+    /// 自定义颜色（0xAARRGGBB）。
+    property int customColor: 0xFFFFFFFF
+    /// 描边宽度（0~4，0 = 无描边）。
+    property real outlineWidth: 1.0
+    /// 描边颜色（0xAARRGGBB）。
+    property int outlineColor: 0xFF000000
+
     /// 滚动速度倍率（`danmakuSpeed`，Flutter 默认 0.7）。
     property real speed: 0.7
     /// 弹幕不透明度（0.1~1.0）。
@@ -276,7 +312,7 @@ Item {
             if (frameItems.length > 0) frameItems = []
             return
         }
-        var pos = positionMs
+        var pos = currentPos()
         var spd = Math.max(0.25, Math.min(4.0, speed))
         var travelMs = scrollBaseMs / spd
 
@@ -335,7 +371,7 @@ Item {
             font.pixelSize: root.fontSize
             font.weight: Font.Medium
             font.family: "Microsoft YaHei"
-            color: item !== null ? item.color : "transparent"
+            color: item !== null ? root.effectiveColor(item.color) : "transparent"
 
             // 滚动：progress=0 前沿贴右缘外，progress=1 完全离开左缘
             // 顶/底：水平居中
@@ -359,8 +395,9 @@ Item {
                 return root.edgePadding + item.lane * root.lineHeight
             }
 
-            style: Text.Outline
-            styleColor: "#8A000000"
+            // 描边宽度 0 → 关闭；否则用 outlineColor（默认黑）。
+            style: root.outlineWidth > 0 ? Text.Outline : Text.Normal
+            styleColor: root.cssColor(root.outlineColor)
 
             // 顶/底淡入淡出；滚动不做淡变（进出屏幕边缘本就自然）
             opacity: root.danmakuOpacity * (isFixed

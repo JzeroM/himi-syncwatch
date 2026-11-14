@@ -82,6 +82,14 @@ void PlayerState::patchValue(const QString& key, const QVariant& value) {
         danmakuFontSize_ = value.toDouble();
     } else if (key == QLatin1String("danmakuOpacity")) {
         danmakuOpacity_ = value.toDouble();
+    } else if (key == QLatin1String("danmakuColorMode")) {
+        danmakuColorMode_ = value.toString();
+    } else if (key == QLatin1String("danmakuCustomColor")) {
+        danmakuCustomColor_ = value.toInt();
+    } else if (key == QLatin1String("danmakuOutlineWidth")) {
+        danmakuOutlineWidth_ = value.toDouble();
+    } else if (key == QLatin1String("danmakuOutlineColor")) {
+        danmakuOutlineColor_ = value.toInt();
     } else if (key == QLatin1String("decodeMode")) {
         decodeMode_ = value.toString();
     } else if (key == QLatin1String("videoFit")) {
@@ -104,6 +112,7 @@ void PlayerState::patchValue(const QString& key, const QVariant& value) {
         return;
     }
     localKeys_.insert(key);  // 675 A：本地置顶
+    danmakuClockSync();      // 本地乐观改动（seek/暂停/倍速）也要重对齐
     emit changed();
 }
 
@@ -280,6 +289,16 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
                     readDouble(json, "danmakuFontSize", danmakuFontSize_));
     dirty |= assign(danmakuOpacity_,
                     readDouble(json, "danmakuOpacity", danmakuOpacity_));
+    dirty |= assign(danmakuColorMode_,
+                    readString(json, "danmakuColorMode", danmakuColorMode_));
+    dirty |= assign(danmakuCustomColor_,
+                    static_cast<int>(readInt64(json, "danmakuCustomColor",
+                                               danmakuCustomColor_)));
+    dirty |= assign(danmakuOutlineWidth_,
+                    readDouble(json, "danmakuOutlineWidth", danmakuOutlineWidth_));
+    dirty |= assign(danmakuOutlineColor_,
+                    static_cast<int>(readInt64(json, "danmakuOutlineColor",
+                                               danmakuOutlineColor_)));
     // 697：弹幕行数（QML 自绘层用；对齐 Flutter AppSettings）
     dirty |= assign(danmakuScrollRows_,
                     static_cast<int>(readInt64(json, "danmakuScrollRows",
@@ -310,7 +329,81 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
         dirty |= assign(skipPrompt_, sp);
     }
 
-    if (dirty) emit changed();
+    if (dirty) {
+        danmakuClockSync();
+        emit changed();
+    }
+}
+
+// ── 弹幕时钟（P1）──────────────────────────────────────────────
+//
+// 规则与 Dart `DanmakuClock`、安卓 `DanmakuLayerView`、鸿蒙
+// `HimiMpvNativeHost.danmakuPositionNowMs()` 完全同构：
+//
+//   误差 ≤40ms  → 不修正（死区，避免来回微抖）
+//   40~400ms   → 不改锚点，只把速率调 ±5%，让误差在 ~600ms 内消化
+//   >400ms     → seek / 卡顿恢复，允许瞬移
+//
+// 【换速率前必须先重锚】投影是 `anchorPos + elapsed × rate`，直接改 rate
+// 会把整段 elapsed 重新缩放 → 位置瞬间回退（真机表现为抽搐）。
+
+qint64 PlayerState::danmakuPositionMs() const
+{
+    if (dmPaused_ || dmEffRate_ <= 0.0) return dmAnchorPosMs_;
+    if (dmDurationMs_ <= 0) return dmAnchorPosMs_;
+    const double elapsedMs =
+        static_cast<double>(dmAnchorTimer_.nsecsElapsed()) / 1e6;
+    qint64 projected = dmAnchorPosMs_ +
+        static_cast<qint64>(elapsedMs * dmEffRate_);
+    if (dmDurationMs_ > 0 && projected > dmDurationMs_) projected = dmDurationMs_;
+    return projected < 0 ? 0 : projected;
+}
+
+void PlayerState::danmakuClockHardResync()
+{
+    const bool paused = paused_ || buffering_ || speed_ <= 0.0;
+    const double rate = speed_ > 0.0 ? speed_ : 1.0;
+    dmAnchorPosMs_ = positionMs_ < 0 ? 0 : positionMs_;
+    dmAnchorTimer_.restart();
+    dmPaused_ = paused;
+    dmBaseRate_ = rate;
+    dmEffRate_ = paused ? 0.0 : rate;
+    if (durationMs_ > 0) dmDurationMs_ = durationMs_;
+    dmErrorMs_ = 0;
+    ++dmHardResyncs_;
+}
+
+void PlayerState::danmakuClockSync()
+{
+    const bool paused = paused_ || buffering_ || speed_ <= 0.0;
+    const double rate = speed_ > 0.0 ? speed_ : 1.0;
+    if (durationMs_ > 0) dmDurationMs_ = durationMs_;
+
+    // 语义变化（暂停/恢复、倍速）：直接重锚。
+    if (paused || paused != dmPaused_ || rate != dmBaseRate_) {
+        danmakuClockHardResync();
+        return;
+    }
+
+    const qint64 err = positionMs_ - danmakuPositionMs();
+    dmErrorMs_ = static_cast<int>(err);
+    if (err > 400 || err < -400) {
+        danmakuClockHardResync();
+        return;
+    }
+
+    // 先重锚保证位置连续，再改斜率。
+    dmAnchorPosMs_ = danmakuPositionMs();
+    dmAnchorTimer_.restart();
+    dmBaseRate_ = rate;
+    if (err > 40 || err < -40) {
+        double adj = static_cast<double>(err) / 600.0;
+        if (adj > 0.05) adj = 0.05;
+        if (adj < -0.05) adj = -0.05;
+        dmEffRate_ = rate + adj;
+    } else {
+        dmEffRate_ = rate;
+    }
 }
 
 void PlayerState::setEpisodes(const QJsonArray& arr) {

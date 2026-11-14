@@ -4082,6 +4082,12 @@ class NativePlayerScreenView(
             // 第二参传「暂停 / 缓冲 / 播完」三态合并（与宿主 `positionAt`
             // 冻结条件一致）；第三参倍速；第四参时长（0 时不外推，防起播
             // 早期位置跑到时长上限）。
+            danmakuLayer.setStyle(
+                state.danmakuColorMode,
+                state.danmakuCustomColor,
+                state.danmakuOutlineWidth,
+                state.danmakuOutlineColor,
+            )
             danmakuLayer.setClock(
                 state.positionMs.toLong(),
                 state.paused || state.buffering || state.ended,
