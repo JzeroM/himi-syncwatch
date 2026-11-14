@@ -37,6 +37,13 @@
         android:icon="@mipmap/ic_launcher"
         android:banner="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
+        <!-- 697：libmpv.so 在启用 Vulkan 后 DT_NEEDED 依赖 libvulkan.so。
+             Android 12+ 的 native library 可见性策略要求显式声明才能
+             被 dlopen（required=false：无 Vulkan 的设备也能装，运行时
+             mpv 回退 OpenGL）。 -->
+        <uses-native-library
+            android:name="libvulkan.so"
+            android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

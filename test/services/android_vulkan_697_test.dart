@@ -76,7 +76,8 @@ void main() {
       // NDK 只有 API 24+ 才有 libvulkan.so stub，而编译用 API 23。
       // 必须搜 24~36 目录找到后拷到 prefix/lib。
       expect(buildScript, contains('VULKAN_STUB'));
-      expect(buildScript, contains('for _api in 24 25 26'));
+      // 倒序搜（36→24）优先用符号最全的高 API stub
+      expect(buildScript, contains('for _api in 36 35 34'));
       expect(buildScript, contains('libvulkan.so stub 已拷贝'));
     });
 
@@ -142,6 +143,17 @@ void main() {
 
     test('3.5 检测结果缓存（只检测一次）', () {
       expect(androidDart, contains('if (_vulkanAvailable != null)'));
+    });
+  });
+
+  group('3.6 Manifest 声明 libvulkan.so（Android 12+ 可见性）', () {
+    test('3.6.1 uses-native-library required=false', () {
+      final manifest =
+          read('android/app/src/main/AndroidManifest.xml');
+      expect(manifest, contains('<uses-native-library'));
+      expect(manifest, contains('android:name="libvulkan.so"'));
+      // required=false：无 Vulkan 设备也能安装，运行时回退 OpenGL
+      expect(manifest, contains('android:required="false"'));
     });
   });
 
