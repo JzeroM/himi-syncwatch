@@ -112,6 +112,22 @@ Version: 1.3
 Cflags: -I${includedir}
 Libs: -lvulkan
 VULKANPC
+
+# 【关键】NDK 的 libvulkan.so stub 在 `usr/lib/<triple>/`（无版本号目录），
+# 但编译器用 API 23 → 链接器只搜 `<triple>/23/` → 找不到 libvulkan。
+# 拷到 prefix/lib 让 `-lvulkan` 能找到（`-L$prefix_dir/usr/local/lib`
+# 在链接命令里已存在）。
+case "$BUILD_ARCH" in
+  arm64)   VULKAN_TRIPLE=aarch64-linux-android ;;
+  armv7l)  VULKAN_TRIPLE=arm-linux-androideabi ;;
+  x86_64)  VULKAN_TRIPLE=x86_64-linux-android ;;
+  *)       die "未知架构: $BUILD_ARCH" ;;
+esac
+VULKAN_SO="$VULKAN_SYSROOT/usr/lib/$VULKAN_TRIPLE/libvulkan.so"
+[ -f "$VULKAN_SO" ] || die "NDK 缺少 libvulkan.so stub: $VULKAN_SO"
+cp -f "$VULKAN_SO" "$PREFIX_DIR/lib/libvulkan.so"
+log "libvulkan.so 已拷贝: $PREFIX_DIR/lib/libvulkan.so"
+
 log "vulkan.pc 已创建: $PREFIX_DIR/lib/pkgconfig/vulkan.pc"
 
 log "启用 libplacebo Vulkan（DV 元数据处理需要 compute shader）"
