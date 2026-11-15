@@ -243,6 +243,30 @@ Binding loop**，它不是噪音。
 
 > 排查口诀：**时钟对 + 在屏 0** ⇒ 数据窗口没跟着位置重算，不是渲染问题。
 
+### 弹幕匹配与弹幕弹窗（694 M1–M5，借鉴 NeoPlayer 只抄设计）
+
+匹配链路（四端同构，Dart 单实现）：
+
+```
+匹配记忆（持久，manual 永久/auto 30 天）→ 6h 内存缓存
+  → match(剧名.SxxExx，619 系列名重试) + search 并行
+  → 8 桶排序（集号命中+同年/错源排除/年份降权）+ 同桶相似度 tiebreak
+  → 逐候选试（上限 12）
+```
+
+多服务器：**并发**搜索 + 严格优先级仲裁（`runDanmakuServers`——低优先级
+先到也等高优先级定局；高优先级命中立即返回）+ 每源 15s 超时。
+记忆仓库（`DanmakuMatchMemory`）写操作串行化，防并发命中丢条目。
+
+**弹幕弹窗**：全平台「点击弹幕开关按钮 → 弹窗」（不搞长按）。弹窗内含
+动效开关（视觉主角）+ 绑定状态 + 搜索/换绑 + 解除绑定；入口按钮图标随
+开关状态变色。三壳同构：Flutter `DanmakuControlSheet` / Windows Qt
+`DanmakuPanel.qml` / Android TV `PANEL_DANMAKU`，搜索绑定全在
+`DanmakuSearchController`（壳只发命令 + 渲染状态回流
+`danmakuBinding`/`danmakuSearchResults`）。TV 无输入法：空关键词 = Dart
+用预填标题直接搜索。绑定 = 写 manual 记忆 + `_loadDanmaku(force)`，
+走「记忆优先」路径立即生效；匹配失败文案指向弹窗入口。
+
 ### media_kit 不是引擎（694 引擎收敛，别再混）
 
 引擎收敛表（`PlayerEngineFactory.supportedEngines`，681 起）：

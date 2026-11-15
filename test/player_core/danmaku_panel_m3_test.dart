@@ -80,6 +80,19 @@ void main() {
       expect(overlay, contains('|| root.danmakuPanelOpen'));
     });
 
+    test('2.3b DanmakuPanel 已注册进 CMake QML 清单（漏注 = 冒烟必红）', () {
+      final cmake = File('native/windows_qt_player/CMakeLists.txt')
+          .readAsStringSync();
+      expect(cmake, contains('src/qml/DanmakuPanel.qml'));
+      expect(
+        cmake,
+        contains(
+          'DisplayAdjustPanel WindowResizeEdges DanmakuLayer DebugPanel\n'
+          '             DanmakuPanel)',
+        ),
+      );
+    });
+
     test('2.4 按钮图标随开关状态变色', () {
       expect(bottomBar, contains('iconColor: playerState.danmakuEnabled'));
       expect(bottomBar, contains('"#FF8A3D"'));
