@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -2700,9 +2701,64 @@ class NativePlayerScreenView(
         // ② 绑定状态
         list.addView(danmakuInfoRow(lastState.danmakuBinding))
 
-        // ③ 搜索/换绑（空关键词 = Dart 用预填标题；TV 无输入法可直搜）
+        // ③ 搜索/换绑：关键词输入框（预填 cleanTitle 产物，草稿跨重建
+        //    保持）+ 搜索按钮 + TV 快捷行（空关键词 = Dart 用预填标题）。
+        val keywordInput = EditText(context).apply {
+            setText(
+                if (danmakuKeywordDraft.isNotEmpty()) {
+                    danmakuKeywordDraft
+                } else {
+                    lastState.danmakuSearchKeyword
+                },
+            )
+            hint = "输入剧名搜索…"
+            setTextColor(NPTheme.PANEL_TEXT)
+            setHintTextColor(0x59FFFFFF)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+            typeface = NPTheme.bodyTypeface
+            isSingleLine = true
+            background = null
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(
+                    s: CharSequence?, start: Int, count: Int, after: Int,
+                ) = Unit
+
+                override fun onTextChanged(
+                    s: CharSequence?, start: Int, before: Int, count: Int,
+                ) = Unit
+
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    danmakuKeywordDraft = s?.toString() ?: ""
+                }
+            })
+        }
         list.addView(
-            optionRow("搜索 / 换绑", false) { listener?.onSearchDanmaku("") },
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(NPTheme.PANEL_PAD_H), dp(4), dp(NPTheme.PANEL_PAD_H), dp(4))
+                addView(
+                    keywordInput,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                )
+                addView(
+                    TextView(context).apply {
+                        text = "搜索"
+                        setTextColor(NPTheme.ACCENT)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+                        typeface = NPTheme.mediumTypeface
+                        setPadding(dp(12), dp(8), dp(12), dp(8))
+                        isClickable = true
+                        setOnClickListener {
+                            listener?.onSearchDanmaku(keywordInput.text.toString())
+                        }
+                    },
+                )
+            },
+        )
+        list.addView(
+            optionRow("按当前标题搜索", false) { listener?.onSearchDanmaku("") },
         )
         if (lastState.danmakuSearching) {
             list.addView(danmakuInfoRow("搜索中…"))
@@ -4284,7 +4340,13 @@ class NativePlayerScreenView(
                 "${lastState.tracks.size}|${lastState.engineLabel}|" +
                 "${lastState.versions.size}|${lastState.currentVersionIndex}|" +
                 "${lastState.episodes.size}|${lastState.currentEpisodeIndex}|" +
-                "${lastState.segmentIntroEndMs}|${lastState.segmentOutroStartMs}"
+                "${lastState.segmentIntroEndMs}|${lastState.segmentOutroStartMs}|" +
+                // 694：弹幕弹窗开关形态/绑定/搜索结果要即时刷新（真机回归：
+                // 点开关形态不变、结果要重开面板才出现——签名漏了弹幕字段）。
+                "${lastState.danmakuEnabled}|${lastState.danmakuBinding}|" +
+                "${lastState.danmakuSearching}|${lastState.danmakuSearchError}|" +
+                "${lastState.danmakuSearchKeyword}|" +
+                lastState.danmakuSearchResults.joinToString(",") { it.episodeId.toString() }
             if (sig != overlayContentSig) {
                 overlayContentSig = sig
                 renderOverlays()
@@ -4294,6 +4356,9 @@ class NativePlayerScreenView(
 
     /** 面板内容签名（见 applyState：仅签名变化才重建面板）。 */
     private var overlayContentSig = ""
+
+    /** 694：弹幕弹窗关键词草稿（面板重建/切集间保持用户输入）。 */
+    private var danmakuKeywordDraft: String = ""
 
     private fun applyLayoutMode(state: AndroidNativePlayerState) {
         val tv = state.tvMode

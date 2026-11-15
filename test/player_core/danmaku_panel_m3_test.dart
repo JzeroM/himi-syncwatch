@@ -275,6 +275,70 @@ void main() {
     });
   });
 
+  group('8. 即时刷新 + 搜索输入框（694 真机反馈修正）', () {
+    late String kotlinView;
+    late String ohosPanel;
+    late String ohosHost;
+    late String sheet;
+
+    setUpAll(() {
+      kotlinView = File(
+              'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/NativePlayerScreenView.kt')
+          .readAsStringSync();
+      ohosPanel = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DanmakuPanel.ets')
+          .readAsStringSync();
+      ohosHost = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/HimiMpvNativeHost.ets')
+          .readAsStringSync();
+      sheet = File('lib/screens/player/danmaku_control_sheet.dart')
+          .readAsStringSync();
+    });
+
+    test('8.1 安卓：overlayContentSig 含弹幕字段（开关/结果即时重建）', () {
+      expect(kotlinView, contains(r'${lastState.danmakuEnabled}|'));
+      expect(kotlinView, contains('lastState.danmakuSearchResults.joinToString'));
+      expect(kotlinView, contains('danmakuKeywordDraft'));
+    });
+
+    test('8.2 安卓：搜索输入框（EditText + 搜索按钮）', () {
+      expect(kotlinView, contains('EditText(context)'));
+      expect(kotlinView, contains('listener?.onSearchDanmaku(keywordInput.text.toString())'));
+      expect(kotlinView, contains('import android.widget.EditText'));
+    });
+
+    test('8.3 鸿蒙：自驱签名 → epoch/ForEach 重建（revision 不可靠教训）', () {
+      expect(ohosPanel, contains('this.epoch = this.epoch + 1'));
+      expect(ohosPanel, contains(r'`dm-panel-${e}`'));
+      expect(ohosPanel, contains('setInterval'));
+      // 关键词不进签名（打字不得触发重建）
+      final sigFn = ohosPanel.substring(
+        ohosPanel.indexOf('private stateSig'),
+        ohosPanel.indexOf('private state()'),
+      );
+      expect(sigFn, isNot(contains('this.keyword')));
+    });
+
+    test('8.4 鸿蒙：TextInput 输入框 + 草稿保持', () {
+      expect(ohosPanel, contains('TextInput({ text: this.keyword'));
+      expect(ohosPanel, contains('this.host.searchDanmaku(this.keyword)'));
+      expect(ohosPanel, contains('@State keyword: string'));
+    });
+
+    test('8.5 Dart 推送预填关键词（原生输入框用）', () {
+      expect(screen, contains("danmakuSearchKeyword: _danmakuSearchKeyword() ?? ''"));
+      expect(ohosHost, contains('jsonStr(obj.danmakuSearchKeyword'));
+    });
+
+    test('8.6 Flutter 壳无此病（锁定回归）', () {
+      // 输入框 + revision 驱动即时重建 + 开关 setState 翻转
+      expect(sheet, contains('TextField('));
+      expect(sheet, contains('ListenableBuilder('));
+      expect(sheet, contains('controller.revision'));
+      expect(sheet, contains('setState(() => _on = !_on)'));
+    });
+  });
+
   group('5. 设置页绑定管理区块', () {
     test('5.1 「已保存的弹幕绑定」列表 + 删除 + 全部清除', () {
       final config = File('lib/screens/settings/danmaku_config_screen.dart')

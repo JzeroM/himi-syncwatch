@@ -4426,6 +4426,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuSearchResults: _dmSearchResults,
         danmakuSearching: _dmSearching,
         danmakuSearchError: _dmSearchError,
+        danmakuSearchKeyword: _danmakuSearchKeyword() ?? '',
         danmakuSpeed: settings.danmakuSpeed,
         danmakuFontSize: settings.danmakuFontSize,
         danmakuColorMode: settings.danmakuColorMode,

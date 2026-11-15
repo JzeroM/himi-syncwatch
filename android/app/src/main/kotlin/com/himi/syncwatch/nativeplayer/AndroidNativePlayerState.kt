@@ -304,6 +304,9 @@ data class AndroidNativePlayerState(
     val danmakuSearchResults: List<DanmakuSearchHit> = emptyList(),
     val danmakuSearching: Boolean = false,
     val danmakuSearchError: String = "",
+
+    /** 搜索关键词预填（cleanTitle 产物；输入框用）。 */
+    val danmakuSearchKeyword: String = "",
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
@@ -528,6 +531,7 @@ data class AndroidNativePlayerState(
                 } ?: emptyList(),
             danmakuSearching = json.optBoolean("danmakuSearching", false),
             danmakuSearchError = json.optString("danmakuSearchError", ""),
+            danmakuSearchKeyword = json.optString("danmakuSearchKeyword", ""),
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),

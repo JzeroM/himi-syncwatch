@@ -476,6 +476,7 @@ class NativePlayerState {
     this.danmakuSearchResults = const <NativeDanmakuSearchResult>[],
     this.danmakuSearching = false,
     this.danmakuSearchError = '',
+    this.danmakuSearchKeyword = '',
     this.danmakuTotal = 0,
     this.danmakuBlocked = 0,
     this.danmakuSampled = 0,
@@ -694,6 +695,9 @@ class NativePlayerState {
   final bool danmakuSearching;
   final String danmakuSearchError;
 
+  /// 搜索关键词预填（cleanTitle 产物；原生壳输入框用）。
+  final String danmakuSearchKeyword;
+
   /// 弹幕数量上限（698 起已不使用，恒 null；字段保留兼容旧快照）。
 
   /// P4 统计：总条数 / 屏蔽数 / 当前在屏数（698 起无采样）。
@@ -874,6 +878,7 @@ class NativePlayerState {
               .toList(growable: false),
       danmakuSearching: json['danmakuSearching'] == true,
       danmakuSearchError: json['danmakuSearchError'] as String? ?? '',
+      danmakuSearchKeyword: json['danmakuSearchKeyword'] as String? ?? '',
       roomCode: json['roomCode'] as String?,
       isHost: json['isHost'] == true,
       roomMembers: ((json['roomMembers'] as List<Object?>?) ?? const <Object?>[])
@@ -1014,6 +1019,7 @@ class NativePlayerState {
             danmakuSearchResults.map((e) => e.toJson()).toList(growable: false),
         'danmakuSearching': danmakuSearching,
         'danmakuSearchError': danmakuSearchError,
+        'danmakuSearchKeyword': danmakuSearchKeyword,
         'roomCode': roomCode,
         'isHost': isHost,
         'roomMembers':
@@ -1647,6 +1653,7 @@ class NativePlayerUiExtras {
     this.danmakuSearchResults = const <NativeDanmakuSearchResult>[],
     this.danmakuSearching = false,
     this.danmakuSearchError = '',
+    this.danmakuSearchKeyword = '',
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = const <String>[],
@@ -1705,6 +1712,7 @@ class NativePlayerUiExtras {
   final List<NativeDanmakuSearchResult> danmakuSearchResults;
   final bool danmakuSearching;
   final String danmakuSearchError;
+  final String danmakuSearchKeyword;
 
   /// 弹幕屏蔽（588 补齐）：原生 UI 下 Flutter 弹幕层退场，屏蔽链必须由
   /// Dart 侧在切窗时先过滤（与 `DanmakuTimeline._filter` 同序）。

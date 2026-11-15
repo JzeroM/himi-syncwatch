@@ -503,6 +503,8 @@ export class NativePlayerUiState {
   danmakuSearchResults: NativeDanmakuSearchHitUi[] = [];
   danmakuSearching: boolean = false;
   danmakuSearchError: string = '';
+  /** 搜索关键词预填（cleanTitle 产物；输入框用）。 */
+  danmakuSearchKeyword: string = '';
   /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
   segmentEnabled: boolean = false;
   segmentIntroEndMs: number | null = null;
@@ -662,6 +664,7 @@ export class NativePlayerUiState {
     }
     this.danmakuSearching = jsonBool(obj.danmakuSearching, this.danmakuSearching);
     this.danmakuSearchError = jsonStr(obj.danmakuSearchError, this.danmakuSearchError);
+    this.danmakuSearchKeyword = jsonStr(obj.danmakuSearchKeyword, this.danmakuSearchKeyword);
     this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
     this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
     this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);
