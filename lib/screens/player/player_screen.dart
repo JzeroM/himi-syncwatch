@@ -73,7 +73,10 @@ import 'package:himi_syncwatch/services/network_speed_meter.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_candidate.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
+import 'package:himi_syncwatch/screens/player/danmaku_control_sheet.dart';
+import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_search_controller.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
 import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
@@ -10798,6 +10801,67 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _syncNativePanelData();
   }
 
+  /// 694 M3：点击弹幕按钮 → 弹幕弹窗（动效开关 + 绑定状态 + 搜索/换绑）。
+  ///
+  /// 弹窗内含开关（不再直接 toggle）；搜索/绑定由 [DanmakuSearchController]
+  /// 完成，绑定写入匹配记忆后经「记忆优先」加载路径立即生效。
+  void _openDanmakuPanel() {
+    _resetHideTimer();
+    final fileName = _danmakuMatchFileName();
+    if (fileName == null) {
+      _danmakuSnack('影片信息未就绪，稍后再试');
+      return;
+    }
+    // 与 _loadDanmaku 的服务器循环一致：按优先级取第一个可用弹幕源。
+    final settings = ref.read(settingsProvider);
+    final servers = settings.danmakuServers
+        .where((e) => e.enabled)
+        .toList()
+      ..sort((a, b) => a.priority.compareTo(b.priority));
+    DandanplayClient? client;
+    for (final srv in servers) {
+      final c = _danmakuClientFor(srv.baseUrl);
+      if (c.isConfigured) {
+        client = c;
+        break;
+      }
+    }
+    if (client == null) {
+      _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
+      return;
+    }
+    final cacheKey =
+        _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
+            ? _episodes[_currentEpisodeIndex].id
+            : widget.itemId;
+    final controller = DanmakuSearchController(
+      client: client,
+      itemKey: DanmakuMatchKeys.item(client.rawBaseUrl, cacheKey),
+      nameKey: DanmakuMatchKeys.name(fileName),
+    );
+    unawaited(controller.load());
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DanmakuControlSheet(
+        controller: controller,
+        danmakuOn: _danmakuOn,
+        onToggle: _toggleDanmaku,
+        onReload: () => unawaited(_loadDanmaku(force: true)),
+        prefillKeyword: _danmakuSearchKeyword() ?? '',
+        currentEpisodeNumber: _currentEpisodeNumber,
+        onOpenSettings: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const DanmakuConfigScreen(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   /// 取（或按地址重建）弹幕客户端。
   DandanplayClient _danmakuClientFor(String baseUrl) {
     final key = DandanplayClient.normalizeBaseUrl(baseUrl) ?? '';
@@ -11091,7 +11155,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (found == null) {
         throw const DanmakuApiException(
           DanmakuApiError.business,
-          '未匹配到弹幕',
+          '未匹配到弹幕，点击弹幕按钮手动搜索',
         );
       }
 
@@ -11882,8 +11946,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   // 弹幕开关（右组头；房间联播也显示——弹幕本地渲染）
                   _buildControlButton(
                     icon: _danmakuOn ? Icons.comment : Icons.comments_disabled,
+                    iconColor: _danmakuOn ? const Color(0xFFFF8A3D) : null,
                     focusNode: _danmakuButtonFocusNode,
-                    onTap: _toggleDanmaku,
+                    // 694 M3：点击弹幕按钮 → 弹幕弹窗（开关/绑定/搜索），
+                    // 不再直接 toggle；开关能力全在弹窗内。
+                    onTap: _openDanmakuPanel,
                   ),
                   const SizedBox(width: 20),
 
@@ -12164,6 +12231,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     required VoidCallback onTap,
     String? badge,
     FocusNode? focusNode,
+    Color? iconColor,
   }) {
     return TvFocusable(
       focusNode: focusNode,
@@ -12174,7 +12242,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Icon(icon, color: Colors.white, size: 24),
+            Icon(icon, color: iconColor ?? Colors.white, size: 24),
             if (badge != null)
               Positioned(
                 right: -6,
