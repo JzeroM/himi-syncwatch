@@ -176,6 +176,105 @@ void main() {
     });
   });
 
+  group('6. 鸿蒙 ArkTS 壳（M3e）', () {
+    late String ohosHost;
+    late String ohosPanel;
+    late String ohosView;
+    late String ohosPanelHost;
+
+    setUpAll(() {
+      const dir =
+          'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native';
+      ohosHost = File('$dir/HimiMpvNativeHost.ets').readAsStringSync();
+      ohosPanel = File('$dir/DanmakuPanel.ets').readAsStringSync();
+      ohosView = File('$dir/HimiNativePlayerView.ets').readAsStringSync();
+      ohosPanelHost = File('$dir/NativePlayerPanel.ets').readAsStringSync();
+    });
+
+    test('6.1 弹幕按钮点击弹窗（不再直接 toggle）', () {
+      expect(ohosView, contains('this.openPanel(NativePlayerPanelType.danmaku)'));
+      expect(
+        ohosView,
+        isNot(contains(
+            'HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();')),
+        reason: '按钮 onClick 已改弹窗；toggle 在弹窗开关行',
+      );
+      // 开关行仍走 optimisticToggleDanmaku（弹窗内）
+      expect(ohosPanel, contains('optimisticToggleDanmaku'));
+    });
+
+    test('6.2 面板类型 + 分发 + 标题', () {
+      expect(ohosHost, contains("static readonly danmaku: string = 'danmaku';"));
+      expect(ohosPanelHost, contains("this.panelType === 'danmaku'"));
+      expect(ohosPanelHost, contains('DanmakuPanelContent({ revision: this.revision })'));
+      expect(ohosPanelHost, contains("return '弹幕';"));
+    });
+
+    test('6.3 动效开关 + 搜索结果绑定 + 解除绑定', () {
+      expect(ohosPanel, contains('SwitchCapsule'));
+      expect(ohosPanel, contains('.animation({ duration: 180'));
+      expect(ohosPanel, contains("this.host.searchDanmaku('')"));
+      expect(ohosPanel, contains('this.host.bindDanmaku(hit.episodeId)'));
+      expect(ohosPanel, contains('this.host.unbindDanmaku()'));
+    });
+
+    test('6.4 状态解析四字段 + 搜索结果模型', () {
+      expect(ohosHost, contains('class NativeDanmakuSearchHitUi'));
+      expect(ohosHost, contains('parseDanmakuSearchResults'));
+      expect(ohosHost, contains("jsonStr(obj.danmakuBinding"));
+      expect(ohosHost, contains('obj.danmakuSearchResults !== undefined'));
+      expect(ohosHost, contains('jsonBool(obj.danmakuSearching'));
+      expect(ohosHost, contains('jsonStr(obj.danmakuSearchError'));
+    });
+
+    test('6.5 命令封装 + 图标随状态变色', () {
+      expect(ohosHost, contains("this.sendCommand('searchDanmaku', fields)"));
+      expect(ohosHost, contains("this.sendCommand('bindDanmaku', fields)"));
+      expect(ohosHost, contains("this.sendCommand('unbindDanmaku', null)"));
+      expect(ohosView, contains('DANMAKU_ICON_TINT'));
+      expect(ohosView, contains('activeColor: string = SEL_COLOR'));
+    });
+  });
+
+  group('7. 结果可滚动 + 面板不盖进度条（694 反馈修正）', () {
+    test('7.1 Flutter 弹卡抬升控制条之上 + 限高滚动', () {
+      final sheet = File('lib/screens/player/danmaku_control_sheet.dart')
+          .readAsStringSync();
+      expect(sheet, contains('bottom: bottomReserve'));
+      expect(sheet, contains('SingleChildScrollView'));
+      expect(sheet, contains('maxHeight: MediaQuery.sizeOf(context).height * 0.6'));
+    });
+
+    test('7.2 Qt 面板高度钳制（panelBottomOffset）+ 结果 ScrollView', () {
+      final panel =
+          File('native/windows_qt_player/src/qml/DanmakuPanel.qml')
+              .readAsStringSync();
+      expect(panel, contains('Theme.panelBottomOffset'));
+      expect(panel, contains('height: Math.min(implicitHeight, maxPanelHeight)'));
+      expect(panel, contains('ScrollView {'));
+    });
+
+    test('7.3 鸿蒙内容 Scroll + layoutWeight（侧栏容器下避进度条）', () {
+      final panel = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DanmakuPanel.ets')
+          .readAsStringSync();
+      expect(panel, contains('Scroll()'));
+      expect(panel, contains('.layoutWeight(1)'));
+      expect(panel, contains('ScrollDirection.Vertical'));
+    });
+
+    test('7.4 安卓 TV 已有 scrollWrap + PANEL_BOTTOM_OFFSET 避让', () {
+      final kotlin = File(
+              'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/NativePlayerScreenView.kt')
+          .readAsStringSync();
+      expect(kotlin, contains('panelContainer.addView(scrollWrap(list))'));
+      expect(
+        kotlin,
+        contains('dp(NPTheme.PANEL_BOTTOM_OFFSET) + safeBottomPx()'),
+      );
+    });
+  });
+
   group('5. 设置页绑定管理区块', () {
     test('5.1 「已保存的弹幕绑定」列表 + 删除 + 全部清除', () {
       final config = File('lib/screens/settings/danmaku_config_screen.dart')

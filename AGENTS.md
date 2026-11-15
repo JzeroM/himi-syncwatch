@@ -260,12 +260,19 @@ Binding loop**，它不是噪音。
 
 **弹幕弹窗**：全平台「点击弹幕开关按钮 → 弹窗」（不搞长按）。弹窗内含
 动效开关（视觉主角）+ 绑定状态 + 搜索/换绑 + 解除绑定；入口按钮图标随
-开关状态变色。三壳同构：Flutter `DanmakuControlSheet` / Windows Qt
-`DanmakuPanel.qml` / Android TV `PANEL_DANMAKU`，搜索绑定全在
+开关状态变色。四壳同构：Flutter `DanmakuControlSheet` / Windows Qt
+`DanmakuPanel.qml` / Android TV `PANEL_DANMAKU` / 鸿蒙 ArkTS
+`DanmakuPanel.ets`（挂 `NativePlayerPanel` 分发），搜索绑定全在
 `DanmakuSearchController`（壳只发命令 + 渲染状态回流
 `danmakuBinding`/`danmakuSearchResults`）。TV 无输入法：空关键词 = Dart
 用预填标题直接搜索。绑定 = 写 manual 记忆 + `_loadDanmaku(force)`，
 走「记忆优先」路径立即生效；匹配失败文案指向弹窗入口。
+
+> 鸿蒙壳教训：**播放器 UI 是 ArkTS 原生**（`himi_mpv_ohos` HAR 的
+> `HimiNativePlayerView` 子窗口），不是 Flutter——弹幕弹窗这类播放器内
+> UI 改动必须四壳齐改，鸿蒙壳别漏。ArkTS 不踩 QML 的 pixelSize/属性
+> 遮蔽坑，但 @State 必须 build 显式读取（589 教训，本壳经 @Prop
+> revision + 宿主快照驱动）。
 
 ### media_kit 不是引擎（694 引擎收敛，别再混）
 

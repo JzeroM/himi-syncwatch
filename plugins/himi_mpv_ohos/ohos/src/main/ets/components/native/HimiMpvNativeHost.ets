@@ -40,6 +40,8 @@ export class NativePlayerPanelType {
   static readonly display: string = 'display';
   /** 解码模式（手机顶栏胶囊）。 */
   static readonly decode: string = 'decode';
+  /** 694 M3：弹幕弹窗（开关/绑定/搜索）。 */
+  static readonly danmaku: string = 'danmaku';
   /** 片头片尾标记（居中玻璃卡）。 */
   static readonly segment: string = 'segment';
 }
@@ -108,6 +110,13 @@ export class NativeDanmakuUi {
   /** scroll / top / bottom。 */
   mode: string = 'scroll';
   color: string = '#FFFFFF';
+}
+
+/** 694 M3：弹幕搜索结果条目（与 Dart NativeDanmakuSearchResult 同构）。 */
+export class NativeDanmakuSearchHitUi {
+  episodeId: number = 0;
+  animeTitle: string = '';
+  episodeTitle: string = '';
 }
 
 /** 房间资源项（590，与 Dart `NativeResourceItem.toJson` 一致）。 */
@@ -285,6 +294,22 @@ function parseResourceGroups(v: ESObject): NativeResourceGroupUi[] {
       item.isMovie = jsonBool(src['isMovie'], false);
       item.collapsed = jsonBool(src['collapsed'], true);
       item.seasons = parseSeasonGroups(src['seasons']);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function parseDanmakuSearchResults(v: ESObject): NativeDanmakuSearchHitUi[] {
+  const out: NativeDanmakuSearchHitUi[] = [];
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const item = new NativeDanmakuSearchHitUi();
+      const src = arr[i] as Record<string, Object>;
+      item.episodeId = jsonNum(src['episodeId'], 0);
+      item.animeTitle = jsonStr(src['animeTitle'], '');
+      item.episodeTitle = jsonStr(src['episodeTitle'], '');
       out.push(item);
     }
   }
@@ -473,6 +498,11 @@ export class NativePlayerUiState {
   danmakuOutlineColor: number = 0xFF000000;
   /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
   danmakuItems: NativeDanmakuUi[] = [];
+  /** 694 M3：弹幕弹窗状态（绑定文案 / 搜索结果 / 搜索中 / 错误）。 */
+  danmakuBinding: string = '未匹配';
+  danmakuSearchResults: NativeDanmakuSearchHitUi[] = [];
+  danmakuSearching: boolean = false;
+  danmakuSearchError: string = '';
   /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
   segmentEnabled: boolean = false;
   segmentIntroEndMs: number | null = null;
@@ -626,6 +656,12 @@ export class NativePlayerUiState {
     if (obj.danmakuItems !== undefined) {
       this.danmakuItems = parseDanmakuItems(obj.danmakuItems);
     }
+    this.danmakuBinding = jsonStr(obj.danmakuBinding, this.danmakuBinding);
+    if (obj.danmakuSearchResults !== undefined) {
+      this.danmakuSearchResults = parseDanmakuSearchResults(obj.danmakuSearchResults);
+    }
+    this.danmakuSearching = jsonBool(obj.danmakuSearching, this.danmakuSearching);
+    this.danmakuSearchError = jsonStr(obj.danmakuSearchError, this.danmakuSearchError);
     this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
     this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
     this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);
@@ -1223,6 +1259,30 @@ export class HimiMpvNativeHost {
   optimisticToggleDanmaku(): void {
     this.state.danmakuEnabled = !this.state.danmakuEnabled;
     this.sendCommand('toggleDanmaku', null);
+    this.notify();
+  }
+
+  /** 694 M3：弹幕弹窗搜索（空关键词 = Dart 用预填标题，TV 无输入法可直搜）。 */
+  searchDanmaku(keyword: string): void {
+    this.state.danmakuSearching = true;
+    this.state.danmakuSearchError = '';
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('keyword', keyword);
+    this.sendCommand('searchDanmaku', fields);
+    this.notify();
+  }
+
+  /** 694 M3：弹幕弹窗绑定候选（manual 记忆 + Dart 立即重载）。 */
+  bindDanmaku(episodeId: number): void {
+    const fields: Map<string, Object> = new Map<string, Object>();
+    fields.set('episodeId', episodeId);
+    this.sendCommand('bindDanmaku', fields);
+    this.notify();
+  }
+
+  /** 694 M3：弹幕弹窗解除绑定（回自动匹配）。 */
+  unbindDanmaku(): void {
+    this.sendCommand('unbindDanmaku', null);
     this.notify();
   }
 

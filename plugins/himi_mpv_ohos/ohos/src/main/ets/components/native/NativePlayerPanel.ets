@@ -23,6 +23,7 @@ import {
 } from './HimiMpvNativeHost';
 import { NativePlayerIcons } from './NativePlayerIcons';
 import { GlassSlider } from './GlassSlider';
+import { DanmakuPanelContent } from './DanmakuPanel';
 
 /** 倍速档位（与 Flutter speedOptions 完全一致）。 */
 const SPEED_STEPS: number[] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
@@ -462,6 +463,8 @@ export struct NativePlayerPanel {
         this.DisplayContent();
       } else if (this.panelType === 'decode') {
         this.DecodeContent();
+      } else if (this.panelType === 'danmaku') {
+        DanmakuPanelContent({ revision: this.revision });
       }
     }
     // 宽 42%（钳 260~320）与上下避让移到外层容器（见 build()）：面板容器
@@ -666,6 +669,8 @@ export struct NativePlayerPanel {
       return '显示调节';
     } else if (this.panelType === 'decode') {
       return '解码模式';
+    } else if (this.panelType === 'danmaku') {
+      return '弹幕';
     }
     return '设置';
   }

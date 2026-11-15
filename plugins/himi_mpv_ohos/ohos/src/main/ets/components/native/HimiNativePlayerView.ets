@@ -52,6 +52,9 @@ const ROOM_PANEL_HEIGHT = 280;
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 
+/** 694 M3e：弹幕按钮开启色（三壳同款 #FF8A3D，与 Flutter/QML 一致）。 */
+const DANMAKU_ICON_TINT = '#FF8A3D';
+
 /** 680：房间面板玻璃底（65% 深色磨砂，与 Win `playerPanelBase` 同值）。 */
 const ROOM_PANEL_GLASS_BG = '#A61A1D23';
 /** 680：房间面板**不透明**底（XComponent 之上必须用这个，见 RoomPanelSlot 注释）。 */
@@ -2985,13 +2988,15 @@ export struct HimiNativePlayerView {
       // 宽 ~96dp，4 个图标在 gap=0 时仍需 128dp → 仍溢出 32dp（真机截图回归）。
       Row() {
         Row({ space: 20 * this.bottomScale }) {
+          // 694 M3e：点击弹幕按钮 → 弹幕弹窗（开关/绑定/搜索），
+          // 不再直接 toggle；开关能力全在弹窗内（长按不做事防误触）。
           this.IconChip(this.danmakuEnabled
             ? String.fromCodePoint(0xE17E)
             : String.fromCodePoint(0xF04D2), 24, 4, false,
             this.danmakuEnabled, 'danmaku', (): void => {
               this.pokeAutoHide();
-              HimiMpvNativeHost.getInstance().optimisticToggleDanmaku();
-            }, this.bottomScale);
+              this.openPanel(NativePlayerPanelType.danmaku);
+            }, this.bottomScale, DANMAKU_ICON_TINT);
           if (!this.state().isRoom && this.versionCount > 1) {
             this.BadgeIconChip(this.versionGlyph(), `${this.versionCount}`,
               this.activePanel === NativePlayerPanelType.version, 'version', (): void => {
@@ -3121,11 +3126,11 @@ export struct HimiNativePlayerView {
    */
   @Builder
   IconChip(icon: string, iconSize: number, pad: number, glass: boolean, active: boolean, key: string,
-    onTap: () => void, s: number) {
+    onTap: () => void, s: number, activeColor: string = SEL_COLOR) {
     Text(icon)
       .fontFamily(NativePlayerIcons.FONT_FAMILY)
       .fontSize(iconSize * s)
-      .fontColor(active ? SEL_COLOR : Color.White)
+      .fontColor(active ? activeColor : Color.White)
       .padding(pad * s)
       .linearGradient(glass ? CHIP_GRAD : CHIP_GRAD_CLEAR)
       .borderRadius(10)

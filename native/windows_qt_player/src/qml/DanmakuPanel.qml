@@ -34,6 +34,13 @@ EUI.ECard {
     implicitWidth: 320
     padding: 16
 
+    // 694：高度上限 = 可用高（顶栏之下、控制条/进度条之上，对齐 Panel.qml
+    // 的钳制公式）；内容超出时结果区滚动，面板不许盖到进度条。
+    readonly property real maxPanelHeight: parent
+        ? parent.height - Theme.panelTopOffset - Theme.panelBottomOffset
+        : 400
+    height: Math.min(implicitHeight, maxPanelHeight)
+
     function openSearch() {
         searchMode = true
         if (keywordField.text === "") {
@@ -249,12 +256,16 @@ EUI.ECard {
             }
 
             // 结果列表（danmakuSearchResults：{episodeId, animeTitle,
-            // episodeTitle}）
-            ColumnLayout {
+            // episodeTitle}）——结果多时滚动（694：用户反馈搜索结果很长）。
+            ScrollView {
                 Layout.fillWidth: true
-                spacing: 4
+                Layout.fillHeight: true
+                clip: true
                 visible: stateRef
                          ? stateRef.danmakuSearchResults.length > 0 : false
+
+                ColumnLayout {
+                spacing: 4
 
                 Repeater {
                     model: stateRef ? stateRef.danmakuSearchResults : []
@@ -305,6 +316,7 @@ EUI.ECard {
                                 root.bindRequested(modelData.episodeId)
                         }
                     }
+                }
                 }
             }
 

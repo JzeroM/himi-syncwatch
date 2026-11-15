@@ -94,34 +94,51 @@ class _DanmakuControlSheetState extends State<DanmakuControlSheet> {
     return ListenableBuilder(
       listenable: widget.controller.revision,
       builder: (context, _) {
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E2126),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            border: Border.all(color: Colors.white24),
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildHeader(context),
-                const SizedBox(height: 20),
-                _DanmakuSwitch(on: _on, onChanged: _toggle),
-                const SizedBox(height: 12),
-                Text(
-                  _on ? '已开启 · ${widget.controller.bindingLabel}' : '已关闭',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+        // 694：弹卡抬升到控制条之上（不盖进度条；116 与原生
+        // PANEL_BOTTOM_OFFSET 同值）+ 整体限高可滚动（结果多）。
+        final bottomReserve = 116 + MediaQuery.of(context).padding.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomReserve),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2126),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border.all(color: Colors.white24),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+            child: Material(
+              type: MaterialType.transparency,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.6,
                 ),
-                const SizedBox(height: 16),
-                const Divider(height: 1, color: Colors.white24),
-                const SizedBox(height: 8),
-                if (_searchMode)
-                  _buildSearchView(context)
-                else
-                  _buildHomeView(),
-              ],
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildHeader(context),
+                      const SizedBox(height: 20),
+                      _DanmakuSwitch(on: _on, onChanged: _toggle),
+                      const SizedBox(height: 12),
+                      Text(
+                        _on
+                            ? '已开启 · ${widget.controller.bindingLabel}'
+                            : '已关闭',
+                        style:
+                            const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(height: 1, color: Colors.white24),
+                      const SizedBox(height: 8),
+                      if (_searchMode)
+                        _buildSearchView(context)
+                      else
+                        _buildHomeView(),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         );
