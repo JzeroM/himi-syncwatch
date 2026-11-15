@@ -734,7 +734,11 @@ void main() {
       expect(ohosPanel, contains('this.close();'));
       // 面板容器宽 = 面板宽（42% 钳 260~320），不得再 width('100%') 全宽：
       // 全宽容器会把遮罩整块盖住，点空白处到不了遮罩 → 只能返回键收面板。
-      expect(ohosPanel, contains(".width('42%')"));
+      // 694：宽度按面板类型分档（弹幕 52%，其余 42%），仍是分栏宽
+      expect(
+        ohosPanel,
+        contains(".width(this.panelType === 'danmaku' ? '52%' : '42%')"),
+      );
       expect(
         ohosPanel,
         isNot(matches(RegExp(

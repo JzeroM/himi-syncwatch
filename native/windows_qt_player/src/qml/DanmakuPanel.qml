@@ -31,7 +31,8 @@ EUI.ECard {
     signal unbindRequested()
     signal closed()
 
-    implicitWidth: 320
+    // 694：加宽到 460——搜索结果（剧名·集名）完整显示不省略。
+    implicitWidth: 460
     padding: 16
 
     // 694：高度上限 = 可用高（顶栏之下、控制条/进度条之上，对齐 Panel.qml
@@ -257,29 +258,36 @@ EUI.ECard {
 
             // 结果列表（danmakuSearchResults：{episodeId, animeTitle,
             // episodeTitle}）——结果多时滚动（694：用户反馈搜索结果很长）。
+            // 【694：搜到不显示的根因修复】ScrollView 视口高必须**解析式**
+            // （= 内容高钳上限），依赖 fillHeight/implicitHeight 会被压成
+            // 0 高——结果推到了但看不见（Panel.qml 676 同类教训）。
             ScrollView {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
+                Layout.preferredHeight: Math.min(resultsCol.implicitHeight, 320)
                 clip: true
                 visible: stateRef
                          ? stateRef.danmakuSearchResults.length > 0 : false
 
                 ColumnLayout {
+                id: resultsCol
                 spacing: 4
 
                 Repeater {
                     model: stateRef ? stateRef.danmakuSearchResults : []
                     delegate: Rectangle {
                         Layout.fillWidth: true
-                        height: 44
+                        // 行高随内容（完整换行显示，694 不省略）
+                        height: hitCol.implicitHeight + 16
                         radius: 8
                         color: Qt.rgba(1, 1, 1, 0.06)
 
                         Column {
+                            id: hitCol
                             anchors.left: parent.left
                             anchors.leftMargin: 10
+                            anchors.right: parent.right
+                            anchors.rightMargin: 70
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 70
                             Text {
                                 width: parent.width
                                 color: theme.textColor
@@ -287,7 +295,7 @@ EUI.ECard {
                                 text: modelData.animeTitle !== ""
                                       ? modelData.animeTitle
                                       : ("episodeId " + modelData.episodeId)
-                                elide: Text.ElideRight
+                                wrapMode: Text.WordWrap
                             }
                             Text {
                                 width: parent.width
@@ -298,7 +306,7 @@ EUI.ECard {
                                     Math.round(Theme.captionSize)
                                 font.pixelSize: subSize
                                 text: modelData.episodeTitle
-                                elide: Text.ElideRight
+                                wrapMode: Text.WordWrap
                             }
                         }
 

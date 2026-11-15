@@ -425,4 +425,112 @@ void main() {
       );
     });
   });
+
+  group('N1/N2：searchEpisodes 集号过滤 + 翻页拉全（694）', () {
+    Map<String, Object?> anime(int base, {int n = 2, String title = '某剧'}) => {
+          'animeId': base,
+          'animeTitle': title,
+          'type': '日番',
+          'typeDescription': '日番',
+          'episodes': [
+            for (var i = 0; i < n; i++)
+              {'episodeId': base + i, 'episodeTitle': '第${i + 1}话'},
+          ],
+        };
+
+    test('N1：episode 参数透传查询串', () async {
+      late RequestOptions seen;
+      final c = _client((options) async {
+        seen = options;
+        return _json({
+          'success': true,
+          'animes': [anime(100)],
+        });
+      });
+      final out = await c.searchEpisodes('芙莉莲', episode: 5);
+      expect(seen.uri.queryParameters['anime'], '芙莉莲');
+      expect(seen.uri.queryParameters['episode'], '5');
+      expect(seen.uri.queryParameters.containsKey('page'), isFalse);
+      expect(out, hasLength(2));
+    });
+
+    test('N2：hasMore=true 翻页拉全并去重，封顶 5 页', () async {
+      final pages = <String>[];
+      final c = _client((options) async {
+        final page = options.uri.queryParameters['page'];
+        pages.add(page ?? '1');
+        if (page == null) {
+          return _json({
+            'success': true,
+            'hasMore': true,
+            'animes': [anime(100)],
+          });
+        }
+        return _json({
+          'success': true,
+          'hasMore': false,
+          'animes': [anime(100), anime(200, n: 1)],
+        });
+      });
+      final out = await c.searchEpisodes('x');
+      // 页1（100,101） + 页2 去重（100,101 重复 + 200）
+      expect(out.map((e) => e.episodeId).toList(), [100, 101, 200]);
+      expect(pages, ['1', '2']);
+    });
+
+    test('N2b：无 hasMore 单次返回（danmu_api 系零行为变化）', () async {
+      var calls = 0;
+      final c = _client((options) async {
+        calls++;
+        return _json({
+          'success': true,
+          'animes': [anime(100)],
+        });
+      });
+      await c.searchEpisodes('x');
+      expect(calls, 1);
+    });
+  });
+
+  group('N4：match 短路记忆（694）', () {
+    test('连续 3 次未命中 → 冷却期内不再发请求', () async {
+      var calls = 0;
+      final c = _client((options) async {
+        calls++;
+        return _json({
+          'success': true,
+          'isMatched': false,
+          'matches': <Object?>[],
+        });
+      });
+      for (var i = 0; i < 3; i++) {
+        final r = await c.match(fileName: 'a$i.mkv');
+        expect(r, isEmpty);
+      }
+      expect(calls, 3);
+      expect(c.matchSkipped, isTrue);
+      // 冷却期内：直接短路，不再产生网络调用
+      final r = await c.match(fileName: 'a4.mkv');
+      expect(r, isEmpty);
+      expect(calls, 3);
+    });
+
+    test('命中即复位（不进冷却）', () async {
+      var calls = 0;
+      final c = _client((options) async {
+        calls++;
+        return _json({
+          'success': true,
+          'isMatched': true,
+          'matches': [
+            {'episodeId': 1, 'episodeTitle': '第1话', 'animeTitle': '某剧'},
+          ],
+        });
+      });
+      await c.match(fileName: 'a.mkv');
+      await c.match(fileName: 'b.mkv');
+      expect(c.matchSkipped, isFalse);
+      expect(calls, 2);
+    });
+  });
 }

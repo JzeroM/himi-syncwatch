@@ -411,8 +411,12 @@ export struct NativePlayerPanel {
         Column() {
           this.SidePanel();
         }
-        .width('42%')
-        .constraintSize({ minWidth: 260, maxWidth: 320 })
+        // 694：弹幕弹窗加宽（搜索结果完整显示不省略）。
+        .width(this.panelType === 'danmaku' ? '52%' : '42%')
+        .constraintSize({
+          minWidth: 260,
+          maxWidth: this.panelType === 'danmaku' ? 480 : 320,
+        })
         .height('100%')
         .padding(this.panelType === 'episode'
           ? FULLBLEED_PAD

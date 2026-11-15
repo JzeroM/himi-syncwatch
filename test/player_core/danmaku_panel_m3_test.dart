@@ -339,6 +339,109 @@ void main() {
     });
   });
 
+  group('9. 真机反馈批量修复（694：进度/显示/加宽/扩搜）', () {
+    late String screen;
+    late String qtPanel;
+    late String kotlinView;
+    late String ohosPanel;
+    late String ohosContainer;
+    late String controller;
+    late String client;
+    late String pool;
+
+    setUpAll(() {
+      screen = File('lib/screens/player/player_screen.dart').readAsStringSync();
+      qtPanel = File('native/windows_qt_player/src/qml/DanmakuPanel.qml')
+          .readAsStringSync();
+      kotlinView = File(
+              'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/NativePlayerScreenView.kt')
+          .readAsStringSync();
+      ohosPanel = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DanmakuPanel.ets')
+          .readAsStringSync();
+      ohosContainer = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/NativePlayerPanel.ets')
+          .readAsStringSync();
+      controller = File('lib/services/danmaku/danmaku_search_controller.dart')
+          .readAsStringSync();
+      client =
+          File('lib/services/danmaku/dandanplay_client.dart').readAsStringSync();
+      pool = File('lib/services/danmaku/danmaku_server_pool.dart')
+          .readAsStringSync();
+    });
+
+    test('9.1 dispose 停止上报用 _reportPosition + ≤0 不报（防归零）', () {
+      expect(screen, contains('final stopPos = _reportPosition;'));
+      expect(screen, contains('if (stopPos > 0) {'));
+      expect(
+        screen,
+        isNot(contains('positionMs: _player.position,')),
+        reason: '空闲引擎恒 0 会把服务器续播清零',
+      );
+    });
+
+    test('9.2 Qt 结果视口解析式高度（搜到必显示）', () {
+      expect(qtPanel, contains('resultsCol.implicitHeight'));
+      expect(
+        qtPanel,
+        contains('Layout.preferredHeight: Math.min(resultsCol.implicitHeight, 320)'),
+      );
+      expect(qtPanel, contains('height: hitCol.implicitHeight + 16'));
+    });
+
+    test('9.3 四壳加宽（Qt 460 / 安卓 480 / 鸿蒙 480·52%）', () {
+      expect(qtPanel, contains('implicitWidth: 460'));
+      expect(kotlinView, contains('PANEL_DANMAKU) 480'));
+      expect(
+        ohosContainer,
+        contains("maxWidth: this.panelType === 'danmaku' ? 480 : 320"),
+      );
+      expect(
+        ohosContainer,
+        contains(".width(this.panelType === 'danmaku' ? '52%' : '42%')"),
+      );
+    });
+
+    test('9.4 结果不省略（完整换行）', () {
+      expect(qtPanel, contains('wrapMode: Text.WordWrap'));
+      expect(kotlinView, contains('danmakuResultRow'));
+      // 结果区（搜索结果 ForEach 内）不得有省略号；状态行等保留。
+      final hits = ohosPanel.substring(
+        ohosPanel.indexOf('danmakuSearchResults,'),
+        ohosPanel.indexOf('解除绑定（回自动匹配）'),
+      );
+      expect(hits, isNot(contains('TextOverflow.Ellipsis')));
+    });
+
+    test('9.5 鸿蒙「按当前标题搜索」快捷行提级存在', () {
+      expect(ohosPanel, contains('按当前标题搜索'));
+      final idx = ohosPanel.indexOf('按当前标题搜索');
+      final row = ohosPanel.substring(idx, idx + 240);
+      expect(row, contains('PANEL_BODY_SIZE'));
+    });
+
+    test('9.6 N1/N2：集号过滤 + hasMore 翻页', () {
+      expect(client, contains("params['episode'] = '\$episode';"));
+      expect(client, contains("if (page > 1) params['page'] = '\$page';"));
+      expect(client, contains("data['hasMore'] == true"));
+    });
+
+    test('9.7 N3：每源超时 30s（容冷启动 20s）', () {
+      expect(pool, contains('Duration(seconds: 30)'));
+    });
+
+    test('9.8 N4：match 短路记忆', () {
+      expect(client, contains('_matchMissStreak'));
+      expect(client, contains('bool get matchSkipped'));
+    });
+
+    test('9.9 N5：URL/协议前缀拦截 + 集号优先查询', () {
+      expect(controller, contains('搜索标题无效或属于协议前缀'));
+      expect(controller, contains('_safeSearch(kw, episode: episodeNumber)'));
+      expect(screen, contains('episodeNumber: _currentEpisodeNumber'));
+    });
+  });
+
   group('5. 设置页绑定管理区块', () {
     test('5.1 「已保存的弹幕绑定」列表 + 删除 + 全部清除', () {
       final config = File('lib/screens/settings/danmaku_config_screen.dart')

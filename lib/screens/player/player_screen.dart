@@ -5508,7 +5508,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                     PlayerScreen.autoNextSeekCooldown);
         if (PlayerScreen.shouldHandleEngineEnd(
           seekInProgress: seekInProgress,
-          positionMs: _player.position,
+          // 694：读真实引擎位置（Windows Qt 接管时 `_player.position`
+          // 恒 0，会把「远离结尾」判定带偏）。
+          positionMs: _reportPosition,
           durationMs: _duration.inMilliseconds,
         )) {
           unawaited(_handleEpisodeFinished(
@@ -9121,21 +9123,29 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _cancelStallWatchdog();
     FocusManager.instance.removeListener(_onPrimaryFocusChanged);
     _autoHide.dispose();
-    // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」
+    // 兜底上报：异常 pop/系统 kill 未走 onConfirm 时，尽力补一次「停止」。
+    //
+    // 694：位置必须走 `_reportPosition`（Qt 真实位置 → 最后已知位置）。
+    // 旧实现 `_player.position` 在 Windows Qt 模式是**空闲引擎恒 0**——
+    // reportPlaybackStopped(0) 把服务器续播清零（真机回归「单人关 Qt 窗
+    // 历史进度归零」）。≤0 时宁可不报（Emby 会话超时会保持旧进度）。
     final reportSvc = _reportService;
     final reportId = _reportItemId;
     if (_shouldReportPlayback &&
         _reportStarted &&
         reportSvc != null &&
         reportId != null) {
-      reportSvc
-          .reportPlaybackStopped(
-            itemId: reportId,
-            playSessionId: _playSessionId,
-            mediaSourceId: _reportMediaSourceId,
-            positionMs: _player.position,
-          )
-          .catchError((_) => false);
+      final stopPos = _reportPosition;
+      if (stopPos > 0) {
+        reportSvc
+            .reportPlaybackStopped(
+              itemId: reportId,
+              playSessionId: _playSessionId,
+              mediaSourceId: _reportMediaSourceId,
+              positionMs: stopPos,
+            )
+            .catchError((_) => false);
+      }
     }
     _stopReportTimer();
     _speedMeter?.stop();
@@ -10860,6 +10870,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       client: client,
       itemKey: itemKey,
       nameKey: nameKey,
+      fileName: fileName,
+      episodeNumber: _currentEpisodeNumber,
     );
     _dmPanelController = controller;
     _dmPanelSignature = signature;
@@ -11159,7 +11171,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           () async {
             if (keyword == null) return;
             try {
-              searched = await client.searchEpisodes(keyword);
+              searched = await client.searchEpisodes(
+              keyword,
+              episode: _currentEpisodeNumber,
+            );
             } catch (e) {
               LogService().log('Danmaku', 'search failed: $e');
             }

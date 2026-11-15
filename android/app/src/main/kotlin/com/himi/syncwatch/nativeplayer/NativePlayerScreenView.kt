@@ -2253,13 +2253,15 @@ class NativePlayerScreenView(
         }
     }
 
-    private fun panelWidthDp(): Int {
+    private fun panelWidthDp(panel: String = ""): Int {
         // 595/597：面板按**视频区宽度**算，而不是全屏宽。
         // 旧实现用全屏宽 → 收窄后的父级只有 videoW，面板按全屏 0.42 算会
         // 过宽，右缘被父级裁掉、视觉上像「被资源面板遮挡」（真机回归）。
         val available = videoAreaWidth()
         val target = (available * 0.42f).toInt()
-        return target.coerceIn(dp(NPTheme.PANEL_MIN_WIDTH.toInt()), dp(NPTheme.PANEL_MAX_WIDTH.toInt()))
+        // 694：弹幕弹窗加宽到 480dp——搜索结果（剧名·集名）完整显示。
+        val maxDp = if (panel == PANEL_DANMAKU) 480 else NPTheme.PANEL_MAX_WIDTH
+        return target.coerceIn(dp(NPTheme.PANEL_MIN_WIDTH.toInt()), dp(maxDp.toInt()))
     }
 
     /** 打开面板（同类型再点为切换关闭）。 */
@@ -2359,7 +2361,7 @@ class NativePlayerScreenView(
                 // 改为 `Gravity.START` + `leftMargin = 视频区宽 - 面板宽 -
                 // 12dp`：贴视频区右缘，与 Flutter 的
                 // `Positioned(right: 12)` 在视频区内等价。
-                val panelW = panelWidthDp()
+                val panelW = panelWidthDp(panel)
                 // 高度必须限制在**视频区**内（597）：旧实现用 MATCH_PARENT
                 // （= 根 FrameLayout 全屏高），竖屏分栏时面板会一直伸到屏幕
                 // 底、压在资源面板上。
@@ -2767,20 +2769,9 @@ class NativePlayerScreenView(
             list.addView(danmakuInfoRow(lastState.danmakuSearchError, color = 0xFFFFA040.toInt()))
         }
 
-        // ④ 搜索结果绑定
+        // ④ 搜索结果绑定（694：完整换行显示不省略）
         lastState.danmakuSearchResults.forEach { hit ->
-            list.addView(
-                optionRow(
-                    if (hit.animeTitle.isEmpty()) {
-                        "episodeId ${hit.episodeId}"
-                    } else {
-                        "${hit.animeTitle} · ${hit.episodeTitle}"
-                    },
-                    false,
-                ) {
-                    listener?.onBindDanmaku(hit.episodeId)
-                },
-            )
+            list.addView(danmakuResultRow(hit))
         }
 
         // ⑤ 解除绑定（有绑定才显示）
@@ -2829,6 +2820,38 @@ class NativePlayerScreenView(
         }
         return capsule
     }
+
+    /** 694：搜索结果行——剧名/集名完整换行（不省略），点行绑定。 */
+    private fun danmakuResultRow(hit: DanmakuSearchHit): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(NPTheme.PANEL_PAD_H), dp(8), dp(NPTheme.PANEL_PAD_H), dp(8))
+            isClickable = true
+            setOnClickListener { listener?.onBindDanmaku(hit.episodeId) }
+            addView(
+                TextView(context).apply {
+                    text = if (hit.animeTitle.isEmpty()) {
+                        "episodeId ${hit.episodeId}"
+                    } else {
+                        hit.animeTitle
+                    }
+                    setTextColor(NPTheme.PANEL_TEXT)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+                    typeface = NPTheme.bodyTypeface
+                },
+            )
+            if (hit.episodeTitle.isNotEmpty()) {
+                addView(
+                    TextView(context).apply {
+                        text = hit.episodeTitle
+                        setTextColor(0xB3FFFFFF.toInt())
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+                        typeface = NPTheme.bodyTypeface
+                        setPadding(0, dp(2), 0, 0)
+                    },
+                )
+            }
+        }
 
     /** 弹幕弹窗信息行（次要文案，弱化显示）。 */
     private fun danmakuInfoRow(text: String, color: Int = 0x8CFFFFFF.toInt()): TextView =

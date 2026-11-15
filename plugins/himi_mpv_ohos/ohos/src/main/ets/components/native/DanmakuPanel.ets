@@ -170,11 +170,12 @@ export struct DanmakuPanelContent {
 
       Row() {
         Text('按当前标题搜索')
-          .fontSize(PANEL_CAPTION_SIZE)
-          .fontColor(PANEL_TEXT_DIM)
+          .fontSize(PANEL_BODY_SIZE)
+          .fontWeight(PANEL_BODY_WEIGHT)
+          .fontColor(PANEL_TEXT)
         Blank()
         Text('›')
-          .fontSize(PANEL_CAPTION_SIZE)
+          .fontSize(PANEL_BODY_SIZE)
           .fontColor(PANEL_TEXT_DIM);
       }
       .width('100%')
@@ -209,14 +210,10 @@ export struct DanmakuPanelContent {
                 .fontSize(PANEL_BODY_SIZE)
                 .fontColor(PANEL_TEXT)
                 .width('100%')
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text(hit.episodeTitle)
                 .fontSize(PANEL_CAPTION_SIZE)
                 .fontColor(PANEL_TEXT_DIM)
                 .width('100%')
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)

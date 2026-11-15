@@ -193,9 +193,11 @@ void main() {
       expect(arkts.contains('PANEL_RADIUS = 16'), isTrue,
           reason: '鸿蒙常规面板圆角需与 Dart radiusPanel 一致');
       // 宽度：clamp(0.42×屏宽, 260, 320)（Flutter selectorPanelWidth）。
-      expect(arkts.contains(".width('42%')"), isTrue,
+      expect(arkts.contains("'52%' : '42%'"), isTrue,
           reason: '鸿蒙面板宽比例需与 Dart panelWidthRatio 一致');
-      expect(arkts.contains('minWidth: 260, maxWidth: 320'), isTrue,
+      expect(arkts.contains('minWidth: 260'), isTrue,
+          reason: '面板最小宽 260');
+      expect(arkts.contains("maxWidth: this.panelType === 'danmaku' ? 480 : 320"), isTrue,
           reason: '鸿蒙面板宽夹取需与 Dart panelMin/MaxWidth 一致');
       expect(RegExp(r'right: 12').hasMatch(arkts), isTrue,
           reason: '鸿蒙面板右距需与 Dart panelRight 一致');

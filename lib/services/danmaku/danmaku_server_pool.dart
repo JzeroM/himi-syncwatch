@@ -15,7 +15,7 @@ import 'dart:async';
 Future<({int index, R result})?> runDanmakuServers<R>({
   required int count,
   required Future<R?> Function(int index) run,
-  Duration timeout = const Duration(seconds: 15),
+  Duration timeout = const Duration(seconds: 30),
 }) async {
   if (count <= 0) return null;
   final done = List<bool>.filled(count, false);

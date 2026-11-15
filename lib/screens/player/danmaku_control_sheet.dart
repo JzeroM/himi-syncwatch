@@ -274,19 +274,45 @@ class _DanmakuControlSheetState extends State<DanmakuControlSheet> {
               itemCount: results.length,
               itemBuilder: (context, i) {
                 final c = results[i];
-                return ListTile(
-                  dense: true,
-                  title: Text(
-                    c.animeTitle.isNotEmpty ? c.animeTitle : 'episodeId ${c.episodeId}',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  subtitle: Text(
-                    c.episodeTitle,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                  trailing: TextButton(
-                    onPressed: () => _bind(c),
-                    child: const Text('绑定'),
+                // 694：手写行（不用 ListTile——其标题默认单行省略），
+                // 剧名/集名完整换行显示不省略。
+                return InkWell(
+                  onTap: () => _bind(c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 4,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.animeTitle.isNotEmpty
+                                    ? c.animeTitle
+                                    : 'episodeId ${c.episodeId}',
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              if (c.episodeTitle.isNotEmpty)
+                                Text(
+                                  c.episodeTitle,
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => _bind(c),
+                          child: const Text('绑定'),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },

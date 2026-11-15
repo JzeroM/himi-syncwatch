@@ -13,7 +13,11 @@ class _FakeClient extends DandanplayClient {
   final List<MatchCandidate> result;
 
   @override
-  Future<List<MatchCandidate>> searchEpisodes(String keyword) async => result;
+  Future<List<MatchCandidate>> searchEpisodes(
+    String keyword, {
+    int? episode,
+  }) async =>
+      result;
 }
 
 /// 内存记忆仓库（widget 测试禁止真实文件 IO——FakeAsync 会死锁）。

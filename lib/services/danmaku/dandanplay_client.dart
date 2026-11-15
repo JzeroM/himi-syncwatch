@@ -142,7 +142,48 @@ class DandanplayClient {
 
   /// 文件识别：`fileName` 必填，[fileSize] 可选。
   /// 返回按相关度排序的候选；`isMatched=true` 时仅一条（精确关联）。
+  /// N4（694）：match 短路记忆——部分源（如 danmu_api 系）match 端点
+  /// 恒 miss 且每次耗 2~11s。连续 [_matchBrokenThreshold] 次未命中后
+  /// 冷却 [_matchSkipCooldown]，期间直接返回空（省往返；search 兜底）。
+  int _matchMissStreak = 0;
+  DateTime? _matchSkipUntil;
+
+  /// 测试可观测：当前是否处于 match 冷却期。
+  bool get matchSkipped =>
+      _matchSkipUntil != null && DateTime.now().isBefore(_matchSkipUntil!);
+
   Future<List<MatchCandidate>> match({
+    required String fileName,
+    int? fileSize,
+  }) async {
+    _requireConfigured();
+    if (matchSkipped) return const [];
+    List<MatchCandidate> result;
+    try {
+      result = await _matchRequest(fileName: fileName, fileSize: fileSize);
+    } catch (_) {
+      _noteMatchMiss();
+      rethrow;
+    }
+    if (result.isEmpty) {
+      _noteMatchMiss();
+    } else {
+      _matchMissStreak = 0;
+      _matchSkipUntil = null;
+    }
+    return result;
+  }
+
+  void _noteMatchMiss() {
+    _matchMissStreak++;
+    if (_matchMissStreak >= 3) {
+      _matchMissStreak = 0;
+      _matchSkipUntil =
+          DateTime.now().add(const Duration(minutes: 30));
+    }
+  }
+
+  Future<List<MatchCandidate>> _matchRequest({
     required String fileName,
     int? fileSize,
   }) async {
@@ -191,35 +232,64 @@ class DandanplayClient {
   /// `GET {base}/api/v2/search/episodes?anime={keyword}`，响应
   /// `animes[].episodes[]`；扁平化为 [MatchCandidate]（`animeTitle`
   /// 取剧名、`episodeTitle` 取集标题），保持原顺序。
-  Future<List<MatchCandidate>> searchEpisodes(String keyword) async {
+  ///
+  /// 694（借鉴 NeoPlayer `episodeString` 语义 + `searchEpisodeAll`）：
+  /// - [episode] > 0 时带 `episode=` 服务端按集过滤（命中即本集）；
+  /// - `hasMore == true` 自动翻页拉全（`page` 续查，≤5 页防失控；无分页
+  ///   的源（danmu_api 系）首查不带 page 参数，零行为变化）。
+  Future<List<MatchCandidate>> searchEpisodes(
+    String keyword, {
+    int? episode,
+  }) async {
     _requireConfigured();
     final query = keyword.trim();
     if (query.isEmpty) return const [];
     const path = '/api/v2/search/episodes';
-    final uri = _buildUri(path, query: {'anime': query});
-    lastRequestUri = uri;
-    final data = await _withRetry(() => _get(uri, path));
-    if (data == null) {
-      throw const DanmakuApiException(
-        DanmakuApiError.invalidResponse,
-        '搜索响应异常',
-      );
-    }
-    if (data['success'] == false) {
-      final message = data['errorMessage'];
-      throw DanmakuApiException(
-        DanmakuApiError.business,
-        message is String && message.isNotEmpty ? message : '搜索失败',
-      );
-    }
-    final animes = data['animes'];
-    if (animes is! List) {
-      throw const DanmakuApiException(
-        DanmakuApiError.invalidResponse,
-        '搜索结果字段缺失',
-      );
-    }
     final out = <MatchCandidate>[];
+    final seen = <int>{};
+    var page = 0;
+    while (true) {
+      page++;
+      final params = <String, String>{'anime': query};
+      if (episode != null && episode > 0) {
+        params['episode'] = '$episode';
+      }
+      if (page > 1) params['page'] = '$page';
+      final uri = _buildUri(path, query: params);
+      lastRequestUri = uri;
+      final data = await _withRetry(() => _get(uri, path));
+      if (data == null) {
+        throw const DanmakuApiException(
+          DanmakuApiError.invalidResponse,
+          '搜索响应异常',
+        );
+      }
+      if (data['success'] == false) {
+        final message = data['errorMessage'];
+        throw DanmakuApiException(
+          DanmakuApiError.business,
+          message is String && message.isNotEmpty ? message : '搜索失败',
+        );
+      }
+      final animes = data['animes'];
+      if (animes is! List) {
+        throw const DanmakuApiException(
+          DanmakuApiError.invalidResponse,
+          '搜索结果字段缺失',
+        );
+      }
+      _collectSearchPage(animes, out, seen);
+      final hasMore = data['hasMore'] == true;
+      if (!hasMore || page >= 5) break;
+    }
+    return out;
+  }
+
+  void _collectSearchPage(
+    List<Object?> animes,
+    List<MatchCandidate> out,
+    Set<int> seen,
+  ) {
     for (final anime in animes) {
       if (anime is! Map) continue;
       final animeTitle =
@@ -230,6 +300,8 @@ class DandanplayClient {
         if (ep is! Map) continue;
         final id = ep['episodeId'];
         if (id is! num) continue;
+        // 跨页/跨分组去重（多源分组常含同 episodeId）。
+        if (!seen.add(id.toInt())) continue;
         out.add(MatchCandidate(
           episodeId: id.toInt(),
           animeTitle: animeTitle,
@@ -238,7 +310,6 @@ class DandanplayClient {
         ));
       }
     }
-    return out;
   }
 
   /// 获取弹幕（`format=json` 兼容 danmu_api 显式格式参数，官方服务
