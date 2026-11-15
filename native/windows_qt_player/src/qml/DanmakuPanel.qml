@@ -53,7 +53,9 @@ EUI.ECard {
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        // ECard 内容槽是内部 ColumnLayout：必须用 Layout 附着属性，
+        // 写 anchors.fill 会触发「anchors on layout-managed item」告警。
+        Layout.fillWidth: true
         spacing: 10
 
         // ── 标题行 ──
