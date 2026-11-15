@@ -267,7 +267,9 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1
         danmakuItems: playerState.danmakuItems
-        playerState: playerState
+        // 注意：属性名是 stateRef，不能写 playerState——那会遮蔽同名全局
+        // 单例，导致 `playerState: playerState` 自绑定（QML 报 Binding loop）。
+        stateRef: playerState
         positionMs: playerState.positionMs
         // 属性是 `paused`（无 playing）；取反得到「播放中」
         playing: !playerState.paused

@@ -59,7 +59,13 @@ Item {
     /// 播放位置（毫秒，权威值；仅在没有 playerState 时兜底）。
     property real positionMs: 0
     /// PlayerState 引用：优先读它的「弹幕专用插值位置」。
-    property var playerState: null
+    ///
+    /// 【为什么叫 stateRef 而不是 playerState】`playerState` 是
+    /// `qmlRegisterSingletonInstance` 注册的**全局单例**；在本组件里再声明
+    /// 同名属性会**遮蔽**它，于是 `playerState: playerState` 变成自赋值
+    /// → QML 报 `Binding loop detected` → 读到 null → 弹幕时钟恒 0
+    /// → 一条都画不出来（699 真机：面板有在屏数、画面空白）。
+    property var stateRef: null
 
     /// 0xAARRGGBB → "#AARRGGBB"（QML 颜色串）。
     function cssColor(argb) {
@@ -81,8 +87,8 @@ Item {
     /// 当前弹幕位置：优先用 PlayerState 的插值值（带死区/收敛），
     /// 没有则退回权威值。命令式读取（不是绑定），每帧都能拿到新值。
     function currentPos() {
-        if (playerState && playerState.danmakuPositionMs !== undefined)
-            return playerState.danmakuPositionMs
+        if (stateRef && stateRef.danmakuPositionMs !== undefined)
+            return stateRef.danmakuPositionMs
         return positionMs
     }
     /// 是否正在播放（暂停时冻结）。

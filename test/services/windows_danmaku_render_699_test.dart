@@ -76,6 +76,23 @@ void main() {
     });
   });
 
+  group('2.5 属性名不能遮蔽全局单例', () {
+    test('2.5.1 DanmakuLayer 用 stateRef 而不是 playerState', () {
+      // playerState 是 qmlRegisterSingletonInstance 注册的全局单例；
+      // 同名属性会遮蔽它 → `playerState: playerState` 自赋值 → Binding loop
+      // → 读到 null → 时钟恒 0 → 一条都不画（699 真机）。
+      expect(qml, contains('property var stateRef: null'));
+      expect(qml, isNot(contains('property var playerState')));
+      expect(qml, contains('stateRef.danmakuPositionMs'));
+    });
+
+    test('2.5.2 Overlay 传 stateRef 而不是 playerState', () {
+      final overlay = read('native/windows_qt_player/src/qml/Overlay.qml');
+      expect(overlay, contains('stateRef: playerState'));
+      expect(overlay, isNot(contains('        playerState: playerState')));
+    });
+  });
+
   group('3. 面板可观测', () {
     test('3.1 调试面板显示 Qt 侧弹幕时钟实际值', () {
       expect(mainCpp, contains('时钟 %3ms'));

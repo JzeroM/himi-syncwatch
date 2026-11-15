@@ -117,6 +117,59 @@ void main() {
       expect(friendlyEmbyError(error!), contains('标准 Emby'));
       expect(friendlyEmbyError(error), contains('/emby'));
     });
+
+    test('200 + 服务端真实报错（数据库异常）→ 透出服务端原因', () async {
+      respondWith = (_, __) => {
+            'code': '-1',
+            'message':
+                '\n### Error querying database.  Cause: java.sql.SQLSyntax'
+                    'ErrorException: Unknown column \'enable_netdisk_relay\' '
+                    'in \'field list\'\n### The error may exist in '
+                    'com/emby/manager/mapper/EmbyUserMapper.java',
+          };
+
+      Object? error;
+      try {
+        await service.authenticate(
+          serverUrl: 'http://127.0.0.1:${server.port}',
+          username: 'mojito',
+          password: 'pw',
+          deviceId: 'd1',
+        );
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error, isA<EmbyException>());
+      final message = friendlyEmbyError(error!);
+      expect(message, contains('服务器返回错误'));
+      expect(message, contains('Error querying database'),
+          reason: '首行（去掉 ### 前缀）透出');
+      expect(message, isNot(contains('\n')), reason: '只取一行');
+    });
+
+    test('超长服务端报错截断到一行内（不刷屏）', () async {
+      respondWith = (_, __) => {
+            'code': '-1',
+            'message': 'x' * 500,
+          };
+
+      Object? error;
+      try {
+        await service.authenticate(
+          serverUrl: 'http://127.0.0.1:${server.port}',
+          username: 'mojito',
+          password: 'pw',
+          deviceId: 'd1',
+        );
+      } catch (e) {
+        error = e;
+      }
+
+      final message = friendlyEmbyError(error!);
+      expect(message.length, lessThanOrEqualTo(140));
+      expect(message, endsWith('…'));
+    });
   });
 
   group('/Items 缺失时回退 /Users/{id}/Items', () {

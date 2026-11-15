@@ -186,10 +186,29 @@ class EmbyService {
       if (user is Map && accessToken is String && accessToken.isNotEmpty) {
         return map;
       }
+      // 仿 Emby 网关用 200 + 业务错误体表达失败（Dio 不会抛异常）：
+      // 「No static resource」= 网关上没这个端点（提示检查地址/路径）；
+      // 其余把服务端真实原因（如数据库报错）带出去，便于定位。
+      final message = map['message'] ?? map['desc'] ?? map['Message'];
+      final text = message is String ? message : '';
+      if (!text.toLowerCase().contains('no static resource') &&
+          text.trim().isNotEmpty) {
+        throw EmbyException('服务器返回错误：${_firstLine(text)}');
+      }
     }
     throw const EmbyException(
       '服务器返回的不是标准 Emby 数据，请检查地址和路径（反代路径如 /emby）是否正确',
     );
+  }
+
+  /// 取服务端错误文案的首个非空行（截断超长内容），用于登录失败提示。
+  static String _firstLine(String message) {
+    var line = message
+        .split('\n')
+        .map((e) => e.trim())
+        .firstWhere((e) => e.isNotEmpty, orElse: () => '');
+    if (line.startsWith('### ')) line = line.substring(4);
+    return line.length > 120 ? '${line.substring(0, 120)}…' : line;
   }
 
   Future<MediaItem?> validateToken() async {
