@@ -84,6 +84,10 @@ public:
     /// 给 QML 控件让出的高度（顶栏 + 底栏）。视频子窗口会相应收窄。
     void setOverlayInsets(int top, int bottom);
 
+    /// 694 DPI 审计：inset 存**逻辑 vp**（QML/Qt 值），Win32 子窗几何要
+    /// **物理 px**——用点处必须经本函数换算（×dpr）。
+    int insetToPx(int logical) const;
+
     // 【668】挖孔机制已退役：控件层移到**逐像素透明悬浮窗**（顶层窗口
     // 永远盖住子窗口 = 真合成），视频满铺直出、玻璃任意半透明、零黑底。
 
@@ -325,6 +329,7 @@ private:
     /// 抬上来（两窗同层），切到别的软件时两窗一起被正常盖住。
     bool topmost_ = false;
 
+    /** 顶/底 inset，单位**逻辑 vp**（用点处经 [insetToPx] 换算物理 px）。 */
     int insetTop_ = 0;
     int insetBottom_ = 0;
     int lastX_ = -1;

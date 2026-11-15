@@ -274,6 +274,19 @@ Binding loop**，它不是噪音。
 > 遮蔽坑，但 @State 必须 build 显式读取（589 教训，本壳经 @Prop
 > revision + 宿主快照驱动）。
 
+### Windows：Qt 逻辑像素 ↔ Win32 物理像素，交界必换算 dpr
+
+Qt 6 高 DPI 缩放恒开：`QWindow::setGeometry`/`QScreen::geometry` 是
+**逻辑像素**；Win32 `GetClientRect`/`MapWindowPoints`/`SetWindowPos`/
+`CreateWindowEx` 是**物理像素**。**100% 缩放两者相等 = 侥幸正确，不是
+对**——125%/150% 混用即乱（694 真机回归：Win11 控件层放大偏移飘出宿主、
+视频避让错位，Win10 100% 全正常）。
+
+换算约定（`native/windows_qt_player`）：物理 → 逻辑 **÷dpr + qRound**
+（`followParentOnce` / `syncOverlayGeometry`）；逻辑 → 物理 **×dpr**
+（`MpvWindow::insetToPx`）。新写任何 Win32 ↔ Qt 交界先问单位；自检日志
+带 `dpr=`（截图即诊断）。回归测试：`windows_dpi_overlay_test.dart`。
+
 ### media_kit 不是引擎（694 引擎收敛，别再混）
 
 引擎收敛表（`PlayerEngineFactory.supportedEngines`，681 起）：

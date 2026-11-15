@@ -275,14 +275,17 @@ void MpvWindow::createVideoWindow() {
 
     RECT rc = {};
     ::GetClientRect(host_hwnd_, &rc);
+    // inset 是逻辑 vp，Win32 子窗要物理 px（694 DPI 审计）。
+    const int topPx = insetToPx(insetTop_);
+    const int bottomPx = insetToPx(insetBottom_);
     video_hwnd_ = ::CreateWindowEx(
         // 665：WS_EX_TRANSPARENT = 点击穿透——鼠标事件穿过视频窗口
         // 落给下层 QML（单击收面板/双击播放/拖动手势全靠它；视频渲染
         // 不受影响，孔仅用于可见性）。
         WS_EX_TRANSPARENT, kVideoClass, L"",
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0,
-        insetTop_, rc.right - rc.left,
-        rc.bottom - rc.top - insetTop_ - insetBottom_, host_hwnd_, nullptr,
+        topPx, rc.right - rc.left,
+        rc.bottom - rc.top - topPx - bottomPx, host_hwnd_, nullptr,
         ::GetModuleHandle(nullptr), nullptr);
 
     if (video_hwnd_ != nullptr) {
@@ -296,10 +299,11 @@ void MpvWindow::syncGeometry() {
     if (video_hwnd_ == nullptr || host_hwnd_ == nullptr) return;
     RECT rc = {};
     ::GetClientRect(host_hwnd_, &rc);
+    // inset 是逻辑 vp，Win32 子窗要物理 px（694 DPI 审计）。
     const int x = 0;
-    const int y = insetTop_;
+    const int y = insetToPx(insetTop_);
     const int w = rc.right - rc.left;
-    const int h = rc.bottom - rc.top - insetTop_ - insetBottom_;
+    const int h = rc.bottom - rc.top - y - insetToPx(insetBottom_);
     if (w <= 0 || h <= 0) return;
     // 20ms 泵一次，几何没变就不要反复 SetWindowPos（会持续触发重绘）。
     if (x == lastX_ && y == lastY_ && w == lastW_ && h == lastH_) return;
@@ -309,6 +313,16 @@ void MpvWindow::syncGeometry() {
     lastH_ = h;
     ::SetWindowPos(video_hwnd_, nullptr, x, y, w, h,
                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW);
+}
+
+/// 694 DPI 审计：逻辑 vp → 物理 px。100% 缩放不换算侥幸正确，
+/// 125%/150% 会让视频避让量不足（顶/底栏压视频，Win11 真机回归）。
+int MpvWindow::insetToPx(int logical) const {
+    qreal dpr = 1.0;
+    if (host_ != nullptr && host_->screen() != nullptr) {
+        dpr = host_->screen()->devicePixelRatio();
+    }
+    return qRound(logical * dpr);
 }
 
 void MpvWindow::setOverlayInsets(int top, int bottom) {

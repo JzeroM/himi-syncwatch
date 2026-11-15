@@ -18,6 +18,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QSGRendererInterface>
 #include <QStringList>
 #include <QTextStream>
@@ -331,8 +332,18 @@ int main(int argc, char* argv[]) {
         RECT rc = {};
         ::GetClientRect(h, &rc);
         ::MapWindowPoints(h, nullptr, reinterpret_cast<POINT*>(&rc), 2);
-        const QRect g(rc.left, rc.top, rc.right - rc.left,
-                      rc.bottom - rc.top);
+        // 【694 DPI 审计】MapWindowPoints 产出**物理像素**，而
+        // QWindow::setGeometry 吃**逻辑像素**（Qt 6 高 DPI 缩放恒开）。
+        // 100% 缩放两者相等（Win10 侥幸正确），125%/150% 不换算 → 控件层
+        // 整体放大偏移、飘出宿主（Win11 真机回归「控件层和窗口都是乱的」）。
+        // 换算模式与 mpv_window.cpp `followParentOnce` 一致（物理 ÷ dpr）。
+        const qreal dpr = (host->screen() != nullptr)
+                ? host->screen()->devicePixelRatio()
+                : 1.0;
+        if (dpr <= 0) return;
+        const QRect g(qRound(rc.left / dpr), qRound(rc.top / dpr),
+                      qRound((rc.right - rc.left) / dpr),
+                      qRound((rc.bottom - rc.top) / dpr));
         if (overlay->geometry() != g) overlay->setGeometry(g);
     };
     syncOverlayGeometry();
@@ -341,9 +352,13 @@ int main(int argc, char* argv[]) {
     // alphaBuffer 未生效 = 透明合成必失败（控件不可见）→ 自动切
     // SAFE 深底模式（保证控件可见）+ 标题栏诊断码（截图即诊断）。
     const int alphaBits = overlay->format().alphaBufferSize();
+    const qreal overlayDpr = (host->screen() != nullptr)
+            ? host->screen()->devicePixelRatio()
+            : 0.0;
     qInfo().noquote() << "[overlay] 创建完成"
                       << "winId=" << Qt::hex << overlay->winId() << Qt::dec
                       << "geometry=" << overlay->geometry()
+                      << "dpr=" << overlayDpr
                       << "alphaBuffer=" << alphaBits
                       << "rhi=" << QSGRendererInterface::Direct3D11;
     if (alphaBits <= 0) {
