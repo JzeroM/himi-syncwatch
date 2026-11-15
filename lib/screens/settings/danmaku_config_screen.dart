@@ -10,10 +10,10 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 弹幕配置页：默认开关 / API 地址 / 行数 / 屏蔽 / 同屏上限。
+/// 弹幕配置页：默认开关 / 弹幕源 / 行数 / 屏蔽 / 样式。
 ///
 /// 速度 / 大小 / 透明度属播放页「显示调节」面板（播放中实时调），
-/// 不在此页。恢复默认会把 13 项弹幕设置（含显示三参数）全部归位。
+/// 不在此页。恢复默认会把本页所有弹幕设置归位。
 class DanmakuConfigScreen extends ConsumerStatefulWidget {
   const DanmakuConfigScreen({super.key});
 
@@ -470,7 +470,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     );
   }
 
-  /// 整数滑杆行（行数 / 数量上限共用）：标签 + 滑杆 + 数值。
+  /// 整数滑杆行（行数）：标签 + 滑杆 + 数值。
   Widget _rowsSlider({
     required String label,
     required String valueKey,

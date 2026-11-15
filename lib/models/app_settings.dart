@@ -432,8 +432,6 @@ class AppSettings {
   static const double danmakuOpacityMin = 0.1;
   static const double danmakuOpacityMax = 1.0;
 
-  /// 数量上限范围。
-
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
   /// 导致 mdk 找不到音频渲染器（iOS 无声根因），故仅 Android 放行

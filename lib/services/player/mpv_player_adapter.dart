@@ -1381,9 +1381,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         return true;
       }).toList(growable: false);
     }
-    // 数量上限：超量按时间等间隔采样（照抄 Flutter DanmakuTimeline._sampleEvenly：
-    // 排序后确定性采样、保留首条）。在窗口切片前对全量采样 = 与 Flutter 全局
-    // 采样语义一致，且样本稳定（弹幕不会中途互换进出，防闪烁）。
+    // 698：设置页已删除「限制同屏数量」→ 不再做等间隔采样。
     final posSec = (positionMs ?? _positionMs) / 1000.0;
     final speed = _nativeUiExtras.danmakuSpeed.clamp(0.25, 4.0);
     final travelSec = 8.0 / speed;
