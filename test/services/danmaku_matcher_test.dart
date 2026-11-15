@@ -141,4 +141,135 @@ void main() {
       expect(DanmakuMatcher.parseEpisodeNumber(''), isNull);
     });
   });
+
+  group('M1：parseSeasonEpisode（SxxExx / 1x02）', () {
+    test('SxxExx 解析季+集', () {
+      expect(DanmakuMatcher.parseSeasonEpisode('S01E02'),
+          (season: 1, episode: 2));
+      expect(DanmakuMatcher.parseSeasonEpisode('[Subs] Title S01E05 1080p'),
+          (season: 1, episode: 5));
+      expect(DanmakuMatcher.parseSeasonEpisode('s2 e10'),
+          (season: 2, episode: 10));
+    });
+
+    test('1x02 解析季+集', () {
+      expect(DanmakuMatcher.parseSeasonEpisode('Title.1x02.mkv'),
+          (season: 1, episode: 2));
+      expect(DanmakuMatcher.parseSeasonEpisode('3X25 结局'),
+          (season: 3, episode: 25));
+    });
+
+    test('词边界防误判：Files01e12 不命中', () {
+      expect(DanmakuMatcher.parseSeasonEpisode('Files01e12'), isNull);
+    });
+
+    test('无显式形态返回 null', () {
+      expect(DanmakuMatcher.parseSeasonEpisode('序章'), isNull);
+      expect(DanmakuMatcher.parseSeasonEpisode(''), isNull);
+    });
+  });
+
+  group('M1：parseEpisodeNumber 全变体', () {
+    test('SxxExx / 1x02 提取集号', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('[ANi] 葬送的芙莉莲 S01E05'), 5);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title.1x02'), 2);
+    });
+
+    test('Episode 全词与 EP/E 等价', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('Episode 12'), 12);
+      expect(DanmakuMatcher.parseEpisodeNumber('Episode12 结尾'), 12);
+    });
+
+    test('「 - NN - 」/「 - NN」（AniList 式命名）', () {
+      expect(
+        DanmakuMatcher.parseEpisodeNumber('Title - 01 - 魔法使いの弟子'),
+        1,
+      );
+      expect(DanmakuMatcher.parseEpisodeNumber('Title - 12'), 12);
+    });
+
+    test('「[NN]」/「[NNv2]」字幕组括号集数', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('Title [01v2]'), 1);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title [08]'), 8);
+    });
+
+    test('中缀裸数字（排除年份与分辨率）', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('Title 03 1080p'), 3);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title 2023 05'), 5);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title 720p'), isNull);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title 2023'), isNull);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title 1080i'), isNull);
+    });
+
+    test('年份不冒充集数（dash/bracket/开头）', () {
+      expect(DanmakuMatcher.parseEpisodeNumber('Title - 2023'), isNull);
+      expect(DanmakuMatcher.parseEpisodeNumber('Title [2023]'), isNull);
+      expect(DanmakuMatcher.parseEpisodeNumber('1984 回忆'), isNull);
+    });
+  });
+
+  group('M1：cleanTitle 集号残段清洗', () {
+    test('「 - NN - xxx」整段后缀丢弃', () {
+      expect(
+        DanmakuMatcher.cleanTitle('葬送的芙莉莲 - 01 - 魔法使いの弟子 1080p'),
+        '葬送的芙莉莲',
+      );
+      expect(DanmakuMatcher.cleanTitle('Title - 12'), 'Title');
+    });
+
+    test('1x02 / Episode N / 第N话 残段', () {
+      expect(DanmakuMatcher.cleanTitle('Title.1x02.2160p'), 'Title');
+      expect(DanmakuMatcher.cleanTitle('Title Episode 3'), 'Title');
+      expect(DanmakuMatcher.cleanTitle('某剧 第12话'), '某剧');
+    });
+
+    test('括号集数与 (TV)/(OVA) 标签', () {
+      expect(DanmakuMatcher.cleanTitle('Title [01v2]'), 'Title');
+      expect(DanmakuMatcher.cleanTitle('Title (TV)'), 'Title');
+      expect(DanmakuMatcher.cleanTitle('Title [OVA]'), 'Title');
+    });
+
+    test('年份括号照旧剥离、片名数字不误删', () {
+      expect(DanmakuMatcher.cleanTitle('Title [2023] 1080p'), 'Title');
+      expect(DanmakuMatcher.cleanTitle('命运石之门 0'), '命运石之门 0');
+    });
+  });
+
+  group('M1：fromEpisode 文件名兜底解析', () {
+    test('元数据缺季/集时从文件名解析 SxxExx', () {
+      expect(
+        DanmakuMatcher.fromEpisode(
+          name: '[ANi] Title - S01E05 1080p',
+          seriesName: 'Title',
+        ),
+        'Title.S01E05',
+      );
+      expect(
+        DanmakuMatcher.fromEpisode(
+          name: 'Title.1x02.mkv',
+          seriesName: 'Title',
+        ),
+        'Title.S01E02',
+      );
+    });
+
+    test('元数据优先，文件名不覆盖', () {
+      expect(
+        DanmakuMatcher.fromEpisode(
+          name: 'S02E09 xxx',
+          seriesName: '剧',
+          season: 1,
+          number: 3,
+        ),
+        '剧.S01E03',
+      );
+    });
+
+    test('文件名也无集号时仍回退 name', () {
+      expect(
+        DanmakuMatcher.fromEpisode(name: '千与千寻', seriesName: '宫崎骏'),
+        '千与千寻',
+      );
+    });
+  });
 }
