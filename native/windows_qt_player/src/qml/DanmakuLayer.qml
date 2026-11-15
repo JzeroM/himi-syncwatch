@@ -134,7 +134,14 @@ Item {
     /// 弹幕池上限（同屏最多渲染多少条）。
     readonly property int poolSize: 150
 
-    readonly property real fontSize: baseFontSize * fontSizeScale
+    /// 实际字号（**整数**）。
+    ///
+    /// 【必须取整】QML 的 `font.pixelSize` 是 int 属性，写 12.5 会报
+    /// `Invalid property assignment: int expected` —— 在 Repeater delegate
+    /// 里不会崩整个 Overlay，而是**该 delegate 创建失败 → 文字不出现**。
+    /// 真机症状：面板显示「总 3353 · 在屏 20」，画面里一条弹幕都没有
+    ///（默认 fontSizeScale=0.5 → 25×0.5=12.5）。见 AGENTS.md 同款教训。
+    readonly property int fontSize: Math.round(baseFontSize * fontSizeScale)
     readonly property real lineHeight: fontSize + rowGap
 
     /// 自动行数（按屏高，扣上下边距）。

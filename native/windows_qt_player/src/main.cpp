@@ -763,9 +763,12 @@ int main(int argc, char* argv[]) {
         QString text = mpv.debugText();
         // P4：弹幕实时统计（Dart 侧算好后下发；0 表示当前无弹幕）
         if (state.danmakuTotal() > 0) {
-            text += QStringLiteral("\n弹幕  总 %1 · 在屏 %2")
+            // 699：附上**Qt 侧弹幕时钟**的实际值——区分「位置错」与
+            // 「渲染错」的唯一手段（Dart 侧 position 与 Qt 侧时钟是两套）。
+            text += QStringLiteral("\n弹幕  总 %1 · 在屏 %2 · 时钟 %3ms")
                         .arg(state.danmakuTotal())
-                        .arg(state.danmakuOnscreen());
+                        .arg(state.danmakuOnscreen())
+                        .arg(state.danmakuPositionMs());
         }
         state.setDebugText(text);
     });

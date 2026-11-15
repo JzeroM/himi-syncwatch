@@ -194,6 +194,19 @@ ANativeWindow Surface，Vulkan 没有帧导入互操作 → 解码成功但出�
 启动即回退到 Flutter 内置窗口。CI 的「QML 冒烟自检」能抓到，但装机前
 就该避免：需要小数时用整数近似。
 
+**更隐蔽的变体（699 真机）**：同样的错误写在 `Repeater` 的 delegate 里
+**不会崩整个 Overlay**，只会让**该 delegate 创建失败**：
+
+    面板显示「弹幕 总 3353 · 在屏 20」，画面里一条弹幕都没有
+
+根因是 `fontSize = 25 × danmakuFontSize(0.5) = 12.5`。排查线索：同文件
+里其他字号（`Theme.captionSize`=12 等）全是整数，**只有弹幕那处是算出来
+的小数**。所以凡是「算出来的字号」，一律
+
+    readonly property int fontSize: Math.round(base * scale)
+
+声明类型也要写 `int`（写 `real` 会让 QML 认为可能收到小数）。
+
 ### 鸿蒙本地构建所需工具链
 
 `scripts/build_ohos_local.sh` 会自动探测，但需知道这些位置：

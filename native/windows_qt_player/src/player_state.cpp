@@ -40,7 +40,11 @@ QString readString(const QJsonObject& json, const char* key,
 
 }  // namespace
 
-PlayerState::PlayerState(QObject* parent) : QObject(parent) {}
+PlayerState::PlayerState(QObject* parent) : QObject(parent) {
+    // 【必须启动】未 start 的 QElapsedTimer 调 nsecsElapsed() 是未定义行为
+    //（Qt 文档：timer 无效时返回值无意义）。弹幕时钟全程依赖它。
+    dmAnchorTimer_.start();
+}
 
 void PlayerState::setDebugText(const QString& text) {
     // 内容相同不发信号——否则 2s 定时器每次都触发 QML 重绘
@@ -357,6 +361,8 @@ qint64 PlayerState::danmakuPositionMs() const
 {
     if (dmPaused_ || dmEffRate_ <= 0.0) return dmAnchorPosMs_;
     if (dmDurationMs_ <= 0) return dmAnchorPosMs_;
+    // 防御：计时器未启动时 nsecsElapsed() 无意义，直接返回锚点。
+    if (!dmAnchorTimer_.isValid()) return dmAnchorPosMs_;
     const double elapsedMs =
         static_cast<double>(dmAnchorTimer_.nsecsElapsed()) / 1e6;
     qint64 projected = dmAnchorPosMs_ +
@@ -367,7 +373,10 @@ qint64 PlayerState::danmakuPositionMs() const
 
 void PlayerState::danmakuClockHardResync()
 {
-    const bool paused = paused_ || buffering_ || speed_ <= 0.0;
+    // 【buffering 不算暂停】缓冲时播放位置仍在推进（mpv 只是解码等待），
+    // 把 buffering 当暂停会让弹幕时钟永久冻在锚点 → 时间窗全被判为
+    // 「超前过多」而丢弃 → 一条都画不出来（真机：面板有在屏数、画面空白）。
+    const bool paused = paused_ || speed_ <= 0.0;
     const double rate = speed_ > 0.0 ? speed_ : 1.0;
     dmAnchorPosMs_ = positionMs_ < 0 ? 0 : positionMs_;
     dmAnchorTimer_.restart();
@@ -381,7 +390,8 @@ void PlayerState::danmakuClockHardResync()
 
 void PlayerState::danmakuClockSync()
 {
-    const bool paused = paused_ || buffering_ || speed_ <= 0.0;
+    // 同 hardResync：buffering 不冻结弹幕时钟。
+    const bool paused = paused_ || speed_ <= 0.0;
     const double rate = speed_ > 0.0 ? speed_ : 1.0;
     if (durationMs_ > 0) dmDurationMs_ = durationMs_;
 
