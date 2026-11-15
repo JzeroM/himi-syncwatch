@@ -19,16 +19,23 @@ dependencies:
   # onMediaStatus 在 player 销毁后回调）；iOS scene disconnect 释放纹理播放器防崩溃
   fvp:
     path: third_party/fvp
-  # 播放器第二引擎（media_kit/libmpv，仅手机/桌面，TV 模式不注册）
-  # 与 NipaPlay-Reload 对齐：使用其 media-kit fork 与 libs 1.0.8。
-  # 固定 NipaPlay 提交 9a3f5c1710ed21eb12e29d4bd80a6c50d57d09f8；
-  # media-kit submodule 7a2135661ff37a717f11d6012fefa56cae27ef36。
+  # media_kit = himi_mpv（MPV 引擎）的 libmpv 驱动 + 纹理通道底层库
+  # （himi_mpv_android/windows 直接使用其 Player / VideoController）。
+  # **不是独立引擎**——media_kit 引擎层（NipaMediaKitAdapter 等）已随
+  # 694 引擎收敛移除，各平台仅 MDK / Erika / MPV。
+  # 与 NipaPlay-Reload 对齐（见 third_party/nipaplay/NOTICE.md）。
   media_kit:
     path: third_party/nipaplay/media_kit
   media_kit_video:
     path: third_party/nipaplay/media_kit_video
-  media_kit_libs_video:
-    path: third_party/nipaplay/media-kit-upstream/libs/universal/media_kit_libs_video
+  # libmpv 原生库供给包（仅安卓/Windows：iOS 走 Erika 不消费 libmpv）：
+  # - 安卓 himi_mpv 的 System.loadLibrary("mpv") 消费其 jar 内 libmpv.so
+  # - Windows Qt 播放窗 / himi_mpv_windows 的 libmpv-2.dll 由其拷入
+  # CI 经 MEDIA_KIT_ANDROID_LIBMPV_DIR / MEDIA_KIT_LIBMPV_DIR 换自建完整版。
+  media_kit_libs_android_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/android/media_kit_libs_android_video
+  media_kit_libs_windows_video:
+    path: third_party/nipaplay/media-kit-upstream/libs/windows/media_kit_libs_windows_video
   # 播放器第三引擎（Erika，Rust 内核；原生位图字幕/PGS + HDR/EDR）
   # 仅非 TV 平台注册；Android TV 不加。
   erika_flutter: ^0.2.1
@@ -127,16 +134,13 @@ dependency_overrides:
   # 升级需按此重新同步并去掉 linux/。
   erika_flutter:
     path: third_party/erika_flutter
-  # NipaPlay media-kit fork 的平台库固定为同一提交，避免 pub 解析到旧版
-  # media_kit_libs_windows_video 1.0.11。
+  # NipaPlay media-kit fork 固定为 vendored 提交，强制传递依赖解析到本地。
   media_kit:
     path: third_party/nipaplay/media_kit
   media_kit_video:
     path: third_party/nipaplay/media_kit_video
   media_kit_libs_android_video:
     path: third_party/nipaplay/media-kit-upstream/libs/android/media_kit_libs_android_video
-  media_kit_libs_ios_video:
-    path: third_party/nipaplay/media-kit-upstream/libs/ios/media_kit_libs_ios_video
   media_kit_libs_windows_video:
     path: third_party/nipaplay/media-kit-upstream/libs/windows/media_kit_libs_windows_video
 

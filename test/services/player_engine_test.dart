@@ -27,11 +27,8 @@ void main() {
         ],
       );
       // mediaKit（libmpv 纹理路径）不再暴露
-      expect(
-        PlayerEngineFactory.supportedEngines(tvMode: true)
-            .contains(PlayerEngine.mediaKit),
-        isFalse,
-      );
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
     });
 
     test('681：Windows 仅 MPV', () {
@@ -40,10 +37,8 @@ void main() {
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[PlayerEngine.mpv],
       );
-      expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
-        isFalse,
-      );
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
     });
 
     test('iOS：仅 Erika', () {
@@ -122,7 +117,8 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       // 手机：仅 MPV
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
       // TV：三引擎
@@ -139,7 +135,8 @@ void main() {
       // Windows：仅 MPV
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isFalse);
     });

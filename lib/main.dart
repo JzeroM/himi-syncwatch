@@ -266,7 +266,7 @@ Future<void> _bootstrap() async {
     LogService().log('Diag', 'EGL_SDR_DEPTH=8: ${ok ? "已设置" : "设置失败"}');
   }
   if (_isOhos) {
-    LogService().log('Diag', 'HarmonyOS: 仅 MPV 内核，跳过 fvp/media_kit/mdk 初始化');
+    LogService().log('Diag', 'HarmonyOS: 仅 MPV 内核，跳过 fvp/mdk 初始化');
   } else {
     final fvpOptions = buildFvpOptions(
       xa2Persistent: Platform.isWindows,
@@ -275,9 +275,11 @@ Future<void> _bootstrap() async {
       avsyncAudioAdaptive: settingsNotifier.snapshot.avsyncAudioAdaptive,
     );
     fvp.registerWith(options: fvpOptions);
-    // media_kit 全局初始化（第二引擎；TV 模式不注册，但 ensureInitialized
-    // 无副作用且需在首个 MediaKitPlayerAdapter 创建前调用）。
-    MediaKit.ensureInitialized();
+    // media_kit 底层库初始化（himi_mpv 的 Player / VideoController 依赖）。
+    // iOS 走 Erika 不建 media_kit Player，libmpv 也未随包，不能初始化。
+    if (Platform.isAndroid || Platform.isWindows) {
+      MediaKit.ensureInitialized();
+    }
     // 注入取证行：真机上无法从其他途径证明 global 选项已生效
     LogService().log('Diag', 'fvp options: $fvpOptions');
 

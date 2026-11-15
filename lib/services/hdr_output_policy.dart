@@ -11,10 +11,9 @@ import 'player/player_adapter.dart';
 /// 的缺口——此前除"SDR 屏强制 tone map"外一律不调 `set`，导致 HDR10
 /// 片源即便在 HDR 屏上也只是 mdk 默认行为，拿不到稳定的真 HDR 输出。
 ///
-/// 生效范围：仅 Android。非 DV HDR 在 iOS 走 Erika、Windows 走 media_kit
-/// （见 `PlayerEngineFactory.resolveEngineForContent`），只有 Android 在
-/// Vulkan/GLES3 双无时才把 HDR 交给 MDK，故此处只处理 Android，其余
-/// 平台返回 null（不设置，保持既有行为）。
+/// 生效范围：仅 Android。非 DV HDR 在 iOS 走 Erika、Windows 走 MPV
+/// （Qt 直出），只有 Android 在 Vulkan/GLES3 双无时才把 HDR 交给 MDK，
+/// 故此处只处理 Android，其余平台返回 null（不设置，保持既有行为）。
 ///
 /// 该策略**默认生效**（不受实验开关 `hdrGlWorkaround` 门控）：后者只管
 /// HDR 直写降级 GL、buffer 夹紧与"非 HDR 内容的 SDR 强制"，HDR 输出色彩

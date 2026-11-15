@@ -62,19 +62,9 @@ class AppSettings {
   /// 用户是否手动设置过解码方式（TV 模式默认硬解不覆盖手动选择）。
   final bool decodeModeUserSet;
 
-  /// 播放内核 id：'' = 平台默认；'mdk' / 'media_kit' / 'erika'。
+  /// 播放内核 id：'' = 平台默认；'mdk' / 'erika' / 'mpv'。
   final String playerKernel;
   final bool showSyncDebug;
-
-  // ── media_kit 引擎专属设置（mpv 属性，通过 NativePlayer.setProperty 生效）──
-  /// hwdec：'auto-safe'（默认）/ 'no'（软解）/ 'auto'（含不安全硬件路径）。
-  final String mkHwdec;
-
-  /// tone-mapping：'auto'（默认）/ 'no' / 'bt.2446a' / 'spline' 等。
-  final String mkToneMapping;
-
-  /// cache-size：MB，0 = 关闭缓存。
-  final double mkCacheSize;
 
   // ── MDK 引擎专属（网络流缓冲，下次起播生效）──
   /// setBufferRange 的 min（ms，默认 3000）：网络流抗抖动垫。
@@ -455,9 +445,6 @@ class AppSettings {
     this.decodeMode = 'hw',
     this.decodeModeUserSet = false,
     this.playerKernel = '',
-    this.mkHwdec = 'auto-safe',
-    this.mkToneMapping = 'auto',
-    this.mkCacheSize = 150,
     this.mdkBufferMinMs = mdkBufferMinMsDefault,
     this.mdkBufferMaxMs = mdkBufferMaxMsDefault,
     this.mdkDemuxCacheRanges = demuxCacheRangesDefault,
@@ -589,9 +576,6 @@ class AppSettings {
     String? decodeMode,
     bool? decodeModeUserSet,
     String? playerKernel,
-    String? mkHwdec,
-    String? mkToneMapping,
-    double? mkCacheSize,
     int? mdkBufferMinMs,
     int? mdkBufferMaxMs,
     int? mdkDemuxCacheRanges,
@@ -668,9 +652,6 @@ class AppSettings {
       decodeMode: decodeMode ?? this.decodeMode,
       decodeModeUserSet: decodeModeUserSet ?? this.decodeModeUserSet,
       playerKernel: playerKernel ?? this.playerKernel,
-      mkHwdec: mkHwdec ?? this.mkHwdec,
-      mkToneMapping: mkToneMapping ?? this.mkToneMapping,
-      mkCacheSize: mkCacheSize ?? this.mkCacheSize,
       mdkBufferMinMs: mdkBufferMinMs ?? this.mdkBufferMinMs,
       mdkBufferMaxMs: mdkBufferMaxMs ?? this.mdkBufferMaxMs,
       mdkDemuxCacheRanges: mdkDemuxCacheRanges ?? this.mdkDemuxCacheRanges,
@@ -777,9 +758,6 @@ class AppSettings {
         'decodeMode': decodeMode,
         'decodeModeUserSet': decodeModeUserSet,
         'playerKernel': playerKernel,
-        'mkHwdec': mkHwdec,
-        'mkToneMapping': mkToneMapping,
-        'mkCacheSize': mkCacheSize,
         'mdkBufferMinMs': mdkBufferMinMs,
         'mdkBufferMaxMs': mdkBufferMaxMs,
         'mdkDemuxCacheRanges': mdkDemuxCacheRanges,
@@ -962,18 +940,11 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       decodeModeUserSet: decodeModeUserSet,
+      // 'media_kit' 为已移除引擎（694 引擎收敛死码清理），旧存档容错。
       playerKernel:
-          const ['mdk', 'media_kit', 'erika'].contains(json['playerKernel'])
+          const ['mdk', 'erika', 'mpv'].contains(json['playerKernel'])
               ? json['playerKernel'] as String
               : '',
-      mkHwdec: const ['auto-safe', 'auto', 'no'].contains(json['mkHwdec'])
-          ? json['mkHwdec'] as String
-          : 'auto-safe',
-      mkToneMapping: const ['auto', 'no', 'bt.2446a', 'spline']
-              .contains(json['mkToneMapping'])
-          ? json['mkToneMapping'] as String
-          : 'auto',
-      mkCacheSize: _clampDouble(json['mkCacheSize'], 150, 0, 500),
       mdkBufferMinMs: bufferMin,
       mdkBufferMaxMs: bufferMax,
       mdkDemuxCacheRanges: _clampInt(
@@ -1203,9 +1174,10 @@ class AppSettings {
   /// 697：`auto` 档已移除（运行时等价 `gpu-next`），只有 `gpu` / `gpu-next`
   /// 两种输入；未知值一律按 `gpu-next` 处理。
   ///
-  /// 纹理路径**恒为 `gpu`**（不受此设置影响）：media_kit 的 Android
-  /// VideoController 走 TextureRegistry Surface + wid + vo=gpu，传别的值
-  /// 会让 `VideoOutput.Resize` 事件永不触发 → 纹理 id 恒 null → 超时。
+  /// 纹理路径**恒为 `gpu`**（不受此设置影响）：MPV 引擎 texture 档走
+  /// media_kit 的 Android VideoController（TextureRegistry Surface + wid +
+  /// vo=gpu，非 libmpv 渲染 API），传别的值会让 `VideoOutput.Resize` 事件
+  /// 永不触发 → 纹理 id 恒 null → 超时。
   static String resolveMpvVo({
     required String renderer,
     required bool nativeSurface,

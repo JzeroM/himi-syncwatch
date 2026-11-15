@@ -2,14 +2,11 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
-import 'package:flutter/painting.dart' show BoxFit;
 
 import 'package:erika_flutter/erika_flutter.dart' show ErikaPlayer;
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:media_kit_video/media_kit_video.dart' show VideoController;
 
 import '../services/player/erika_player_adapter.dart';
-import '../services/player/media_kit_player_adapter.dart';
 import '../services/player/player_adapter.dart' as himi;
 import 'abstract_player.dart';
 import 'himi_player_core_adapter.dart';
@@ -23,16 +20,13 @@ class PlayerCoreBridge
         himi.PlayerAdapter,
         himi.AsyncDisposablePlayer,
         himi.ErikaPlayerProvider,
-        himi.MediaKitPlayerProvider,
-        himi.MediaKitSettingsApplier,
-        himi.MediaKitVideoFitApplier,
         himi.MediaLoadWaitPlayer,
         himi.ErikaDanmakuPlayer {
   PlayerCoreBridge(this.core);
 
   final AbstractPlayer core;
 
-  /// 迁移期访问底层 HIMI adapter（Erika 原生 view / media_kit controller）。
+  /// 迁移期访问底层 HIMI adapter（Erika 原生 view）。
   himi.PlayerAdapter? get wrappedAdapter => core is HimiPlayerCoreAdapter
       ? (core as HimiPlayerCoreAdapter).delegate
       : null;
@@ -57,19 +51,6 @@ class PlayerCoreBridge
       await (core as PlayerAsyncSeek).seekAndWait(position: positionMs);
     } else {
       core.seek(position: positionMs);
-    }
-  }
-
-  @override
-  void applyVideoFit(
-    BoxFit fit, {
-    required Size container,
-    required Size video,
-  }) {
-    final core = this.core;
-    if (core is VideoFitPlayer) {
-      (core as VideoFitPlayer)
-          .applyVideoFit(fit, container: container, video: video);
     }
   }
 
@@ -286,39 +267,6 @@ class PlayerCoreBridge
       return value is ErikaPlayer ? value : null;
     }
     return wrappedAs<ErikaPlayerAdapter>()?.erikaPlayer;
-  }
-
-  @override
-  VideoController? get mediaKitController {
-    if (core is MediaKitViewPlayer) {
-      final value = (core as MediaKitViewPlayer).mediaKitController;
-      return value is VideoController ? value : null;
-    }
-    return wrappedAs<MediaKitPlayerAdapter>()?.videoController;
-  }
-
-  @override
-  Future<void> applyMediaKitSettings({
-    String? hwdec,
-    String? toneMapping,
-    double? cacheSizeMb,
-  }) async {
-    if (core is MediaKitSettingsPlayer) {
-      (core as MediaKitSettingsPlayer).applyMediaKitSettings(
-        hwdec: hwdec,
-        toneMapping: toneMapping,
-        cacheSizeMb: cacheSizeMb,
-      );
-      return;
-    }
-    final wrapped = wrappedAs<MediaKitPlayerAdapter>();
-    if (wrapped != null) {
-      wrapped.applySettings(
-        hwdec: hwdec ?? 'auto-safe',
-        toneMapping: toneMapping ?? 'auto',
-        cacheSizeMb: cacheSizeMb ?? 150,
-      );
-    }
   }
 
   @override

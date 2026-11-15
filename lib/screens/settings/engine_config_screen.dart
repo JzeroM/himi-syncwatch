@@ -12,12 +12,12 @@ import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/settings/device_capability_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 
-/// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / media_kit / Erika），
+/// 「播放器配置」：顶部 TabBar 按引擎分页（MDK / Erika / MPV），
 /// 每个 tab 是**该引擎专属设置**。
 ///
 /// 内核选择在播放器顶栏切换；本页按当前平台可用内核展示各自设置。
-/// tab 列表 = 当前平台可用内核（Android/Windows: MDK/MediaKit/Erika；
-/// iOS: Erika）；MDK / Erika tab 顶部展示设备能力评估卡片。
+/// tab 列表 = 当前平台可用内核（Android TV: MDK/Erika/MPV；
+/// 其余平台单引擎无切换）；MDK / Erika tab 顶部展示设备能力评估卡片。
 class EngineConfigScreen extends ConsumerStatefulWidget {
   const EngineConfigScreen({super.key});
 
@@ -85,14 +85,12 @@ class _EngineConfigScreenState extends ConsumerState<EngineConfigScreen>
 
   static IconData _engineIcon(PlayerEngine engine) => switch (engine) {
         PlayerEngine.mdk => Icons.memory,
-        PlayerEngine.mediaKit => Icons.play_circle_outline,
         PlayerEngine.erika => Icons.auto_awesome,
         PlayerEngine.mpv => Icons.movie_filter_outlined,
       };
 
   static String _engineBoardSubtitle(PlayerEngine engine) => switch (engine) {
         PlayerEngine.mdk => 'MDK / FVP，兼容性与 HDR 直通',
-        PlayerEngine.mediaKit => 'libmpv，格式覆盖广，适合桌面',
         PlayerEngine.erika => 'Erika，Rust 内核，原生位图字幕',
         PlayerEngine.mpv => 'MPV / libmpv，Surface/纹理可配',
       };
@@ -210,7 +208,6 @@ List<Widget> engineSettingChildren(
   final notifier = ref.read(settingsProvider.notifier);
   return switch (engine) {
     PlayerEngine.mdk => _mdkChildren(context, settings, notifier),
-    PlayerEngine.mediaKit => _mediaKitChildren(context, settings, notifier),
     PlayerEngine.erika => _erikaChildren(context, settings, notifier),
     PlayerEngine.mpv => _mpvChildren(context, settings, notifier),
   };
@@ -406,72 +403,6 @@ List<Widget> _mdkChildren(
       ),
       const Divider(height: 1),
     ],
-  ];
-  }
-
-  // ── media_kit ─────────────────────────────────────────────
-List<Widget> _mediaKitChildren(
-  BuildContext context,
-  AppSettings settings,
-  SettingsNotifier notifier,
-) {
-  const hwdecLabels = {
-    'auto-safe': '安全硬解',
-    'auto': '全部硬解',
-    'no': '软解',
-  };
-  const toneMappingLabels = {
-    'auto': '自动',
-    'no': '关闭',
-    'bt.2446a': 'BT.2446A',
-    'spline': 'Spline',
-  };
-  return [
-    settingOptionTile(
-      context: context,
-      tvMode: settings.tvMode,
-      title: '硬件解码',
-      subtitle: 'libmpv vo-gpu 硬解路径（Dolby Vision P5 不支持）',
-      labels: hwdecLabels,
-      value: settings.mkHwdec,
-      onSelected: (v) => notifier.update(mkHwdec: v),
-    ),
-    const Divider(height: 1),
-    settingOptionTile(
-      context: context,
-      tvMode: settings.tvMode,
-      title: '色调映射',
-      subtitle: 'HDR → SDR 色调映射算法',
-      labels: toneMappingLabels,
-      value: settings.mkToneMapping,
-      onSelected: (v) => notifier.update(mkToneMapping: v),
-    ),
-    const Divider(height: 1),
-    settingsTvSliderRow(
-      context: context,
-      tvMode: settings.tvMode,
-      title: '缓存大小',
-      subtitle: '${settings.mkCacheSize.toInt()} MB（0 = 关闭）',
-      sliderKey: 'mkCacheSizeSlider',
-      value: settings.mkCacheSize,
-      min: 0,
-      max: 500,
-      divisions: 10,
-      label: '${settings.mkCacheSize.toInt()} MB',
-      step: 50,
-      onChanged: (v) => notifier.update(mkCacheSize: v),
-    ),
-    const Divider(height: 1),
-    const Padding(
-      padding: EdgeInsets.all(16),
-      child: Text(
-        'media_kit（libmpv）：Android 等平台的 Flutter 纹理路径。'
-        '646.1 起 Windows 已移除该选项（Windows 纹理路径会崩在 '
-        'flutter_windows.dll 0x1551f），Windows 请用 MPV（原生 HDR 直出）'
-        '或 MDK。',
-        style: TextStyle(fontSize: 12, color: Colors.white54),
-      ),
-    ),
   ];
   }
 

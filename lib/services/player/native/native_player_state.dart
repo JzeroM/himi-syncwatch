@@ -201,7 +201,7 @@ class NativeEngineOption {
     this.description = '',
   });
 
-  /// PlayerEngine.id：mdk / media_kit / erika / mpv。
+  /// PlayerEngine.id：mdk / erika / mpv。
   final String id;
   final String label;
   final String description;

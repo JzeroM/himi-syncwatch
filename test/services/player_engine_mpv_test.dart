@@ -46,7 +46,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     final winEngines = PlayerEngineFactory.supportedEngines();
     expect(winEngines, <PlayerEngine>[PlayerEngine.mpv]);
-    expect(winEngines, isNot(contains(PlayerEngine.mediaKit)));
+    expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')));
     expect(winEngines, isNot(contains(PlayerEngine.mdk)));
     expect(winEngines, isNot(contains(PlayerEngine.erika)));
     expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);

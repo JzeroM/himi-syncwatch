@@ -254,8 +254,8 @@ class VideoColorInfo {
 
   /// 从 mpv `video-params` JSON 字符串解析；失败返回 null。
   ///
-  /// 【保留原因】Windows 走 media_kit，NODE 可读；且 `_parseVideoParams`
-  /// 的事件通道本来就是 JSON。标量路径是鸿蒙/安卓的主路径。
+  /// 【保留原因】`_parseVideoParams` 的事件通道本来就是 JSON。
+  /// 标量路径是鸿蒙/安卓的主路径。
   static VideoColorInfo? tryParse(Object? raw) {
     if (raw is! String || raw.isEmpty) return null;
     try {

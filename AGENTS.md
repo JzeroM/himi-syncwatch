@@ -243,6 +243,35 @@ Binding loop**，它不是噪音。
 
 > 排查口诀：**时钟对 + 在屏 0** ⇒ 数据窗口没跟着位置重算，不是渲染问题。
 
+### media_kit 不是引擎（694 引擎收敛，别再混）
+
+引擎收敛表（`PlayerEngineFactory.supportedEngines`，681 起）：
+
+| 平台 | 引擎 | 播放器内切换 |
+|---|---|---|
+| Android 手机 | 仅 MPV | ✗ |
+| Android TV | MDK / Erika / MPV | ✓ 底栏 |
+| HarmonyOS | 仅 MPV | ✗ |
+| Windows | 仅 MPV（Qt 独立播放窗） | ✗ |
+| iOS / iPadOS | 仅 Erika | ✗ |
+
+**`media_kit` / `media_kit_video` 包 ≠ media_kit 引擎**。media_kit 引擎层
+（`NipaMediaKitAdapter` / `MediaKitPlayerAdapter` / `PlayerEngine.mediaKit`）
+已随 694 死码清理整体移除——它不属于表中任何平台。但这两个包**活得很好**：
+它们是 **himi_mpv（MPV 引擎）的 libmpv 驱动 + 纹理通道底层库**，
+`himi_mpv_android` / `himi_mpv_windows` 直接使用其 `Player` /
+`VideoController`（"libmpv 由 media_kit 驱动"）。同理
+`media_kit_libs_android_video` / `media_kit_libs_windows_video` 是
+**libmpv 原生库供给包**（安卓 `System.loadLibrary("mpv")` 的 jar、
+Windows `libmpv-2.dll`），CI 经 `MEDIA_KIT_ANDROID_LIBMPV_DIR` /
+`MEDIA_KIT_LIBMPV_DIR` 换自建完整版。**删依赖前先问：谁在消费 libmpv？**
+
+连带事实：MPV 引擎 **texture 档路径恒为 `vo=gpu`**（`resolveMpvVo`）——
+media_kit 的 Android `VideoController` 走 TextureRegistry Surface + wid +
+vo=gpu，传别的值 `VideoOutput.Resize` 永不触发 → 纹理 id 恒 null。
+iOS 走 Erika 不消费 libmpv，**不带** `media_kit_libs_ios_video`，
+`MediaKit.ensureInitialized()` 只在安卓/Windows 调。
+
 ### 鸿蒙本地构建所需工具链
 
 `scripts/build_ohos_local.sh` 会自动探测，但需知道这些位置：

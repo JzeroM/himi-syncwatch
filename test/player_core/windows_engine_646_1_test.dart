@@ -34,10 +34,8 @@ void main() {
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[PlayerEngine.mpv],
       );
-      expect(
-        PlayerEngineFactory.supportedEngines().contains(PlayerEngine.mediaKit),
-        isFalse,
-      );
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
       expect(PlayerEngineFactory.isSingleEngine(), isTrue);
     });
 
@@ -47,7 +45,8 @@ void main() {
 
       expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mpv), isTrue);
-      expect(PlayerEngineFactory.isSupported(PlayerEngine.mediaKit), isFalse);
+      expect(PlayerEngine.values.map((e) => e.id), isNot(contains('media_kit')),
+          reason: 'media_kit 引擎已整体移除');
     });
 
     test('旧存档 media_kit 在 Windows 回退到 MPV', () {

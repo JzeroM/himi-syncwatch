@@ -1,19 +1,15 @@
 import 'package:erika_flutter/erika_flutter.dart' show ErikaPlayer;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart' show BoxFit;
-import 'package:media_kit_video/media_kit_video.dart' show VideoController;
 import 'dart:ui' show Size;
 
 /// 播放器引擎标识。
 ///
-/// 平台分布（见 player_engine.dart）：
-/// - mdk：Android / Windows / Web 的备选内核（Windows 长期验证最稳）
-/// - media_kit：**Windows 默认**（641 起，走 Flutter 纹理）
-/// - erika：iOS 默认 + 手机真 HDR10 + 原生位图字幕/PGS
-/// - mpv：Android / 鸿蒙默认（原生 Surface + 原生播放器 UI）
+/// 平台分布（见 player_engine.dart 的引擎收敛表）：
+/// - mdk：Android TV 备选内核
+/// - erika：iOS 默认 + Android TV 备选（Rust 内核，原生位图字幕/PGS）
+/// - mpv：Android 手机 / 鸿蒙 / Windows（原生 Surface + 原生播放器 UI / Qt 窗）
 enum PlayerEngine {
   mdk('mdk', 'MDK'),
-  mediaKit('media_kit', 'media_kit'),
   erika('erika', 'Erika'),
   mpv('mpv', 'MPV');
 
@@ -25,7 +21,6 @@ enum PlayerEngine {
   /// 播放器顶栏胶囊用的短名。
   String get shortLabel => switch (this) {
         PlayerEngine.mdk => 'MDK',
-        PlayerEngine.mediaKit => 'libmpv',
         PlayerEngine.erika => 'Erika',
         PlayerEngine.mpv => 'MPV',
       };
@@ -149,48 +144,25 @@ abstract interface class AsyncDisposablePlayer {
   Future<void> disposeAsync();
 }
 
-/// 播放器抽象接口：统一 mdk / media_kit 的播放控制、属性、轨道、渲染、事件面。
+/// 播放器抽象接口：统一 mdk / erika 的播放控制、属性、轨道、渲染、事件面。
 ///
 /// 设计原则：
 /// - 刻度统一：position/duration/buffered 用 ms；volume 用 0.0–1.0；
 ///   playbackRate 用倍率（1.0 = 原速）。
 /// - 事件模型：onStateChanged / onMediaStatus 为广播 Stream；
-///   position 轮询由调用方负责（fvp 无 position stream，media_kit 有但
+///   position 轮询由调用方负责（fvp 无 position stream，
 ///   统一走轮询避免全帧率事件洪水）。
 /// - 渲染通道：textureId 驱动 Flutter Texture；nativeHandle 供
-///   SurfaceView platform view 挂载（media_kit 档无 SurfaceView）。
+///   SurfaceView platform view 挂载。
 
 /// 可选能力：暴露 Erika 原生播放器（给 ErikaVideoView）。
 abstract interface class ErikaPlayerProvider {
   ErikaPlayer? get erikaPlayer;
 }
 
-/// 可选能力：暴露 media_kit 的 VideoController（给 Video widget）。
-abstract interface class MediaKitPlayerProvider {
-  VideoController? get mediaKitController;
-}
-
-/// 可选能力：应用 media_kit 专属设置。
-abstract interface class MediaKitSettingsApplier {
-  Future<void> applyMediaKitSettings({
-    String? hwdec,
-    String? toneMapping,
-    double? cacheSizeMb,
-  });
-}
-
 /// 可选能力：等待媒体就绪（MPV 延迟 native surface 场景）。
 abstract interface class MediaLoadWaitPlayer {
   Future<bool> waitUntilMediaReady({required Duration timeout});
-}
-
-/// 可选能力：media_kit 原生裁剪（保持字幕由 mpv 合成）。
-abstract interface class MediaKitVideoFitApplier {
-  void applyVideoFit(
-    BoxFit fit, {
-    required Size container,
-    required Size video,
-  });
 }
 
 /// 可选能力：Erika 原生弹幕。
@@ -266,7 +238,7 @@ abstract class PlayerAdapter {
   Future<Size?> get textureSize;
   void setColorSpace(AdapterColorSpace cs);
 
-  /// 强制渲染一帧（mdk 渲染驱动补偿；media_kit 无此需求，空实现）。
+  /// 强制渲染一帧（mdk 渲染驱动补偿；其他引擎空实现）。
   void renderVideo();
 
   // ── 轨道 ──────────────────────────────────────────────────
@@ -292,8 +264,7 @@ abstract class PlayerAdapter {
 
   /// 设置 HTTP 鉴权头（播放源请求）。
   ///
-  /// mdk：写 `avio.headers` 属性；media_kit：`Media(httpHeaders:)`；
-  /// Erika：`open(httpHeaders:)`。
+  /// mdk：写 `avio.headers` 属性；Erika：`open(httpHeaders:)`。
   void setHttpHeaders(Map<String, String> headers);
 
   List<String> get videoDecoders;

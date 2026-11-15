@@ -209,7 +209,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 【处理链路】DV 元数据由 FFmpeg 解析（安卓侧有
   /// `android-mediacodec-dovi.patch` 补丁），`gpu-next` 内置的
   /// libplacebo 消费它做动态映射。**不要额外加 `vf=libplacebo`**——
-  /// 那是把 HDR 转 SDR 的滤镜方案（media_kit 用 Flutter 纹理时的妥协），
+  /// 那是把 HDR 转 SDR 的滤镜方案（Flutter 纹理渲染时的妥协），
   /// 我们三平台都是直出，加 vf 会自废 HDR 直出能力。
   bool _dvContentForMedia = false;
   set dvContent(bool value) {
@@ -574,7 +574,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 【为什么 DV 不能继续用 clip】DV 是**动态元数据**（逐场景峰值），
     // `clip` 按单一峰值硬裁切 → 高光细节丢失、暗部发灰。`bt.2390`
     // 是感知映射曲线，`hybrid` 模式同时考虑亮度与色彩，是 DV 的
-    // 标准做法（与 media_kit 路径的 `tonemapping=bt.2390` 一致）。
+    // 标准做法（`tonemapping=bt.2390`）。
     final toneMapping = _dvContentForMedia ? 'bt.2390' : 'clip';
     final props = enabled
         ? <String, String>{
@@ -1733,7 +1733,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         _parseTracks(value);
         break;
       case 'texture-id':
-        // media_kit_video 在视频参数变化时会重建纹理，textureId 随之变化；
+        // 视频参数变化可能触发纹理重建，textureId 随之变化；
         // 必须同步给 UI，否则 Texture 继续引用已注销的旧纹理（黑屏）。
         if (value is int && value > 0 && value != _textureIdListenable.value) {
           _textureIdListenable.value = value;
@@ -1946,7 +1946,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
       void take(Object? track, String type) {
         if (track is! Map) return;
-        // media_kit 的 id 是 String；鸿蒙 mpv 原生 track-list 是 int。
+        // id 兼容两种形态：int（鸿蒙 mpv 原生 track-list）与 String（兼容路径）。
         final raw = track['id'];
         final id = raw is int
             ? raw

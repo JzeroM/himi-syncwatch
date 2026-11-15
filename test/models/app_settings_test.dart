@@ -1487,11 +1487,20 @@ void main() {
     });
 
     test('toJson/fromJson 往返保留合法内核', () {
-      for (final kernel in const ['mdk', 'media_kit', 'erika']) {
+      for (final kernel in const ['mdk', 'erika', 'mpv']) {
         final json = AppSettings(playerKernel: kernel).toJson();
         expect(json['playerKernel'], kernel);
         expect(AppSettings.fromJson(json).playerKernel, kernel);
       }
+    });
+
+    test('已移除引擎 media_kit 旧存档容错回落空串（平台默认）', () {
+      // 694 引擎收敛：media_kit 引擎整体移除，'media_kit' 不再是合法值，
+      // 旧存档回落 '' → resolveSelectedEngine 走平台默认（与移除前等价）。
+      expect(
+        AppSettings.fromJson(const {'playerKernel': 'media_kit'}).playerKernel,
+        '',
+      );
     });
 
     test('非法内核回退空串', () {

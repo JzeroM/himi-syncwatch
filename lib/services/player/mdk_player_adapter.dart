@@ -349,7 +349,7 @@ class MdkPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
 
   /// 确定性释放（v1.1.222）：fvp 的 `dispose()` 是 `void async`
   /// （fire-and-forget：releaseTexture → unregister → mdkPlayerAPI_delete），
-  /// 外部无法 await 其原生 teardown 落定。引擎重建（MDK→Erika/media_kit）
+  /// 外部无法 await 其原生 teardown 落定。引擎重建（MDK→Erika/MPV）
   /// 时若旧 MDK 的原生释放（D3D/GL/AudioTrack）与新引擎初始化重叠 →
   /// 原生竞争闪退。
   ///

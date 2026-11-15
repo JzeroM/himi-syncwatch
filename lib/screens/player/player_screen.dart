@@ -31,8 +31,6 @@ import 'package:himi_syncwatch/services/player/stream_stall_guard.dart';
 import 'package:erika_flutter/erika_flutter.dart'
     show ErikaVideoView, ErikaOutputMode;
 import 'package:himi_syncwatch/services/player/erika_player_adapter.dart';
-import 'package:media_kit_video/media_kit_video.dart'
-    show Video, VideoController;
 import 'package:agora_token_generator/agora_token_generator.dart';
 import 'package:himi_syncwatch/core/constants.dart';
 import 'package:himi_syncwatch/models/episode_info.dart';
@@ -593,7 +591,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
   /// 横屏手机有足够宽度、TV/桌面全宽，均保留标题。
   ///
   /// 安卓/鸿蒙原生控制层早已按「竖屏隐藏标题」实现（`portrait` 判定），
-  /// 此处补齐 Flutter（MDK / Erika / media_kit 三个播放器共用本页）。
+  /// 此处补齐 Flutter（MDK / Erika / MPV 三个播放器共用本页）。
   @visibleForTesting
   static bool showTopBarTitle({
     required bool portrait,
@@ -618,7 +616,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 播完自动下一集的位置兜底判定（纯函数，供测试）。
   ///
-  /// 仅服务「引擎不上报 end 位」的档位（media_kit/Erika）：mdk 有
+  /// 仅服务「引擎不上报 end 位」的档位（Erika）：mdk 有
   /// `MediaStatus.end`，走兜底会把「拖进度条到结尾窗口」误判为播完
   /// 直接切集（v1.1.238 回归）。
   /// - [engineEmitsEnd]：引擎自身会上报 end（mdk）→ 兜底恒不触发；
@@ -1360,7 +1358,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   final ValueNotifier<bool> _showVolumeBarNotifier = ValueNotifier(false);
   Timer? _gestureBarTimer;
 
-  // fvp: 轨道信息通过 Emby API 获取，不需要 media_kit 的 SubtitleTrack/AudioTrack
+  // fvp: 轨道信息通过 Emby API 获取，不需要 SubtitleTrack/AudioTrack
   StreamSubscription? _tracksSubscription;
 
   /// mdk 播放状态/媒体状态/运行时事件监听（dispose 与引擎重建时取消）。
@@ -1381,7 +1379,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   _OrientationMode _orientationMode = _OrientationMode.portraitUp;
   BoxFit _videoFit = BoxFit.contain;
   Size? _videoNativeSize;
-  String? _lastMediaKitFitKey;
 
   /// 黑帧取证用纹理尺寸文本：textureSize 未 resolve 时显示 '-'。
   String get _textureSizeText => _videoNativeSize == null
@@ -2371,18 +2368,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       await WakelockPlus.enable();
     } catch (_) {}
 
-    // media_kit 引擎：应用 hwdec/tone-mapping/cache-size 设置
-    // mdk 专属属性（avformat.* / demux.* / avcodec.* / videoDecoders 等）
-    // 对 mpv 无效，media_kit 档跳过
-    if (_player is MediaKitSettingsApplier) {
-      await (_player as MediaKitSettingsApplier).applyMediaKitSettings(
-        hwdec: settings.mkHwdec,
-        toneMapping: settings.mkToneMapping,
-        cacheSizeMb: settings.mkCacheSize,
-      );
-      return;
-    }
-
     // Erika 引擎：无 mdk 属性可写，直接返回（Erika 设置经其 adapter/构造生效）
     if (_player is ErikaPlayerProvider) {
       return;
@@ -2892,9 +2877,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 直写会 wedge/卡顿（mdk#361），故降级为同载体 GL 路径。
   /// 1.1.198 起受 hdrGlWorkaround 开关控制（关 = 不降级，A/B 基线）。
   String _effectiveVideoOutput() {
-    // media_kit / Erika 档：固定 texture（引擎自管理渲染，无 tunnel/surfaceView）
-    if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.erika ||
+    // Erika / MPV 档：固定 texture（引擎自管理渲染，无 tunnel/surfaceView）
+    if (_currentEngine == PlayerEngine.erika ||
         _currentEngine == PlayerEngine.mpv) {
       return 'texture';
     }
@@ -3140,14 +3124,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       );
 
   /// 视频输出是否就绪：纹理通道看 textureId；SurfaceView 通道无纹理，
-  /// 媒体信息拿到视频尺寸即就绪。media_kit 档：VideoController 注册后即就绪。
+  /// 媒体信息拿到视频尺寸即就绪。
   bool _videoOutputReady() {
     if (_currentEngine == PlayerEngine.erika) {
       // Erika 使用原生 view，不注册 Flutter texture；页面/媒体就绪即可起播。
       return _isPlayerReady;
     }
-    if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.mpv) {
+    if (_currentEngine == PlayerEngine.mpv) {
       return _player.textureId.value != null;
     }
     if (_usesSurfaceView) {
@@ -4768,7 +4751,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     unawaited(_clearSegmentAt(type));
   }
 
-  /// 切换/重建前释放旧引擎：可 await 的 await（Erika/media_kit），
+  /// 切换/重建前释放旧引擎：可 await 的 await（Erika），
   /// fvp(mdk) 为 `void async` → settle 等待其原生 teardown 落定。
   ///
   /// 目的：避免新引擎在旧引擎**异步释放窗口**内创建 —— 否则音频输出争用
@@ -4846,7 +4829,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     LogService().log('Player', '[rebuild] 5/7 创建新引擎');
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
-    _lastMediaKitFitKey = null;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _attachNativeUiBridge(_player);
     _switchingEngine = false;
@@ -5628,7 +5610,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           MpvSessionPlatform.activeQtAdapter != null) {
         _pushQtDanmakuTick();
       }
-      // 播完自动下一集兜底：仅服务不上报 end 位的引擎（media_kit/Erika）；
+      // 播完自动下一集兜底：仅服务不上报 end 位的引擎（Erika）；
       // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。
       // seek 冷却期内同样忽略。
       final seekAt = _lastSeekCompletedAt;
@@ -5681,9 +5663,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   ///
   /// 安全阀：单秒内保留行数超限则自动关闭，避免日志风暴影响播放。
   void _syncDeepDiagnostics() {
-    // media_kit / Erika 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
-    if (_currentEngine == PlayerEngine.mediaKit ||
-        _currentEngine == PlayerEngine.erika ||
+    // Erika / MPV 档：mdk 深度诊断不可用（依赖 mdk.setGlobalOption/logHandler）
+    if (_currentEngine == PlayerEngine.erika ||
         _currentEngine == PlayerEngine.mpv) {
       if (_deepLogActive) {
         _deepLogActive = false;
@@ -9736,40 +9717,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
   }
 
-  Widget _buildMediaKitVideo(VideoController controller) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final videoSize = _videoNativeSize;
-        if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
-          final container = Size(
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-            constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
-          );
-          final key = '${_videoFit.index}:'
-              '${container.width.round()}x${container.height.round()}:'
-              '${videoSize.width.round()}x${videoSize.height.round()}';
-          if (key != _lastMediaKitFitKey) {
-            _lastMediaKitFitKey = key;
-            final player = _player;
-            if (player is MediaKitVideoFitApplier) {
-              (player as MediaKitVideoFitApplier).applyVideoFit(
-                _videoFit,
-                container: container,
-                video: videoSize,
-              );
-            }
-          }
-        }
-        return Video(
-          controller: controller,
-          controls: null,
-          fit: _videoFit == BoxFit.cover ? BoxFit.contain : _videoFit,
-          wakelock: false,
-        );
-      },
-    );
-  }
-
   /// 原生播放器 UI 是否接管中（计划书 §7.3）：mpv Surface 会话 +
   /// 门控通过 + 原生宿主窗口已打开。此时视频与控件全部由全屏原生
   /// 窗口（鸿蒙子窗口 / Android Dialog）承担。
@@ -9834,9 +9781,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final erikaPlayer = _player is ErikaPlayerProvider
         ? (_player as ErikaPlayerProvider).erikaPlayer
         : null;
-    final mediaKitController = _player is MediaKitPlayerProvider
-        ? (_player as MediaKitPlayerProvider).mediaKitController
-        : null;
     // 643：退出前视频层已主动退场 → 不再挂任何 Texture/Video widget。
     // 这是 `_safePopPlayerPage` 的关键一步：让纹理在页面仍挂载时释放，
     // 避免与路由出栈的引擎销毁并发（真机崩溃 0x1551f 根因）。
@@ -9849,10 +9793,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 : _currentEngine == PlayerEngine.erika && erikaPlayer != null
                     // Erika：原生 surface/TextureView（自绘；含位图字幕 PGS 合成）
                     ? ErikaVideoView(player: erikaPlayer)
-                    : _currentEngine == PlayerEngine.mediaKit &&
-                            mediaKitController != null
-                        ? _buildMediaKitVideo(mediaKitController)
-                        : _usesMpvNativeSurface
+                    : _usesMpvNativeSurface
                             ? _buildMpvNativeVideo()
                             : _usesSurfaceView
                                 ? _buildSurfaceViewVideo()
@@ -12807,12 +12748,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       } catch (e) {
         LogService().log('Player', '加载外挂字幕失败: $e');
       }
-      // sub-add select 已自动激活新轨（media_kit 语义）；非 media_kit 引擎
-      // 用「真实字幕轨数 - 1」选中末尾那条（外挂轨追加在末尾）。
-      if (_player is! MediaKitPlayerProvider) {
-        final count = _player.mediaInfo.subtitleCount;
-        if (count > 0) _player.activeSubtitleTracks = [count - 1];
-      }
+      // 「真实字幕轨数 - 1」选中末尾那条（外挂轨追加在末尾）。
+      final count = _player.mediaInfo.subtitleCount;
+      if (count > 0) _player.activeSubtitleTracks = [count - 1];
     } else {
       // 内嵌字幕：按 Emby 服务端流顺序映射到 mpv track id。
       _player.activeSubtitleTracks = [embyIndex];
@@ -12991,7 +12929,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _applyMpvSubtitleDelay(v);
       return;
     }
-    // 其他引擎（MDK/media_kit/Erika 无等价属性）保留重写文件方案。
+    // 其他引擎（MDK/Erika 无等价属性）保留重写文件方案。
     if (v == 0) {
       // 归零：立即恢复原素材轨
       _restoreActiveSubtitleSource();
@@ -13134,16 +13072,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// setMedia 外挂字幕文件并激活末轨（新轨追加在末尾）；返回激活位置。
   ///
-  /// media_kit 的 `sub-add ... select` 会自动选中新轨，无需手动 count-1；
-  /// mdk 的 setMedia 是同步追加，count-1 语义成立。
+  /// setMedia 是同步追加，count-1 语义成立。
   Future<int> _loadSubtitleFileIntoPlayer(String path) async {
     await _player.setMedia(path, type: AdapterMediaType.subtitle);
-    if (_player is MediaKitPlayerProvider) {
-      // sub-add select 已自动激活新轨
-      return _player.activeSubtitleTracks.isNotEmpty
-          ? _player.activeSubtitleTracks.first
-          : -1;
-    }
     final count = _player.mediaInfo.subtitleCount;
     if (count > 0) {
       _player.activeSubtitleTracks = [count - 1];

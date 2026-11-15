@@ -66,12 +66,6 @@
 @import iris_method_channel;
 #endif
 
-#if __has_include(<media_kit_libs_ios_video/MediaKitLibsIosVideoPlugin.h>)
-#import <media_kit_libs_ios_video/MediaKitLibsIosVideoPlugin.h>
-#else
-@import media_kit_libs_ios_video;
-#endif
-
 #if __has_include(<media_kit_video/MediaKitVideoPlugin.h>)
 #import <media_kit_video/MediaKitVideoPlugin.h>
 #else
@@ -157,7 +151,6 @@
   [FvpPlugin registerWithRegistrar:[registry registrarForPlugin:@"FvpPlugin"]];
   [FLTImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImagePickerPlugin"]];
   [IrisMethodChannelPlugin registerWithRegistrar:[registry registrarForPlugin:@"IrisMethodChannelPlugin"]];
-  [MediaKitLibsIosVideoPlugin registerWithRegistrar:[registry registrarForPlugin:@"MediaKitLibsIosVideoPlugin"]];
   [MediaKitVideoPlugin registerWithRegistrar:[registry registrarForPlugin:@"MediaKitVideoPlugin"]];
   [MobileScannerPlugin registerWithRegistrar:[registry registrarForPlugin:@"MobileScannerPlugin"]];
   [FPPPackageInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPPackageInfoPlusPlugin"]];

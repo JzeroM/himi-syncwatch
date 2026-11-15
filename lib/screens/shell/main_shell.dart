@@ -111,7 +111,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       //
       // 若此时正处于播放页（PlayerScreen.dispose 中，视频纹理 / mpv ctx
       // 正在释放），该异常会**打断清理流程** → `flutter_windows.dll`
-      // 访问违例（0xc0000005 @ 0x1551f）。三个引擎（MPV / MDK / media_kit）
+      // 访问违例（0xc0000005 @ 0x1551f）。三个引擎（MPV / MDK / Erika）
       // 崩溃偏移完全一致，正是因为崩溃点在 Flutter 引擎的路由/纹理清理
       // 路径，与具体播放器无关——这也是 641「换引擎」无效的原因。
       if (nav != null && nav.canPop()) {
