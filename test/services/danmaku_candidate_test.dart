@@ -155,4 +155,91 @@ void main() {
       expect(ids, [1, 2]);
     });
   });
+
+
+  group('M5：同桶相似度 tiebreak', () {
+    test('titleSimilarity：相同高、无关低、空串 0', () {
+      expect(
+        DanmakuCandidateSelector.titleSimilarity('葬送的芙莉莲', '葬送的芙莉莲'),
+        greaterThan(0.9),
+      );
+      expect(
+        DanmakuCandidateSelector.titleSimilarity('葬送的芙莉莲', '进击的巨人'),
+        lessThan(0.3),
+      );
+      expect(DanmakuCandidateSelector.titleSimilarity('', '葬送的芙莉莲'), 0);
+    });
+
+    test('同桶内标题更近的排前', () {
+      final out = DanmakuCandidateSelector.ordered(
+        [
+          const MatchCandidate(
+            episodeId: 1,
+            animeTitle: '芙莉莲 别传',
+            episodeTitle: '第1集',
+          ),
+          const MatchCandidate(
+            episodeId: 2,
+            animeTitle: '葬送的芙莉莲',
+            episodeTitle: '第1集',
+          ),
+        ],
+        const [],
+        episodeNumber: 0,
+        title: '葬送的芙莉莲',
+      );
+      expect(out, [2, 1]);
+    });
+
+    test('无标题信息候选排同桶末尾', () {
+      final out = DanmakuCandidateSelector.ordered(
+        [
+          const MatchCandidate(episodeId: 1, episodeTitle: '第1集'),
+          const MatchCandidate(
+            episodeId: 2,
+            animeTitle: '葬送的芙莉莲',
+            episodeTitle: '第1集',
+          ),
+        ],
+        const [],
+        episodeNumber: 0,
+        title: '葬送的芙莉莲',
+      );
+      expect(out, [2, 1]);
+    });
+
+    test('title 为空保持原序（不劣化现状）', () {
+      final out = DanmakuCandidateSelector.ordered(
+        [
+          const MatchCandidate(episodeId: 1, animeTitle: 'B'),
+          const MatchCandidate(episodeId: 2, animeTitle: 'A'),
+        ],
+        const [],
+        episodeNumber: 0,
+      );
+      expect(out, [1, 2]);
+    });
+
+    test('桶级语义不被 tiebreak 翻转（集号命中仍最前）', () {
+      final out = DanmakuCandidateSelector.ordered(
+        [
+          const MatchCandidate(
+            episodeId: 1,
+            animeTitle: '葬送的芙莉莲',
+            episodeTitle: '第9集',
+          ),
+          const MatchCandidate(
+            episodeId: 2,
+            animeTitle: '芙莉莲',
+            episodeTitle: '第1集',
+          ),
+        ],
+        const [],
+        episodeNumber: 1,
+        title: '葬送的芙莉莲',
+      );
+      // id=2 集号命中（桶0）尽管相似度更低，仍在 id=1（桶4）之前
+      expect(out, [2, 1]);
+    });
+  });
 }

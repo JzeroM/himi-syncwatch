@@ -11042,11 +11042,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? _episodes[_currentEpisodeIndex].number
           : 0;
 
-  /// 有序候选 episodeId（错源排除 + 集号优先，详见 [DanmakuCandidateSelector]）。
+  /// 有序候选 episodeId（错源排除 + 集号优先 + 同桶相似度，
+  /// 详见 [DanmakuCandidateSelector]）。
   List<int> _orderedDanmakuCandidates(
     List<MatchCandidate> matched,
-    List<MatchCandidate> searched,
-  ) =>
+    List<MatchCandidate> searched, {
+    String title = '',
+  }) =>
       DanmakuCandidateSelector.ordered(
         matched,
         searched,
@@ -11054,6 +11056,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         year: widget.year,
         kind: widget.kind,
         isAnimation: widget.isAnimation,
+        title: title,
       );
 
   /// 依次尝试候选 episodeId，返回首个「非空弹幕」结果；全部失败/为空 → null。
@@ -11164,7 +11167,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (!mounted || seq != _danmakuLoadSeq) return null;
 
         rememberedCandidates = <MatchCandidate>[...matched, ...searched];
-        final ordered = _orderedDanmakuCandidates(matched, searched)
+        final ordered = _orderedDanmakuCandidates(
+          matched,
+          searched,
+          title: keyword ?? '',
+        )
             .take(PlayerScreen.maxDanmakuCandidates)
             .toList(growable: false);
         found = await _tryDanmakuCandidates(client, ordered, seq);

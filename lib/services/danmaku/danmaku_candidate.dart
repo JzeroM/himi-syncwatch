@@ -66,11 +66,59 @@ class DanmakuCandidateSelector {
     return true;
   }
 
+  /// 标题相似度（694 M5：token Jaccard 为主、编辑距离为辅；纯函数）。
+  ///
+  /// 用作同桶内 tiebreak——不改变桶级语义（集号命中/年份/来源），
+  /// 只细分「同优先级」候选的先后。
+  static double titleSimilarity(String a, String b) {
+    final la = a.trim().toLowerCase();
+    final lb = b.trim().toLowerCase();
+    if (la.isEmpty || lb.isEmpty) return 0;
+    final ta = _tokens(la);
+    final tb = _tokens(lb);
+    final inter = ta.intersection(tb).length;
+    final union = ta.length + tb.length - inter;
+    final jaccard = union == 0 ? 0.0 : inter / union;
+    final lev = _levenshtein(la, lb);
+    final maxLen = la.length > lb.length ? la.length : lb.length;
+    final levScore = maxLen == 0 ? 0.0 : 1 - lev / maxLen;
+    return jaccard * 0.7 + levScore * 0.3;
+  }
+
+  static Set<String> _tokens(String s) =>
+      s.split(RegExp(r'[^\p{L}\p{Nd}]+', unicode: true))
+          .where((t) => t.isNotEmpty)
+          .toSet();
+
+  static int _levenshtein(String a, String b) {
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+    var prev = List<int>.generate(b.length + 1, (j) => j);
+    var cur = List<int>.filled(b.length + 1, 0);
+    for (var i = 1; i <= a.length; i++) {
+      cur[0] = i;
+      for (var j = 1; j <= b.length; j++) {
+        final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+        cur[j] = [
+          cur[j - 1] + 1,
+          prev[j] + 1,
+          prev[j - 1] + cost,
+        ].reduce((x, y) => x < y ? x : y);
+      }
+      final tmp = prev;
+      prev = cur;
+      cur = tmp;
+    }
+    return prev[b.length];
+  }
+
   /// 组装有序候选 episodeId（每项只出现一次）：
   /// 1. 集号命中优先（跨来源全局优先）；
   /// 2. 同年优先（异年保留末尾兜底）；
   /// 3. 同级内 `matched` 组排在 `searched` 组之前；
   /// 4. 类型不符的直接丢弃。
+  /// 5.（694 M5）同桶内按 [title] 相似度细分；无标题信息的候选排桶尾。
+  ///    [title] 为空时保持原序（不劣化现状）。
   static List<int> ordered(
     List<MatchCandidate> matched,
     List<MatchCandidate> searched, {
@@ -78,6 +126,7 @@ class DanmakuCandidateSelector {
     int? year,
     String? kind,
     bool isAnimation = false,
+    String title = '',
   }) {
     final embyYear = validYear(year);
     // 桶序（低→高优先级）：
@@ -103,6 +152,26 @@ class DanmakuCandidateSelector {
 
     addGroup(matched, 0);
     addGroup(searched, 1);
+
+    // 694 M5：同桶内按标题相似度稳定细分（title 为空 = 保持原序）。
+    final ref = title.trim();
+    if (ref.isNotEmpty) {
+      for (final bucket in buckets) {
+        final indexed = [
+          for (var i = 0; i < bucket.length; i++) (i, bucket[i]),
+        ];
+        double scoreOf(MatchCandidate c) => c.animeTitle.isEmpty
+            ? -1 // 无标题信息排桶尾
+            : titleSimilarity(ref, c.animeTitle);
+        indexed.sort((x, y) {
+          final cmp = scoreOf(y.$2).compareTo(scoreOf(x.$2));
+          return cmp != 0 ? cmp : x.$1.compareTo(y.$1); // 稳定
+        });
+        bucket
+          ..clear()
+          ..addAll(indexed.map((e) => e.$2));
+      }
+    }
 
     final seen = <int>{};
     final out = <int>[];
