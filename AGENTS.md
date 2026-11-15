@@ -228,6 +228,21 @@ QML 报 `Binding loop detected for property "playerState"`，然后读到 null�
 CI 的 QML 冒烟自检会把这条 `WARN` 打出来——**别忽略冒烟日志里的
 Binding loop**，它不是噪音。
 
+### 弹幕数据源要跟着播放位置推进（两条推送链路不同）
+
+安卓/鸿蒙与 Windows Qt 走**完全不同**的推送链路：
+
+| 端 | 链路 | 节拍 |
+|---|---|---|
+| 安卓 / 鸿蒙 | `_pushNativeUiState()`（同进程原生宿主） | **200ms 轮询**（`_pollTimer`） |
+| Windows Qt | `_syncNativePanelData()` → `qt.pushNativeState()` | 仅**事件**触发 |
+
+所以给安卓/鸿蒙加「每帧重算」的东西（如弹幕时间窗 `_buildDanmakuWindow`），
+在 Qt 侧**不会自动生效**——必须显式挂到 `_positionTimer`（500ms）里。
+699 真机症状：面板「总 3353 · 在屏 0 · 时钟 145030ms」（时钟对、窗口死）。
+
+> 排查口诀：**时钟对 + 在屏 0** ⇒ 数据窗口没跟着位置重算，不是渲染问题。
+
 ### 鸿蒙本地构建所需工具链
 
 `scripts/build_ohos_local.sh` 会自动探测，但需知道这些位置：
