@@ -97,6 +97,12 @@ class PlayerState : public QObject {
     // ── 弹幕渲染（665，ASS 旁路喂 mpv）──
     Q_PROPERTY(QVariantList danmakuItems READ danmakuItemsVariant NOTIFY danmakuChanged)
 
+    // ── 694 M3：弹幕弹窗状态（绑定文案 / 搜索结果 / 搜索中 / 错误）──
+    Q_PROPERTY(QString danmakuBinding READ danmakuBinding NOTIFY changed)
+    Q_PROPERTY(QVariantList danmakuSearchResults READ danmakuSearchResultsVariant NOTIFY danmakuChanged)
+    Q_PROPERTY(bool danmakuSearching READ danmakuSearching NOTIFY changed)
+    Q_PROPERTY(QString danmakuSearchError READ danmakuSearchError NOTIFY changed)
+
     // ── 片段标记（665，跳过片头/片尾胶囊；-1 = 无片段）──
     Q_PROPERTY(qint64 segmentIntroEndMs READ segmentIntroEndMs NOTIFY changed)
     Q_PROPERTY(qint64 segmentOutroStartMs READ segmentOutroStartMs NOTIFY changed)
@@ -279,7 +285,21 @@ public:
         QString mode;   ///< scroll / top / bottom
         QString color;  ///< #RRGGBB
     };
+
+    /// 694 M3：弹幕搜索结果条目。
+    struct SearchHit {
+        int episodeId = 0;
+        QString animeTitle;
+        QString episodeTitle;
+    };
     const QList<Danmaku>& danmakuItems() const { return danmakuItems_; }
+    QString danmakuBinding() const { return danmakuBinding_; }
+    const QList<SearchHit>& danmakuSearchResults() const {
+        return danmakuSearchResults_;
+    }
+    QVariantList danmakuSearchResultsVariant() const;
+    bool danmakuSearching() const { return danmakuSearching_; }
+    QString danmakuSearchError() const { return danmakuSearchError_; }
     QVariantList danmakuItemsVariant() const;
     qint64 segmentIntroEndMs() const { return segmentIntroEndMs_; }
     qint64 segmentOutroStartMs() const { return segmentOutroStartMs_; }
@@ -396,6 +416,7 @@ private:
     void setTracks(const QJsonArray& arr);
     void setVersions(const QJsonArray& arr);
     void setDanmakuItems(const QJsonArray& arr);
+    void setDanmakuSearchResults(const QJsonArray& arr);
 
     qint64 positionMs_ = 0;
     qint64 durationMs_ = 0;
@@ -487,6 +508,10 @@ private:
     QList<Version> versions_;
     int currentVersionIndex_ = 0;
     QList<Danmaku> danmakuItems_;
+    QList<SearchHit> danmakuSearchResults_;
+    QString danmakuBinding_;
+    bool danmakuSearching_ = false;
+    QString danmakuSearchError_;
     qint64 segmentIntroEndMs_ = -1;
     qint64 segmentOutroStartMs_ = -1;
     QList<Track> audioTracks_;

@@ -256,6 +256,16 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     // ── 弹幕/片段（665）──
     const QJsonValue danm = json.value(QLatin1String("danmakuItems"));
     if (danm.isArray()) setDanmakuItems(danm.toArray());
+    // 694 M3：弹幕弹窗状态
+    dirty |= assign(danmakuBinding_,
+                    readString(json, "danmakuBinding", danmakuBinding_));
+    dirty |= assign(danmakuSearching_,
+                    readBool(json, "danmakuSearching", danmakuSearching_));
+    dirty |= assign(danmakuSearchError_,
+                    readString(json, "danmakuSearchError",
+                               danmakuSearchError_));
+    const QJsonValue hits = json.value(QLatin1String("danmakuSearchResults"));
+    if (hits.isArray()) setDanmakuSearchResults(hits.toArray());
     // null = 无片段；-1 为缺省
     if (json.contains(QLatin1String("segmentIntroEndMs"))) {
         const QJsonValue v =
@@ -564,6 +574,49 @@ QVariantList PlayerState::danmakuItemsVariant() const {
         m.insert(QStringLiteral("text"), d.text);
         m.insert(QStringLiteral("mode"), d.mode);
         m.insert(QStringLiteral("color"), d.color);
+        out.append(m);
+    }
+    return out;
+}
+
+// 694 M3：弹幕弹窗搜索结果（episodeId/animeTitle/episodeTitle）。
+void PlayerState::setDanmakuSearchResults(const QJsonArray& arr) {
+    QList<SearchHit> next;
+    next.reserve(arr.size());
+    for (const QJsonValue& v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        SearchHit h;
+        h.episodeId = static_cast<int>(readInt64(o, "episodeId", 0));
+        h.animeTitle = readString(o, "animeTitle");
+        h.episodeTitle = readString(o, "episodeTitle");
+        next.append(h);
+    }
+    bool same = next.size() == danmakuSearchResults_.size();
+    if (same) {
+        for (int i = 0; i < next.size(); ++i) {
+            if (next[i].episodeId != danmakuSearchResults_[i].episodeId ||
+                next[i].animeTitle != danmakuSearchResults_[i].animeTitle ||
+                next[i].episodeTitle !=
+                    danmakuSearchResults_[i].episodeTitle) {
+                same = false;
+                break;
+            }
+        }
+    }
+    if (same) return;
+    danmakuSearchResults_ = next;
+    emit danmakuChanged();
+}
+
+QVariantList PlayerState::danmakuSearchResultsVariant() const {
+    QVariantList out;
+    out.reserve(danmakuSearchResults_.size());
+    for (const SearchHit& h : danmakuSearchResults_) {
+        QVariantMap m;
+        m.insert(QStringLiteral("episodeId"), h.episodeId);
+        m.insert(QStringLiteral("animeTitle"), h.animeTitle);
+        m.insert(QStringLiteral("episodeTitle"), h.episodeTitle);
         out.append(m);
     }
     return out;

@@ -55,11 +55,16 @@ void main() {
     });
 
     test('1.3 开关弹幕只改本地态，不触碰 mpv 管线', () {
+      // 694 M3b：点击按钮改为弹幕弹窗；开关逻辑移到 DanmakuPanel 的
+      // onToggleRequested（弹窗内开关行）。
       final start = overlay.indexOf('onDanmakuClicked');
       expect(start, greaterThan(0));
-      final block = overlay.substring(start, start + 600);
+      expect(overlay, contains('onDanmakuClicked: root.openDanmakuPanel()'));
+      final toggle = overlay.indexOf('onToggleRequested:');
+      expect(toggle, greaterThan(0));
+      final block = overlay.substring(toggle, toggle + 600);
       // 必须置本地态 + 通知 Dart
-      expect(block, contains('danmakuOn = !danmakuOn'));
+      expect(block, contains('root.danmakuOn = !root.danmakuOn'));
       expect(block, contains('patchState'));
       // 不得再重建 ASS / 发 mpv 字幕命令
       expect(block, isNot(contains('restart()')));

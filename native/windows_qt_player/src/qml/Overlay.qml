@@ -45,6 +45,8 @@ ApplicationWindow {
     // 双窗实例任一被点击都能唤出本层）。
     property bool panelOpen: false
     property bool adjustOpen: false
+    // 694 M3b：弹幕弹窗（点击弹幕按钮弹出；开关/绑定/搜索都在其中）
+    property bool danmakuPanelOpen: false
     // 675 D：开面板即取消滑杆选中（点别处语义）
     onPanelOpenChanged: if (panelOpen) selectedSlider = ""
     onAdjustOpenChanged: if (adjustOpen) selectedSlider = ""
@@ -141,6 +143,7 @@ ApplicationWindow {
     function closePanels() {
         panelOpen = false
         adjustOpen = false
+        danmakuPanelOpen = false
         segmentMenu.visible = false
         // 675 D：点别处（含开面板）取消音量/亮度选中态
         selectedSlider = ""
@@ -176,6 +179,7 @@ ApplicationWindow {
     // ── 手势层（669：共享组件 VideoGestures，与宿主双窗各挂一份）──
     VideoGestures {
         panelsOpen: () => root.panelOpen || root.adjustOpen
+                     || root.danmakuPanelOpen
                          || segmentMenu.visible
         closePanels: root.closePanels
         showControls: () => hideTimer.restart()
@@ -308,13 +312,10 @@ ApplicationWindow {
             "type": "selectEpisode",
             "index": playerState.currentEpisodeIndex + 1
         })
-        onDanmakuClicked: {
-            danmakuOn = !danmakuOn
-            root.patchState("danmakuEnabled", danmakuOn)
-            // 697：开关只切本地态 + 通知 Dart，**不再重建 ASS 轨道**。
-            // 自绘层由 `enabled` 属性驱动，开关不触碰 mpv 管线 → 视频不卡。
-            pipeServer.sendCommand({"type": "toggleDanmaku"})
-        }
+        // 694 M3b：点击弹幕按钮 → 弹幕弹窗（不再直接 toggle；开关能力
+        // 全在弹窗内）。开关只切本地态 + 通知 Dart，自绘层由 `enabled`
+        // 属性驱动，不触碰 mpv 管线 → 视频不卡。
+        onDanmakuClicked: root.openDanmakuPanel()
         onVersionClicked: root.openVersionPanel()
         onSubtitleClicked: root.openSubtitlePanel()
         onAudioClicked: root.openAudioPanel()
@@ -858,6 +859,33 @@ ApplicationWindow {
         }
     }
 
+    // ── 694 M3b：弹幕弹窗 ──
+    DanmakuPanel {
+        id: danmakuPanel
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: Theme.panelRight
+        anchors.topMargin: Theme.panelTopOffset
+        visible: root.danmakuPanelOpen
+        // 属性名是 stateRef（绝不能写 playerState——遮蔽全局单例 →
+        // Binding loop，见 AGENTS.md）
+        stateRef: playerState
+        danmakuOn: root.danmakuOn
+        onClosed: root.closePanels()
+        onToggleRequested: {
+            root.danmakuOn = !root.danmakuOn
+            root.patchState("danmakuEnabled", root.danmakuOn)
+            pipeServer.sendCommand({"type": "toggleDanmaku"})
+        }
+        onSearchRequested: (keyword) => pipeServer.sendCommand({
+            "type": "searchDanmaku", "keyword": keyword
+        })
+        onBindRequested: (episodeId) => pipeServer.sendCommand({
+            "type": "bindDanmaku", "episodeId": episodeId
+        })
+        onUnbindRequested: pipeServer.sendCommand({"type": "unbindDanmaku"})
+    }
+
     // ── 本地字幕文件选择 ──
     FileDialog {
         id: subDialog
@@ -887,6 +915,14 @@ ApplicationWindow {
                 root.showNotice("所有剧集播放完毕")
             }
         }
+    }
+
+    // ── 694 M3b：弹幕弹窗（toggle 语义同其它面板）──
+    function openDanmakuPanel() {
+        if (danmakuPanelOpen) { closePanels(); return }
+        closePanels()
+        danmakuPanel.searchMode = false
+        danmakuPanelOpen = true
     }
 
     // ── 面板内容（内容/标题对齐 Flutter）──

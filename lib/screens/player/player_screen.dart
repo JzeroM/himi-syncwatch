@@ -4421,6 +4421,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         subtitleDelayEnabled: _activeSubtitleIndex != null,
         subtitleStyleDisabled: _erikaActiveSubtitleIsBitmap(),
         danmakuEnabled: _danmakuOn,
+        danmakuBinding: _dmBindingLabel,
+        danmakuSearchResults: _dmSearchResults,
+        danmakuSearching: _dmSearching,
+        danmakuSearchError: _dmSearchError,
         danmakuSpeed: settings.danmakuSpeed,
         danmakuFontSize: settings.danmakuFontSize,
         danmakuColorMode: settings.danmakuColorMode,
@@ -4510,6 +4514,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 699：上一次轻量弹幕推送的内容签名（去重，避免 500ms 白推）。
   String _lastQtDanmakuSig = '';
+
+  /// 694 M3：弹幕弹窗共用控制器（Flutter sheet / QML / Android 面板）。
+  DanmakuSearchController? _dmPanelController;
+  String _dmPanelSignature = '';
+
+  /// 弹幕弹窗状态镜像（进 NativePlayerUiExtras 快照，原生壳只读渲染）。
+  String _dmBindingLabel = '未匹配';
+  bool _dmSearching = false;
+  String _dmSearchError = '';
+  final List<NativeDanmakuSearchResult> _dmSearchResults = [];
 
   /// 699：500ms 节拍里的**轻量**弹幕推送（只重算弹幕窗口，不动面板数据）。
   ///
@@ -4612,6 +4626,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       case ToggleDanmaku():
         _toggleDanmaku();
+      case SearchDanmaku(:final keyword):
+        unawaited(_searchDanmakuFromPanel(keyword));
+      case BindDanmaku(:final episodeId):
+        unawaited(_bindDanmakuFromPanel(episodeId));
+      case UnbindDanmaku():
+        unawaited(_unbindDanmakuFromPanel());
       case SetSubtitleStyle(:final style):
         _applyNativeSubtitleStyle(style);
       case SetSubtitleDelay(:final delayMs):
@@ -9126,6 +9146,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _topBarRootFocusNode.dispose();
     _nextEpisodeFocusNode.dispose();
     _danmakuButtonFocusNode.dispose();
+    _dmPanelController?.dispose();
     _subtitleButtonFocusNode.dispose();
     _audioButtonFocusNode.dispose();
     _speedButtonFocusNode.dispose();
@@ -10801,17 +10822,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _syncNativePanelData();
   }
 
-  /// 694 M3：点击弹幕按钮 → 弹幕弹窗（动效开关 + 绑定状态 + 搜索/换绑）。
+  /// 694 M3：弹幕弹窗共用控制器工厂（Flutter sheet / QML / Android 面板）。
   ///
-  /// 弹窗内含开关（不再直接 toggle）；搜索/绑定由 [DanmakuSearchController]
-  /// 完成，绑定写入匹配记忆后经「记忆优先」加载路径立即生效。
-  void _openDanmakuPanel() {
-    _resetHideTimer();
+  /// 按「服务器 + 单集」签名缓存，换集/换源自动重建；无可用弹幕源
+  /// 返回 null（调用方提示去配置）。
+  DanmakuSearchController? _danmakuPanelController() {
     final fileName = _danmakuMatchFileName();
-    if (fileName == null) {
-      _danmakuSnack('影片信息未就绪，稍后再试');
-      return;
-    }
+    if (fileName == null) return null;
     // 与 _loadDanmaku 的服务器循环一致：按优先级取第一个可用弹幕源。
     final settings = ref.read(settingsProvider);
     final servers = settings.danmakuServers
@@ -10826,19 +10843,110 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         break;
       }
     }
-    if (client == null) {
-      _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
-      return;
-    }
+    if (client == null) return null;
     final cacheKey =
         _currentEpisodeIndex >= 0 && _currentEpisodeIndex < _episodes.length
             ? _episodes[_currentEpisodeIndex].id
             : widget.itemId;
+    final itemKey = DanmakuMatchKeys.item(client.rawBaseUrl, cacheKey);
+    final nameKey = DanmakuMatchKeys.name(fileName);
+    final signature = '$itemKey|$nameKey';
+    final existing = _dmPanelController;
+    if (existing != null && _dmPanelSignature == signature) return existing;
+    existing?.dispose();
     final controller = DanmakuSearchController(
       client: client,
-      itemKey: DanmakuMatchKeys.item(client.rawBaseUrl, cacheKey),
-      nameKey: DanmakuMatchKeys.name(fileName),
+      itemKey: itemKey,
+      nameKey: nameKey,
     );
+    _dmPanelController = controller;
+    _dmPanelSignature = signature;
+    return controller;
+  }
+
+  /// 694 M3：原生壳「搜索」——结果/错误镜像进状态快照推送。
+  Future<void> _searchDanmakuFromPanel(String keyword) async {
+    final controller = _danmakuPanelController();
+    if (controller == null) return;
+    setState(() => _dmSearching = true);
+    _syncNativePanelData();
+    await controller.search(keyword);
+    if (!mounted || _disposed) return;
+    _dmSearching = false;
+    _dmSearchError = controller.error ?? '';
+    _dmSearchResults
+      ..clear()
+      ..addAll(controller.results.map(
+        (c) => NativeDanmakuSearchResult(
+          episodeId: c.episodeId,
+          animeTitle: c.animeTitle,
+          episodeTitle: c.episodeTitle,
+        ),
+      ));
+    setState(() {});
+    _syncNativePanelData();
+  }
+
+  /// 694 M3：原生壳「绑定」候选（manual 记忆 + 立即重载）。
+  Future<void> _bindDanmakuFromPanel(int episodeId) async {
+    final controller = _danmakuPanelController();
+    if (controller == null) return;
+    MatchCandidate? candidate;
+    for (final c in controller.results) {
+      if (c.episodeId == episodeId) {
+        candidate = c;
+        break;
+      }
+    }
+    candidate ??= MatchCandidate(episodeId: episodeId);
+    await controller.bind(candidate);
+    if (!mounted || _disposed) return;
+    _dmBindingLabel = controller.bindingLabel;
+    _dmSearchError = '';
+    setState(() {});
+    _syncNativePanelData();
+    unawaited(_loadDanmaku(force: true));
+  }
+
+  /// 694 M3：原生壳「解除绑定」（回自动匹配）。
+  Future<void> _unbindDanmakuFromPanel() async {
+    final controller = _danmakuPanelController();
+    if (controller == null) return;
+    await controller.unbind();
+    if (!mounted || _disposed) return;
+    _dmBindingLabel = controller.bindingLabel;
+    setState(() {});
+    _syncNativePanelData();
+    unawaited(_loadDanmaku(force: true));
+  }
+
+  /// 694 M3：刷新弹幕弹窗绑定文案（加载成功/换集后调用）。
+  Future<void> _refreshDanmakuBindingLabel() async {
+    final controller = _danmakuPanelController();
+    if (controller == null) return;
+    await controller.load();
+    if (!mounted || _disposed) return;
+    if (_dmBindingLabel != controller.bindingLabel) {
+      _dmBindingLabel = controller.bindingLabel;
+    }
+  }
+
+  /// 694 M3：点击弹幕按钮 → 弹幕弹窗（动效开关 + 绑定状态 + 搜索/换绑）。
+  ///
+  /// 弹窗内含开关（不再直接 toggle）；搜索/绑定由 [DanmakuSearchController]
+  /// 完成，绑定写入匹配记忆后经「记忆优先」加载路径立即生效。
+  void _openDanmakuPanel() {
+    _resetHideTimer();
+    final fileName = _danmakuMatchFileName();
+    if (fileName == null) {
+      _danmakuSnack('影片信息未就绪，稍后再试');
+      return;
+    }
+    final controller = _danmakuPanelController();
+    if (controller == null) {
+      _danmakuSnack('请先在 设置 → 弹幕配置 填写弹幕 API 地址');
+      return;
+    }
     unawaited(controller.load());
     showModalBottomSheet<void>(
       context: context,
@@ -11168,6 +11276,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       });
       // Erika 档：改由引擎原生 GPU 弹幕合成，喂已解析列表。
       _applyErikaDanmaku();
+      // 694 M3：刷新弹幕弹窗的绑定文案（记忆/自动命中都可能变化）。
+      unawaited(_refreshDanmakuBindingLabel());
       LogService().log('Danmaku',
           'loaded ${found.comments.length} (ep=${found.id}, $fileName)');
     } on DanmakuApiException catch (e) {

@@ -67,6 +67,16 @@ sealed class NativePlayerCommand {
         return ResetDisplay(scope: map['scope'] as String? ?? '');
       case 'toggleDanmaku':
         return const ToggleDanmaku();
+      case 'searchDanmaku':
+        return SearchDanmaku(
+          keyword: map['keyword'] as String? ?? '',
+        );
+      case 'bindDanmaku':
+        return BindDanmaku(
+          episodeId: (map['episodeId'] as num?)?.toInt() ?? 0,
+        );
+      case 'unbindDanmaku':
+        return const UnbindDanmaku();
       case 'updateDanmakuSettings':
         final values = map['values'];
         return UpdateDanmakuSettings(
@@ -336,6 +346,36 @@ class ResetDisplay extends NativePlayerCommand {
   @override
   Map<String, Object?> toMap() =>
       <String, Object?>{'type': 'resetDisplay', 'scope': scope};
+}
+
+/// 694 M3：弹幕弹窗「搜索」（原生壳 → Dart 控制器）。
+class SearchDanmaku extends NativePlayerCommand {
+  const SearchDanmaku({required this.keyword});
+
+  final String keyword;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'searchDanmaku', 'keyword': keyword};
+}
+
+/// 694 M3：弹幕弹窗「绑定」候选（manual 记忆 + 立即重载）。
+class BindDanmaku extends NativePlayerCommand {
+  const BindDanmaku({required this.episodeId});
+
+  final int episodeId;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'bindDanmaku', 'episodeId': episodeId};
+}
+
+/// 694 M3：弹幕弹窗「解除绑定」（回自动匹配）。
+class UnbindDanmaku extends NativePlayerCommand {
+  const UnbindDanmaku();
+
+  @override
+  Map<String, Object?> toMap() => const <String, Object?>{'type': 'unbindDanmaku'};
 }
 
 class ToggleDanmaku extends NativePlayerCommand {

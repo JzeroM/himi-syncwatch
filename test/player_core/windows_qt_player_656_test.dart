@@ -1285,9 +1285,10 @@ void main() {
     test('ASS 渐变遮罩已退役（669：玻璃条自画渐变，防顶/底双重压暗）', () {
       expect(mainQml, isNot(contains('pushScrim')));
       expect(mainQml, isNot(contains('Style: Scrim')));
-      // 697：弹幕改自绘，不再生成 ASS 行（开关只切本地 enabled）
+      // 697：弹幕改自绘，不再生成 ASS 行（开关只切本地 enabled；
+      // 694 M3b 起开关在弹幕弹窗 onToggleRequested，写法带 root. 前缀）
       expect(mainQml, isNot(contains('danmakuBuildTimer')));
-      expect(mainQml, contains('danmakuOn = !danmakuOn'));
+      expect(mainQml, contains('root.danmakuOn = !root.danmakuOn'));
     });
 
     test('液态玻璃材质（渐变玻璃条/玻璃卡/玻璃滑杆）', () {

@@ -270,6 +270,42 @@ class NativeDanmakuItem {
   int get hashCode => Object.hash(timeMs, text, mode, color);
 }
 
+/// 694 M3：弹幕搜索结果条目（弹幕弹窗「搜索/换绑」用，四端同构）。
+class NativeDanmakuSearchResult {
+  const NativeDanmakuSearchResult({
+    required this.episodeId,
+    this.animeTitle = '',
+    this.episodeTitle = '',
+  });
+
+  final int episodeId;
+  final String animeTitle;
+  final String episodeTitle;
+
+  factory NativeDanmakuSearchResult.fromJson(Map<Object?, Object?> json) =>
+      NativeDanmakuSearchResult(
+        episodeId: (json['episodeId'] as num?)?.toInt() ?? 0,
+        animeTitle: json['animeTitle'] as String? ?? '',
+        episodeTitle: json['episodeTitle'] as String? ?? '',
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'episodeId': episodeId,
+        'animeTitle': animeTitle,
+        'episodeTitle': episodeTitle,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is NativeDanmakuSearchResult &&
+      other.episodeId == episodeId &&
+      other.animeTitle == animeTitle &&
+      other.episodeTitle == episodeTitle;
+
+  @override
+  int get hashCode => Object.hash(episodeId, animeTitle, episodeTitle);
+}
+
 /// 房间成员快照。
 class NativeRoomMember {
   const NativeRoomMember({
@@ -436,6 +472,10 @@ class NativePlayerState {
     this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
+    this.danmakuBinding = '',
+    this.danmakuSearchResults = const <NativeDanmakuSearchResult>[],
+    this.danmakuSearching = false,
+    this.danmakuSearchError = '',
     this.danmakuTotal = 0,
     this.danmakuBlocked = 0,
     this.danmakuSampled = 0,
@@ -648,6 +688,12 @@ class NativePlayerState {
   final int danmakuTopRows;
   final int danmakuBottomRows;
 
+  /// 694 M3：弹幕弹窗状态（绑定文案 / 搜索结果 / 搜索中 / 错误提示）。
+  final String danmakuBinding;
+  final List<NativeDanmakuSearchResult> danmakuSearchResults;
+  final bool danmakuSearching;
+  final String danmakuSearchError;
+
   /// 弹幕数量上限（698 起已不使用，恒 null；字段保留兼容旧快照）。
 
   /// P4 统计：总条数 / 屏蔽数 / 当前在屏数（698 起无采样）。
@@ -820,6 +866,14 @@ class NativePlayerState {
       danmakuScrollRows: (json['danmakuScrollRows'] as num?)?.toInt() ?? 30,
       danmakuTopRows: (json['danmakuTopRows'] as num?)?.toInt() ?? 4,
       danmakuBottomRows: (json['danmakuBottomRows'] as num?)?.toInt() ?? 4,
+      danmakuBinding: json['danmakuBinding'] as String? ?? '',
+      danmakuSearchResults:
+          ((json['danmakuSearchResults'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<Map<Object?, Object?>>()
+              .map(NativeDanmakuSearchResult.fromJson)
+              .toList(growable: false),
+      danmakuSearching: json['danmakuSearching'] == true,
+      danmakuSearchError: json['danmakuSearchError'] as String? ?? '',
       roomCode: json['roomCode'] as String?,
       isHost: json['isHost'] == true,
       roomMembers: ((json['roomMembers'] as List<Object?>?) ?? const <Object?>[])
@@ -955,6 +1009,11 @@ class NativePlayerState {
         'danmakuScrollRows': danmakuScrollRows,
         'danmakuTopRows': danmakuTopRows,
         'danmakuBottomRows': danmakuBottomRows,
+        'danmakuBinding': danmakuBinding,
+        'danmakuSearchResults':
+            danmakuSearchResults.map((e) => e.toJson()).toList(growable: false),
+        'danmakuSearching': danmakuSearching,
+        'danmakuSearchError': danmakuSearchError,
         'roomCode': roomCode,
         'isHost': isHost,
         'roomMembers':
@@ -1584,6 +1643,10 @@ class NativePlayerUiExtras {
     this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
+    this.danmakuBinding = '',
+    this.danmakuSearchResults = const <NativeDanmakuSearchResult>[],
+    this.danmakuSearching = false,
+    this.danmakuSearchError = '',
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = const <String>[],
@@ -1636,6 +1699,12 @@ class NativePlayerUiExtras {
   final int danmakuScrollRows;
   final int danmakuTopRows;
   final int danmakuBottomRows;
+
+  /// 694 M3：弹幕弹窗状态（Dart 侧写入，原生壳只读渲染）。
+  final String danmakuBinding;
+  final List<NativeDanmakuSearchResult> danmakuSearchResults;
+  final bool danmakuSearching;
+  final String danmakuSearchError;
 
   /// 弹幕屏蔽（588 补齐）：原生 UI 下 Flutter 弹幕层退场，屏蔽链必须由
   /// Dart 侧在切窗时先过滤（与 `DanmakuTimeline._filter` 同序）。

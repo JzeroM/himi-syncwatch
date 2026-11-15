@@ -325,9 +325,11 @@ Rectangle {
             RowLayout {
                 spacing: 8
 
-                // 弹幕开关
+                // 弹幕开关（694 M3b：点击弹窗；图标随开关状态变色）
                 ControlButton {
                     icon: playerState.danmakuEnabled ? Icons.danmakuOn : Icons.danmakuOff
+                    iconColor: playerState.danmakuEnabled ? "#FF8A3D"
+                                                          : theme.textColor
                     tooltip: "弹幕"
                     onClicked: root.danmakuClicked()
                 }
