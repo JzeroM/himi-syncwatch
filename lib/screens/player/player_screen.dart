@@ -73,6 +73,7 @@ import 'package:himi_syncwatch/services/network_speed_meter.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_candidate.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
 import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
@@ -10903,7 +10904,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return null;
   }
 
-  /// 用**单个**弹幕服务器完成：缓存命中 → match → search → 逐候选尝试。
+  /// 用**单个**弹幕服务器完成：匹配记忆 → 缓存命中 → match → search →
+  /// 逐候选尝试。
   ///
   /// 返回命中的弹幕；无命中/被取消返回 null（调用方决定换下一个服务器）。
   Future<({int id, List<DanmakuComment> comments})?> _loadDanmakuFromClient({
@@ -10913,6 +10915,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     required int seq,
   }) async {
     ({int id, List<DanmakuComment> comments})? found;
+      // 2) 自动命中时回填记忆用的候选标题（memory 命中/缓存命中时为空）。
+      List<MatchCandidate> rememberedCandidates = const [];
+      // 0) 匹配记忆（694 M2）：持久绑定优先——冷启动免整套 match/search。
+      //    命中后取弹幕失败/为空 → **立即作废**回落自动匹配（防绑错卡死）。
+      final memory = DanmakuCaches.matchMemory;
+      final memItemKey = DanmakuMatchKeys.item(client.rawBaseUrl, cacheKey);
+      final memNameKey = DanmakuMatchKeys.name(fileName);
+      DanmakuMatchRecord? remembered =
+          await memory.get(itemKey: memItemKey, nameKey: memNameKey);
+      if (remembered != null) {
+        found = await _tryDanmakuCandidates(client, [remembered.episodeId], seq);
+        if (!mounted || seq != _danmakuLoadSeq) return null;
+        if (found != null) {
+          await memory.put(
+            itemKey: memItemKey,
+            nameKey: memNameKey,
+            record: remembered,
+          );
+          return found;
+        }
+        await memory.remove(itemKey: memItemKey, nameKey: memNameKey);
+        LogService().log('Danmaku', '匹配记忆失效（弹幕为空/失败），回落自动匹配');
+      }
+
       // 1) 复用上次成功的 episodeId（坏源已不复用：失败会继续找其它候选）
       final cachedId = DanmakuCaches.episode.get(cacheKey);
       if (cachedId != null) {
@@ -10960,17 +10986,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         ]);
         if (!mounted || seq != _danmakuLoadSeq) return null;
 
-        found = await _tryDanmakuCandidates(
-          client,
-          _orderedDanmakuCandidates(matched, searched)
-              .take(PlayerScreen.maxDanmakuCandidates)
-              .toList(growable: false),
-          seq,
-        );
+        rememberedCandidates = <MatchCandidate>[...matched, ...searched];
+        final ordered = _orderedDanmakuCandidates(matched, searched)
+            .take(PlayerScreen.maxDanmakuCandidates)
+            .toList(growable: false);
+        found = await _tryDanmakuCandidates(client, ordered, seq);
         if (!mounted || seq != _danmakuLoadSeq) return null;
       }
 
-
+      // 自动命中 → 写匹配记忆（694 M2）：下次冷启动免整套匹配。
+      if (found != null) {
+        final hitId = found.id;
+        var animeTitle = '';
+        var episodeTitle = '';
+        for (final c in rememberedCandidates) {
+          if (c.episodeId == hitId) {
+            animeTitle = c.animeTitle;
+            episodeTitle = c.episodeTitle;
+            break;
+          }
+        }
+        await memory.put(
+          itemKey: memItemKey,
+          nameKey: memNameKey,
+          record: DanmakuMatchRecord(
+            episodeId: hitId,
+            animeTitle: animeTitle,
+            episodeTitle: episodeTitle,
+            source: DanmakuMatchSource.auto,
+          ),
+        );
+      }
     return found;
   }
 
