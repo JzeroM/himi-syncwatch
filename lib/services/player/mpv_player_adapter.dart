@@ -1434,6 +1434,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     return out;
   }
 
+  /// 699：按指定播放位置重算弹幕窗口（500ms 轻量推送用）。
+  ///
+  /// 与 [buildNativePlayerState] 的区别：不构建整份 87 字段快照，
+  /// 只算弹幕窗口与统计——Qt 模式下每 500ms 调一次，成本必须可控。
+  List<NativeDanmakuItem> buildDanmakuWindowFor(int positionMs) =>
+      _buildDanmakuWindow(positionMs);
+
   /// PlayerScreen 注入选集列表（内容/剧集变化时调用）。
   set nativeEpisodes(List<NativeEpisode> episodes) {
     _nativeEpisodes = episodes;

@@ -4521,6 +4521,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 699：上一次轻量弹幕推送的内容签名（去重，避免 500ms 白推）。
+  String _lastQtDanmakuSig = '';
+
+  /// 699：500ms 节拍里的**轻量**弹幕推送（只重算弹幕窗口，不动面板数据）。
+  ///
+  /// Qt 模式下 mpv 在 Qt 进程，Dart 侧没有安卓/鸿蒙那条 200ms 原生 UI
+  /// 轮询；弹幕时间窗必须自己跟着播放位置推进，否则窗口冻结在首次推送的
+  /// 位置 → 「在屏 0」、画面一条不显示（真机回归）。
+  ///
+  /// 与 [_syncNativePanelData] 的区别：这里**不重建**剧集/版本/轨道列表，
+  /// 只把当前弹幕窗口 + 统计塞进一份最小快照，成本与播放位置成正比而非
+  /// 与剧集数量成正比。
+  void _pushQtDanmakuTick() {
+    final mpv = _player;
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (mpv is! MpvPlayerAdapter || qt == null || qt.isDisposed || _disposed) {
+      return;
+    }
+    final posMs = qt.position;
+    final window = mpv.buildDanmakuWindowFor(posMs);
+    final stats = mpv.danmakuStats;
+    // 【必须按「内容是否变化」去重，不能按「是否为空」提前 return】
+    // 窗口从非空变空（弹幕全过期 / 关弹幕）时也要推一次空列表，
+    // 否则 Qt 侧会保留上一批弹幕节点继续显示。
+    final sig = '${window.length}|${window.isEmpty ? '' : window.first.timeMs}'
+        '|${window.isEmpty ? '' : window.last.timeMs}'
+        '|${stats.total}|${stats.onscreen}|${stats.blocked}';
+    if (sig == _lastQtDanmakuSig) return;
+    _lastQtDanmakuSig = sig;
+    qt.pushNativeState(
+      <String, Object?>{
+        'danmakuItems': window.map((e) => e.toJson()).toList(growable: false),
+        'danmakuTotal': stats.total,
+        'danmakuBlocked': stats.blocked,
+        'danmakuOnscreen': stats.onscreen,
+      },
+    );
+  }
+
   /// 原生命令通用路由（Phase 2）：把 adapter 转发来的命令接到现成 handler。
   ///
   /// 路由矩阵见 docs/native_player_command_routing.md。adapter 自处理
@@ -5581,11 +5620,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // 时调用 → 弹幕时间窗冻结在**首次推送的位置** → 播放推进后窗口里
       // 没有任何条目落在生命周期内 → 面板「在屏 0」、画面一条不显示。
       //
-      // 这里跟随 500ms 位置节拍重推（Qt 侧 `setDanmakuItems` 有内容相等
-      // 短路，未变化时不发信号，不会白刷 QML）。
+      // 这里跟随 500ms 位置节拍重推。**只推弹幕窗口**（轻量路径）：
+      // 完整的 `_syncNativePanelData()` 会重建整份剧集列表
+      // （`List.generate`，长剧集上千对象）+ 全部面板数据，500ms 一次
+      // 是纯粹的 GC 压力。Qt 侧 `setDanmakuItems` 还有内容相等短路。
       if (defaultTargetPlatform == TargetPlatform.windows &&
           MpvSessionPlatform.activeQtAdapter != null) {
-        _syncNativePanelData();
+        _pushQtDanmakuTick();
       }
       // 播完自动下一集兜底：仅服务不上报 end 位的引擎（media_kit/Erika）；
       // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。

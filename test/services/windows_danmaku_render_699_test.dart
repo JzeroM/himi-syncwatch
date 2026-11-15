@@ -94,17 +94,37 @@ void main() {
   });
 
   group('2.8 弹幕窗口必须跟随播放位置重算', () {
-    test('2.8.1 Windows Qt 分支在 500ms 位置节拍里重推', () {
+    test('2.8.1 Windows Qt 分支在 500ms 位置节拍里重推（轻量路径）', () {
       // Qt 模式没有安卓/鸿蒙那条 200ms 原生 UI 轮询（_pushNativeUiState
-      // 只服务同进程宿主）。此前 _syncNativePanelData 只在事件时调用
-      // → 弹幕时间窗冻结在首次推送位置 → 在屏恒 0（699 真机）。
+      // 只服务同进程宿主）。此前只在事件时调用 → 弹幕时间窗冻结在首次
+      // 推送位置 → 在屏恒 0（699 真机）。
+      //
+      // 用**轻量** `_pushQtDanmakuTick()` 而不是完整 `_syncNativePanelData()`：
+      // 后者每次会重建整份剧集列表（List.generate，长剧集上千对象），
+      // 500ms 一次是纯 GC 压力。
       final screen = read('lib/screens/player/player_screen.dart');
       final idx = screen.indexOf('_evaluateSkipPrompt(pos);');
       expect(idx, greaterThan(0));
       final after = screen.substring(idx, idx + 1200);
-      expect(after, contains('_syncNativePanelData();'));
+      expect(after, contains('_pushQtDanmakuTick();'));
       expect(after, contains('TargetPlatform.windows'));
       expect(after, contains('activeQtAdapter != null'));
+      // 轻量路径只推弹幕相关字段
+      expect(screen, contains('void _pushQtDanmakuTick()'));
+      expect(screen, contains('buildDanmakuWindowFor(posMs)'));
+      expect(screen, contains("'danmakuOnscreen': stats.onscreen"));
+    });
+
+    test('2.8.1b 窗口变空也要推（否则 Qt 残留旧弹幕）', () {
+      final screen = read('lib/screens/player/player_screen.dart');
+      // 不能按「window.isEmpty」提前 return —— 必须按内容签名去重。
+      expect(screen, contains('_lastQtDanmakuSig'));
+      expect(screen, contains("if (sig == _lastQtDanmakuSig) return;"));
+      expect(
+        screen,
+        isNot(contains('if (window.isEmpty && mpv.danmakuStats.onscreen == 0)')),
+        reason: '按空提前返回会让关弹幕/全过期时残留旧节点',
+      );
     });
 
     test('2.8.2 Qt 侧 setDanmakuItems 有内容相等短路（不白刷 QML）', () {
