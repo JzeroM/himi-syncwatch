@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_server.dart';
 import 'package:himi_syncwatch/services/emby_error.dart';
 import 'package:himi_syncwatch/services/lan_config/emby_setup_service.dart';
 import 'package:himi_syncwatch/services/lan_config/lan_config_server.dart';
@@ -147,9 +148,27 @@ final lanConfigProvider =
       return null;
     },
     danmakuHandler: (body) async {
-      ref
-          .read(settingsProvider.notifier)
-          .update(danmakuApiUrl: asString(body['url']));
+      // 扫码写入「弹幕源」列表（697 起设置页不再有单独的 API 输入框）：
+      // 有源就更新第一条地址，没有就新增一条「扫码」。
+      final url = asString(body['url']).trim();
+      final servers = ref.read(settingsProvider).danmakuServers;
+      final next = servers.isEmpty
+          ? <DanmakuServer>[
+              DanmakuServer(
+                id: 'qr-${DateTime.now().microsecondsSinceEpoch}',
+                name: '扫码',
+                baseUrl: url,
+              ),
+            ]
+          : <DanmakuServer>[
+              servers.first.copyWith(baseUrl: url, enabled: true),
+              ...servers.skip(1),
+            ];
+      ref.read(settingsProvider.notifier).update(
+            danmakuServersJson: AppSettings.encodeDanmakuServers(next),
+            // 老字段同步（降级兼容 / activeDanmakuServer 兜底）
+            danmakuApiUrl: url,
+          );
       return null;
     },
     tmdbHandler: (body) async {

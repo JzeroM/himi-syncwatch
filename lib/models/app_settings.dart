@@ -334,10 +334,6 @@ class AppSettings {
   /// 屏蔽词（英文逗号分隔，子串匹配）。
   final String danmakuBlockWords;
 
-  /// 限制弹幕数量开关 + 上限（等间隔采样保留）。
-  final bool danmakuLimitCount;
-  final int danmakuMaxCount;
-
   /// 弹幕速度倍率（穿屏时长 = 8s ÷ speed）。
   final double danmakuSpeed;
 
@@ -437,8 +433,6 @@ class AppSettings {
   static const double danmakuOpacityMax = 1.0;
 
   /// 数量上限范围。
-  static const int danmakuMaxCountMin = 100;
-  static const int danmakuMaxCountMax = 2000;
 
   /// 生效的音频后端：AAudio/OpenSL/AudioTrack 均为 Android 专属后端
   /// （fvp 文档明确 "on android"），iOS/macOS/Linux/Windows 上设置会
@@ -529,8 +523,6 @@ class AppSettings {
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = '',
-    this.danmakuLimitCount = false,
-    this.danmakuMaxCount = 500,
     this.danmakuSpeed = 0.7,
     this.danmakuFontSize = 0.5,
     this.danmakuOpacity = 0.8,
@@ -655,8 +647,6 @@ class AppSettings {
     bool? danmakuBlockTop,
     bool? danmakuBlockBottom,
     String? danmakuBlockWords,
-    bool? danmakuLimitCount,
-    int? danmakuMaxCount,
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
@@ -743,8 +733,6 @@ class AppSettings {
       danmakuBlockTop: danmakuBlockTop ?? this.danmakuBlockTop,
       danmakuBlockBottom: danmakuBlockBottom ?? this.danmakuBlockBottom,
       danmakuBlockWords: danmakuBlockWords ?? this.danmakuBlockWords,
-      danmakuLimitCount: danmakuLimitCount ?? this.danmakuLimitCount,
-      danmakuMaxCount: danmakuMaxCount ?? this.danmakuMaxCount,
       danmakuSpeed: danmakuSpeed ?? this.danmakuSpeed,
       danmakuFontSize: danmakuFontSize ?? this.danmakuFontSize,
       danmakuOpacity: danmakuOpacity ?? this.danmakuOpacity,
@@ -847,8 +835,6 @@ class AppSettings {
         'danmakuBlockTop': danmakuBlockTop,
         'danmakuBlockBottom': danmakuBlockBottom,
         'danmakuBlockWords': danmakuBlockWords,
-        'danmakuLimitCount': danmakuLimitCount,
-        'danmakuMaxCount': danmakuMaxCount,
         'danmakuSpeed': danmakuSpeed,
         'danmakuFontSize': danmakuFontSize,
         'danmakuOpacity': danmakuOpacity,
@@ -1105,13 +1091,6 @@ class AppSettings {
       danmakuBlockTop: json['danmakuBlockTop'] as bool? ?? false,
       danmakuBlockBottom: json['danmakuBlockBottom'] as bool? ?? false,
       danmakuBlockWords: json['danmakuBlockWords'] as String? ?? '',
-      danmakuLimitCount: json['danmakuLimitCount'] as bool? ?? false,
-      danmakuMaxCount: _clampInt(
-        json['danmakuMaxCount'],
-        500,
-        danmakuMaxCountMin,
-        danmakuMaxCountMax,
-      ),
       // 迁移：旧默认 1.0 → 0.7（全平台弹幕默认速度，无「是否手动设过」
       // 记录，一并迁移；其余值按用户所选保留）。
       danmakuSpeed: (json['danmakuSpeed'] is num &&

@@ -24,8 +24,6 @@ void main() {
         danmakuBlockTop: true,
         danmakuBlockBottom: true,
         danmakuBlockWords: '广告,刷屏',
-        danmakuLimitCount: true,
-        danmakuMaxCount: 1000,
         danmakuSpeed: 1.5,
         danmakuFontSize: 0.75,
         danmakuOpacity: 0.5,
@@ -39,8 +37,6 @@ void main() {
       expect(s.danmakuBlockTop, isTrue);
       expect(s.danmakuBlockBottom, isTrue);
       expect(s.danmakuBlockWords, '广告,刷屏');
-      expect(s.danmakuLimitCount, isTrue);
-      expect(s.danmakuMaxCount, 1000);
       expect(s.danmakuSpeed, 1.5);
       expect(s.danmakuFontSize, 0.75);
       expect(s.danmakuOpacity, 0.5);
@@ -84,8 +80,6 @@ void main() {
         danmakuBlockTop: false,
         danmakuBlockBottom: false,
         danmakuBlockWords: '',
-        danmakuLimitCount: false,
-        danmakuMaxCount: 500,
         danmakuSpeed: 0.7,
         danmakuFontSize: 0.5,
         danmakuOpacity: 0.6,
@@ -99,8 +93,6 @@ void main() {
       expect(s.danmakuBlockTop, isFalse);
       expect(s.danmakuBlockBottom, isFalse);
       expect(s.danmakuBlockWords, '');
-      expect(s.danmakuLimitCount, isFalse);
-      expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 0.7);
       expect(s.danmakuFontSize, 0.5);
       expect(s.danmakuOpacity, 0.6);

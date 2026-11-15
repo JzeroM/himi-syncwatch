@@ -1108,8 +1108,6 @@ void main() {
       expect(s.danmakuBlockTop, isFalse);
       expect(s.danmakuBlockBottom, isFalse);
       expect(s.danmakuBlockWords, '');
-      expect(s.danmakuLimitCount, isFalse);
-      expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 0.7);
       expect(s.danmakuFontSize, 0.5);
       expect(s.danmakuOpacity, 0.8);
@@ -1151,8 +1149,6 @@ void main() {
         danmakuBlockTop: true,
         danmakuBlockBottom: true,
         danmakuBlockWords: '广告,刷屏',
-        danmakuLimitCount: true,
-        danmakuMaxCount: 800,
         danmakuSpeed: 1.5,
         danmakuFontSize: 0.8,
         danmakuOpacity: 0.7,
@@ -1166,8 +1162,6 @@ void main() {
       expect(back.danmakuBlockTop, isTrue);
       expect(back.danmakuBlockBottom, isTrue);
       expect(back.danmakuBlockWords, '广告,刷屏');
-      expect(back.danmakuLimitCount, isTrue);
-      expect(back.danmakuMaxCount, 800);
       expect(back.danmakuSpeed, 1.5);
       expect(back.danmakuFontSize, 0.8);
       expect(back.danmakuOpacity, 0.7);
@@ -1191,7 +1185,6 @@ void main() {
         'danmakuSpeed': 99.0,
         'danmakuFontSize': 0.1,
         'danmakuOpacity': 5,
-        'danmakuMaxCount': 10,
       });
       expect(s.danmakuScrollRows, AppSettings.danmakuRowsMax);
       expect(s.danmakuTopRows, AppSettings.danmakuRowsMin);
@@ -1199,7 +1192,6 @@ void main() {
       expect(s.danmakuSpeed, AppSettings.danmakuSpeedMax);
       expect(s.danmakuFontSize, AppSettings.danmakuFontSizeMin);
       expect(s.danmakuOpacity, AppSettings.danmakuOpacityMax);
-      expect(s.danmakuMaxCount, AppSettings.danmakuMaxCountMin);
     });
   });
 

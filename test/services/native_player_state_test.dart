@@ -199,7 +199,6 @@ void main() {
         danmakuScrollRows: 12,
         danmakuTopRows: 3,
         danmakuBottomRows: 5,
-        danmakuMaxCount: 800,
         tracks: <NativeTrack>[
           NativeTrack(
             id: 1,
@@ -215,7 +214,6 @@ void main() {
       expect(r.danmakuScrollRows, 12);
       expect(r.danmakuTopRows, 3);
       expect(r.danmakuBottomRows, 5);
-      expect(r.danmakuMaxCount, 800);
       expect(r.tracks[0].label, '国语 (AAC 立体声)');
       expect(r.tracks[1].label, '简体中文 (SRT)');
       // 缺失字段走默认（旧包兼容）：30/4/4/不限。
@@ -223,7 +221,6 @@ void main() {
       expect(d.danmakuScrollRows, 30);
       expect(d.danmakuTopRows, 4);
       expect(d.danmakuBottomRows, 4);
-      expect(d.danmakuMaxCount, isNull);
       // label 缺失（旧包）→ null，原生回退 title/lang。
       final old = NativePlayerState.fromJson(const {
         'tracks': <Object?>[

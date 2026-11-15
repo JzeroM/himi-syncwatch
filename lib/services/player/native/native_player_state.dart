@@ -436,7 +436,6 @@ class NativePlayerState {
     this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
-    this.danmakuMaxCount,
     this.danmakuTotal = 0,
     this.danmakuBlocked = 0,
     this.danmakuSampled = 0,
@@ -650,7 +649,6 @@ class NativePlayerState {
   final int danmakuBottomRows;
 
   /// 弹幕数量上限（null = 不限制；超限由 Dart 等间隔采样后入窗口）。
-  final int? danmakuMaxCount;
 
   /// P4 统计：总条数 / 屏蔽数 / 采样丢弃数 / 当前在屏数。
   final int danmakuTotal;
@@ -822,7 +820,6 @@ class NativePlayerState {
       danmakuScrollRows: (json['danmakuScrollRows'] as num?)?.toInt() ?? 30,
       danmakuTopRows: (json['danmakuTopRows'] as num?)?.toInt() ?? 4,
       danmakuBottomRows: (json['danmakuBottomRows'] as num?)?.toInt() ?? 4,
-      danmakuMaxCount: (json['danmakuMaxCount'] as num?)?.toInt(),
       roomCode: json['roomCode'] as String?,
       isHost: json['isHost'] == true,
       roomMembers: ((json['roomMembers'] as List<Object?>?) ?? const <Object?>[])
@@ -958,7 +955,6 @@ class NativePlayerState {
         'danmakuScrollRows': danmakuScrollRows,
         'danmakuTopRows': danmakuTopRows,
         'danmakuBottomRows': danmakuBottomRows,
-        'danmakuMaxCount': danmakuMaxCount,
         'roomCode': roomCode,
         'isHost': isHost,
         'roomMembers':
@@ -1079,7 +1075,6 @@ class NativePlayerState {
     int? danmakuScrollRows,
     int? danmakuTopRows,
     int? danmakuBottomRows,
-    int? danmakuMaxCount,
     String? roomCode,
     bool? isHost,
     List<NativeRoomMember>? roomMembers,
@@ -1203,7 +1198,6 @@ class NativePlayerState {
         danmakuScrollRows: danmakuScrollRows ?? this.danmakuScrollRows,
         danmakuTopRows: danmakuTopRows ?? this.danmakuTopRows,
         danmakuBottomRows: danmakuBottomRows ?? this.danmakuBottomRows,
-        danmakuMaxCount: danmakuMaxCount ?? this.danmakuMaxCount,
         roomCode: roomCode ?? this.roomCode,
         isHost: isHost ?? this.isHost,
         roomMembers: roomMembers ?? this.roomMembers,
@@ -1315,7 +1309,6 @@ class NativePlayerState {
       other.danmakuScrollRows == danmakuScrollRows &&
       other.danmakuTopRows == danmakuTopRows &&
       other.danmakuBottomRows == danmakuBottomRows &&
-      other.danmakuMaxCount == danmakuMaxCount &&
       other.roomCode == roomCode &&
       other.isHost == isHost &&
       listEquals(other.roomMembers, roomMembers) &&
@@ -1413,7 +1406,6 @@ class NativePlayerState {
         danmakuScrollRows,
         danmakuTopRows,
         danmakuBottomRows,
-        danmakuMaxCount,
         roomCode,
         isHost,
         ...roomMembers,
@@ -1592,7 +1584,6 @@ class NativePlayerUiExtras {
     this.danmakuScrollRows = 30,
     this.danmakuTopRows = 4,
     this.danmakuBottomRows = 4,
-    this.danmakuMaxCount,
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = const <String>[],
@@ -1641,12 +1632,10 @@ class NativePlayerUiExtras {
   final double danmakuOutlineWidth;
   final int danmakuOutlineColor;
 
-  /// 弹幕行数/数量上限（弹幕设置页）：滚动 = 上限按屏高自适应；
-  /// [danmakuMaxCount] null = 不限制。
+  /// 弹幕行数（弹幕设置页）：滚动 = 上限按屏高自适应。
   final int danmakuScrollRows;
   final int danmakuTopRows;
   final int danmakuBottomRows;
-  final int? danmakuMaxCount;
 
   /// 弹幕屏蔽（588 补齐）：原生 UI 下 Flutter 弹幕层退场，屏蔽链必须由
   /// Dart 侧在切窗时先过滤（与 `DanmakuTimeline._filter` 同序）。

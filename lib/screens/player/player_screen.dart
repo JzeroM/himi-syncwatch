@@ -253,7 +253,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
             .map((w) => w.trim())
             .where((w) => w.isNotEmpty)
             .toList(),
-        maxCount: s.danmakuLimitCount ? s.danmakuMaxCount : null,
       );
 
   /// Emby 播放进度上报间隔（3 秒）。
@@ -4445,8 +4444,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuScrollRows: settings.danmakuScrollRows,
         danmakuTopRows: settings.danmakuTopRows,
         danmakuBottomRows: settings.danmakuBottomRows,
-        danmakuMaxCount:
-            settings.danmakuLimitCount ? settings.danmakuMaxCount : null,
         // 屏蔽链（588）：原生 UI 下 Flutter 弹幕层退场，屏蔽必须在这里生效。
         danmakuBlockTop: settings.danmakuBlockTop,
         danmakuBlockBottom: settings.danmakuBlockBottom,
@@ -4497,7 +4494,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // `logoUrl`（已在 NativePlayerState，但需确认传入）。
     final qt = MpvSessionPlatform.activeQtAdapter;
     if (qt != null && !qt.isDisposed) {
-      final stateJson = mpv.buildNativePlayerState().toJson();
+      // 【窗口 697 回归：Windows 弹幕一直是 0 个】
+      // Qt 模式下 mpv 跑在 Qt 进程里，Dart 的 `mpv` 是**空闲引擎**：
+      // `positionMs` 恒 0 → 弹幕切窗只覆盖前 30s、`在屏` 恒 0、QML 一条
+      // 也画不出来；`paused` 也可能是旧值 → QML 的帧定时器根本不跑。
+      // 这里统一用 Qt 的真实播放态覆盖（位置同时作为切窗基准传进去）。
+      final stateJson =
+          mpv.buildNativePlayerState(positionMsOverride: qt.position).toJson();
+      stateJson['durationMs'] = qt.duration;
+      stateJson['paused'] = qt.state != AdapterPlaybackState.playing;
+      stateJson['speed'] = qt.playbackRate;
       stateJson['brightness'] = _brightnessNotifier.value;
       // 681：Qt 接管时 `_player` 是**空闲引擎**（`_prepared` 恒 false），
       // 直接用会让 Qt 的占位层「请从资源面板选择要播放的内容」永远显示
@@ -10742,7 +10748,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       scrollDurationSeconds: s.danmakuSpeed > 0 ? 8.0 / s.danmakuSpeed : 8.0,
       displayArea: 1.0,
       maxLinesPerMode: s.danmakuScrollRows,
-      maxQuantity: s.danmakuLimitCount ? s.danmakuMaxCount : null,
+      // 698：设置页删除「限制同屏数量」→ 恒不限制（Erika 引擎侧保留该参数）。
+      maxQuantity: null,
       blockTop: s.danmakuBlockTop,
       blockBottom: s.danmakuBlockBottom,
       blockWords: s.danmakuBlockWords

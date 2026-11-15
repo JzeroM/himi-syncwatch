@@ -311,7 +311,6 @@ data class AndroidNativePlayerState(
     val danmakuScrollRows: Int = 30,
     val danmakuTopRows: Int = 4,
     val danmakuBottomRows: Int = 4,
-    val danmakuMaxCount: Int? = null,
     /** 弹幕时间窗（原生渲染；Dart 按 [当前位置-2s,+30s] 切窗推送）。 */
     val danmakuItems: List<AndroidDanmakuItem> = emptyList(),
     // ── 房间资源面板（590）──
@@ -518,11 +517,6 @@ data class AndroidNativePlayerState(
             danmakuScrollRows = json.optInt("danmakuScrollRows", 30),
             danmakuTopRows = json.optInt("danmakuTopRows", 4),
             danmakuBottomRows = json.optInt("danmakuBottomRows", 4),
-            danmakuMaxCount = if (json.has("danmakuMaxCount") && !json.isNull("danmakuMaxCount")) {
-                json.optInt("danmakuMaxCount", 0)
-            } else {
-                null
-            },
             danmakuItems = json.optJSONArray("danmakuItems")?.let { arr ->
                 (0 until arr.length()).map { AndroidDanmakuItem.fromJson(arr.getJSONObject(it)) }
             } ?: emptyList(),

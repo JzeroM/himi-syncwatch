@@ -6,9 +6,7 @@ import 'package:himi_syncwatch/services/danmaku/danmaku_server.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
-import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:himi_syncwatch/widgets/tv/tv_confirm_dialog.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -25,20 +23,17 @@ class DanmakuConfigScreen extends ConsumerStatefulWidget {
 }
 
 class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
-  late final TextEditingController _apiUrl;
   late final TextEditingController _blockWords;
 
   @override
   void initState() {
     super.initState();
     final s = ref.read(settingsProvider);
-    _apiUrl = TextEditingController(text: s.danmakuApiUrl);
     _blockWords = TextEditingController(text: s.danmakuBlockWords);
   }
 
   @override
   void dispose() {
-    _apiUrl.dispose();
     _blockWords.dispose();
     super.dispose();
   }
@@ -52,8 +47,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     bool? danmakuBlockTop,
     bool? danmakuBlockBottom,
     String? danmakuBlockWords,
-    bool? danmakuLimitCount,
-    int? danmakuMaxCount,
     double? danmakuSpeed,
     double? danmakuFontSize,
     double? danmakuOpacity,
@@ -72,8 +65,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
           danmakuBlockTop: danmakuBlockTop,
           danmakuBlockBottom: danmakuBlockBottom,
           danmakuBlockWords: danmakuBlockWords,
-          danmakuLimitCount: danmakuLimitCount,
-          danmakuMaxCount: danmakuMaxCount,
           danmakuSpeed: danmakuSpeed,
           danmakuFontSize: danmakuFontSize,
           danmakuOpacity: danmakuOpacity,
@@ -95,16 +86,16 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuServersJson: AppSettings.encodeDanmakuServers(reindexed),
       danmakuApiUrl: active.isEmpty ? '' : active.first.baseUrl,
     );
-    if (active.isNotEmpty) _apiUrl.text = active.first.baseUrl;
   }
 
-  Future<void> _addServer() async {
-    final nameCtrl = TextEditingController();
-    final urlCtrl = TextEditingController();
+  /// 新增 / 编辑弹幕源（同一个对话框，[existing] 非空即编辑）。
+  Future<void> _editServer([DanmakuServer? existing]) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final urlCtrl = TextEditingController(text: existing?.baseUrl ?? '');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('添加弹幕服务器'),
+        title: Text(existing == null ? '添加弹幕源' : '编辑弹幕源'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -124,11 +115,14 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
             key: const ValueKey('danmakuServerAddConfirm'),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('添加'),
+            child: Text(existing == null ? '添加' : '保存'),
           ),
         ],
       ),
@@ -136,12 +130,25 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
     if (ok == true && mounted) {
       final url = urlCtrl.text.trim();
       if (url.isEmpty) return;
-      final server = DanmakuServer(
-        id: 'srv-${DateTime.now().microsecondsSinceEpoch}',
-        name: nameCtrl.text.trim().isEmpty ? url : nameCtrl.text.trim(),
-        baseUrl: url,
-      );
-      _applyServers([...ref.read(settingsProvider).danmakuServers, server]);
+      final name = nameCtrl.text.trim().isEmpty ? url : nameCtrl.text.trim();
+      final current = ref.read(settingsProvider).danmakuServers;
+      if (existing == null) {
+        _applyServers([
+          ...current,
+          DanmakuServer(
+            id: 'srv-${DateTime.now().microsecondsSinceEpoch}',
+            name: name,
+            baseUrl: url,
+          ),
+        ]);
+      } else {
+        _applyServers([
+          for (final srv in current)
+            srv.id == existing.id
+                ? srv.copyWith(name: name, baseUrl: url)
+                : srv,
+        ]);
+      }
     }
     nameCtrl.dispose();
     urlCtrl.dispose();
@@ -157,8 +164,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuBlockTop: false,
       danmakuBlockBottom: false,
       danmakuBlockWords: '',
-      danmakuLimitCount: false,
-      danmakuMaxCount: 500,
       danmakuSpeed: 0.7,
       danmakuFontSize: 0.5,
       danmakuOpacity: 0.8,
@@ -168,7 +173,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       danmakuOutlineColor: 0xFF000000,
       danmakuServersJson: '',
     );
-    _apiUrl.clear();
     _blockWords.clear();
   }
 
@@ -177,26 +181,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
   Future<void> _openQrConfig() async {
     await context.push<void>('/settings/player/danmaku/qr');
     if (!mounted) return;
-    final url = ref.read(settingsProvider).danmakuApiUrl;
-    if (_apiUrl.text != url) {
-      _apiUrl.text = url;
-    }
-  }
-
-  Future<void> _clearApiConfig() async {
-    if (ref.read(settingsProvider).danmakuApiUrl.isEmpty) return;
-    final confirmed = await showTvConfirmDialog(
-      context: context,
-      title: '清除弹幕 API 地址？',
-      message: '只清除弹幕 API 地址，行数、屏蔽、同屏数量等设置保持不变。',
-      confirmLabel: '清除',
-      destructive: true,
-    );
-    if (!confirmed || !mounted) return;
-    await ref.read(settingsProvider.notifier).update(danmakuApiUrl: '');
-    if (!mounted) return;
-    _apiUrl.clear();
-    showAppToast(context, '弹幕 API 地址已清除');
   }
 
   @override
@@ -232,17 +216,17 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
               ),
             ),
             const Divider(height: 1),
-            _sectionHeader('弹幕源'),
-            if (s.tvMode) ...[
-              // TV 无输入法：只保留扫码配置；手机扫码提交后落库。
+            _sectionHeader('弹幕源（从上到下按优先级）'),
+            // TV 无输入法：保留扫码入口（手机扫码写入第一个弹幕源）。
+            if (s.tvMode)
               settingsTvWrapRow(
                 tvMode: s.tvMode,
                 onTap: _openQrConfig,
                 child: ListTile(
                   key: const ValueKey('danmakuQrConfigEntry'),
                   leading: const Icon(Icons.qr_code),
-                  title: const Text('扫码配置'),
-                  subtitle: const Text('手机扫码打开网页，填弹幕 API 地址提交到电视'),
+                  title: const Text('扫码添加弹幕源'),
+                  subtitle: const Text('手机扫码填地址，提交后写入第一个弹幕源'),
                   trailing: const Icon(
                     Icons.chevron_right,
                     size: 18,
@@ -251,39 +235,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   onTap: _openQrConfig,
                 ),
               ),
-              settingsTvWrapRow(
-                tvMode: s.tvMode,
-                onTap: _clearApiConfig,
-                child: ListTile(
-                  key: const ValueKey('danmakuClearConfigEntry'),
-                  leading:
-                      Icon(Icons.delete_outline, color: Colors.red.shade300),
-                  title: const Text('清除配置'),
-                  subtitle: const Text('只清除弹幕 API 地址，保留行数/屏蔽设置'),
-                  onTap: _clearApiConfig,
-                ),
-              ),
-            ] else ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: TextField(
-                  key: const ValueKey('danmakuApiUrlField'),
-                  controller: _apiUrl,
-                  keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: '弹幕 API 地址',
-                    hintText: 'http://192.168.1.10:9321/<token>',
-                    helperText: 'danmaku_api 自建服务地址（可含 token 路径），'
-                        '留空关闭弹幕',
-                    helperMaxLines: 2,
-                  ),
-                  onChanged: (v) => _update(danmakuApiUrl: v),
-                ),
-              ),
-            ],
-            const Divider(height: 1),
-            _sectionHeader('服务器（多源备用；优先级从上到下）'),
             for (var i = 0; i < s.danmakuServers.length; i++)
               ListTile(
                 key: ValueKey('danmakuServer-${s.danmakuServers[i].id}'),
@@ -306,20 +257,32 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: IconButton(
-                  key: ValueKey('danmakuServerDelete-${s.danmakuServers[i].id}'),
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () {
-                    final list = [...s.danmakuServers]..removeAt(i);
-                    _applyServers(list);
-                  },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      key: ValueKey(
+                          'danmakuServerEdit-${s.danmakuServers[i].id}'),
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _editServer(s.danmakuServers[i]),
+                    ),
+                    IconButton(
+                      key: ValueKey(
+                          'danmakuServerDelete-${s.danmakuServers[i].id}'),
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () {
+                        final list = [...s.danmakuServers]..removeAt(i);
+                        _applyServers(list);
+                      },
+                    ),
+                  ],
                 ),
               ),
             if (s.danmakuServers.isEmpty)
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
-                  '未添加服务器；上面的「弹幕 API 地址」会作为默认服务器使用',
+                  '还没有弹幕源，点下面「添加弹幕源」',
                   style: TextStyle(fontSize: 12, color: Colors.white54),
                 ),
               ),
@@ -327,9 +290,9 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
                 key: const ValueKey('danmakuServerAdd'),
-                onPressed: _addServer,
+                onPressed: () => _editServer(),
                 icon: const Icon(Icons.add),
-                label: const Text('添加服务器'),
+                label: const Text('添加弹幕源'),
               ),
             ),
             const Divider(height: 1),
@@ -389,30 +352,6 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   ),
                   onChanged: (v) => _update(danmakuBlockWords: v),
                 ),
-              ),
-            const Divider(height: 1),
-            _sectionHeader('数量'),
-            _tvWrapRow(
-              tvMode: s.tvMode,
-              onTap: () => _update(danmakuLimitCount: !s.danmakuLimitCount),
-              child: SwitchListTile(
-                key: const ValueKey('danmakuLimitCountSwitch'),
-                title: const Text('限制同屏数量'),
-                subtitle: const Text('超量时等间隔采样，防高密度弹幕卡顿'),
-                value: s.danmakuLimitCount,
-                onChanged: (v) => _update(danmakuLimitCount: v),
-              ),
-            ),
-            if (s.danmakuLimitCount)
-              _rowsSlider(
-                label: '数量上限',
-                valueKey: 'danmakuMaxCount',
-                value: s.danmakuMaxCount,
-                min: AppSettings.danmakuMaxCountMin.toDouble(),
-                max: AppSettings.danmakuMaxCountMax.toDouble(),
-                divisions: AppSettings.danmakuMaxCountMax -
-                    AppSettings.danmakuMaxCountMin,
-                onChanged: (v) => _update(danmakuMaxCount: v),
               ),
             const Divider(height: 1),
             _sectionHeader('样式'),

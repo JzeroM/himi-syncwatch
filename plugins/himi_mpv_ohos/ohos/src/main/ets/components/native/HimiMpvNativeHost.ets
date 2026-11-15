@@ -483,7 +483,6 @@ export class NativePlayerUiState {
   danmakuScrollRows: number = 30;
   danmakuTopRows: number = 4;
   danmakuBottomRows: number = 4;
-  danmakuMaxCount: number = 0;
   /** 是否显示播放调试面板（设置→实验性→播放调试面板）。 */
   showDebug: boolean = false;
   /** 房间模式（隐藏选集/线路/画面比例等单人入口）。 */
@@ -634,7 +633,6 @@ export class NativePlayerUiState {
     this.danmakuScrollRows = jsonNum(obj.danmakuScrollRows, this.danmakuScrollRows);
     this.danmakuTopRows = jsonNum(obj.danmakuTopRows, this.danmakuTopRows);
     this.danmakuBottomRows = jsonNum(obj.danmakuBottomRows, this.danmakuBottomRows);
-    this.danmakuMaxCount = jsonNum(obj.danmakuMaxCount, this.danmakuMaxCount);
     this.showDebug = jsonBool(obj.showDebug, this.showDebug);
     this.isRoom = jsonBool(obj.isRoom, this.isRoom);
     this.canScreenshot = jsonBool(obj.canScreenshot, this.canScreenshot);

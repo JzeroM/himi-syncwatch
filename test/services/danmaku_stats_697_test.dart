@@ -44,7 +44,9 @@ void main() {
     test('1.1 在构建弹幕窗口时统计，不额外遍历全量', () {
       expect(adapter, contains('_dmTotal = _nativeDanmakuComments.length'));
       expect(adapter, contains('_dmOnscreen++'));
-      expect(adapter, contains('_dmSampled = comments.length - maxCount'));
+      // 698：采样上限整体移除（设置页删了「限制同屏数量」），
+      // `_dmSampled` 恒 0，但仍保留字段供面板兼容旧快照。
+      expect(adapter, isNot(contains('_dmSampled = comments.length - maxCount')));
     });
 
     test('1.2 屏蔽数与屏蔽规则同源（顶/底/关键词）', () {
@@ -77,7 +79,8 @@ void main() {
     test('3.1 Flutter 面板有「弹幕」分组', () {
       expect(collector, contains("title: '弹幕'"));
       expect(collector, contains("'在屏'"));
-      expect(collector, contains("'采样丢弃'"));
+      // 698：采样丢弃行随功能删除。
+      expect(collector, isNot(contains("'采样丢弃'")));
     });
 
     test('3.2 安卓面板显示总条数/在屏（超 200 标黄）', () {

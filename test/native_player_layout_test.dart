@@ -1301,8 +1301,8 @@ void main() {
       }
       // Dart 注入设置值（唯一真相源）。
       expect(screen, contains('danmakuScrollRows: settings.danmakuScrollRows'));
-      expect(screen,
-          contains('settings.danmakuLimitCount ? settings.danmakuMaxCount : null'));
+      // 窗口回归：设置页已删除「限制同屏数量」，采样逻辑整体移除。
+      expect(screen, isNot(contains('danmakuLimitCount ? settings.danmakuMaxCount')));
     });
 
     test('鸿蒙弹幕行数取设置（滚动上限 + 按屏高自适应，禁硬编码 16/6）', () {
@@ -1325,9 +1325,9 @@ void main() {
       expect(kotlinDanmaku, isNot(contains('lane = 0 // 溢出兜底')));
     });
 
-    test('弹幕数量上限：等间隔采样（照抄 Flutter _sampleEvenly）', () {
-      expect(adapter, contains('(i * total) ~/ maxCount'));
-      expect(adapter, contains('danmakuMaxCount'));
+    test('弹幕数量上限采样已移除（设置页删掉「限制同屏数量」）', () {
+      expect(adapter, isNot(contains('(i * total) ~/ maxCount')));
+      expect(adapter, isNot(contains('_nativeUiExtras.danmakuMaxCount')));
     });
 
     test('字幕/音轨命名对齐 Emby displayInfo（禁裸 mpv title/lang）', () {

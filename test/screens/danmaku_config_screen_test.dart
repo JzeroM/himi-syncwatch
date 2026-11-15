@@ -57,15 +57,18 @@ void main() {
       expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsNothing);
       expect(
           find.byKey(const ValueKey('danmakuClearConfigEntry')), findsNothing);
-      expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsOneWidget);
+      // 698：地址输入框删除，改为弹幕源列表 + 添加按钮。
+      expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsNothing);
+      expect(find.byKey(const ValueKey('danmakuServerAdd')), findsOneWidget);
       expect(find.byKey(const ValueKey('danmakuScrollRowsSlider')),
           findsOneWidget);
       expect(
           find.byKey(const ValueKey('danmakuTopRowsSlider')), findsOneWidget);
       expect(find.byKey(const ValueKey('danmakuBottomRowsSlider')),
           findsOneWidget);
-      // 限制关 → 无数量上限滑杆
+      // 698：数量上限整块移除。
       expect(find.byKey(const ValueKey('danmakuMaxCountSlider')), findsNothing);
+      expect(find.text('限制同屏数量'), findsNothing);
 
       await _scrollTo(tester, '屏蔽关键词');
       expect(
@@ -74,8 +77,9 @@ void main() {
           findsOneWidget);
       expect(
           find.byKey(const ValueKey('danmakuBlockWordsField')), findsOneWidget);
+      // 698：限制同屏数量开关已删除。
       expect(find.byKey(const ValueKey('danmakuLimitCountSwitch')),
-          findsOneWidget);
+          findsNothing);
 
       await _scrollTo(tester, '恢复默认');
       expect(
@@ -91,29 +95,23 @@ void main() {
       expect(container.read(settingsProvider).danmakuDefaultOn, isFalse);
     });
 
-    testWidgets('API 地址输入写入 danmakuApiUrl', (tester) async {
-      final container = await _pumpConfig(tester);
-
-      await tester.enterText(
-        find.byKey(const ValueKey('danmakuApiUrlField')),
-        'http://10.0.0.2:9321/tok',
-      );
-      await tester.pumpAndSettle();
-      expect(
-        container.read(settingsProvider).danmakuApiUrl,
-        'http://10.0.0.2:9321/tok',
-      );
+    testWidgets('API 地址输入框已删除，改为「添加弹幕源」', (tester) async {
+      await _pumpConfig(tester);
+      // 698：地址输入框与服务器列表重复，整体移除。
+      expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsNothing);
+      expect(find.byKey(const ValueKey('danmakuServerAdd')), findsOneWidget);
+      expect(find.text('添加弹幕源'), findsOneWidget);
     });
 
-    testWidgets('TV 只显示扫码配置，不显示输入框', (tester) async {
+    testWidgets('TV 只显示扫码入口，不显示输入框', (tester) async {
       await _pumpConfig(tester, initial: const AppSettings(tvMode: true));
 
       final entry = find.byKey(const ValueKey('danmakuQrConfigEntry'));
       expect(entry, findsOneWidget);
-      expect(find.byKey(const ValueKey('danmakuClearConfigEntry')),
-          findsOneWidget);
-      expect(find.text('扫码配置'), findsOneWidget);
-      expect(find.textContaining('手机扫码打开网页'), findsOneWidget);
+      // 698：单独的 API 地址与「清除配置」入口一并移除。
+      expect(find.byKey(const ValueKey('danmakuClearConfigEntry')), findsNothing);
+      expect(find.text('扫码添加弹幕源'), findsOneWidget);
+      expect(find.textContaining('手机扫码填地址'), findsOneWidget);
       expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsNothing);
       expect(
           find.byKey(const ValueKey('danmakuBlockWordsField')), findsNothing);
@@ -138,30 +136,6 @@ void main() {
             matching: find.byType(ExcludeFocus)),
         findsNothing,
       );
-    });
-
-    testWidgets('TV 清除配置只清 API 地址，保留行数/屏蔽设置', (tester) async {
-      final container = await _pumpConfig(
-        tester,
-        initial: const AppSettings(
-          tvMode: true,
-          danmakuApiUrl: 'http://old',
-          danmakuScrollRows: 12,
-          danmakuBlockTop: true,
-          danmakuBlockWords: '旧词',
-        ),
-      );
-
-      await tester.tap(find.byKey(const ValueKey('danmakuClearConfigEntry')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('tvConfirmOk')));
-      await tester.pumpAndSettle();
-
-      final s = container.read(settingsProvider);
-      expect(s.danmakuApiUrl, isEmpty);
-      expect(s.danmakuScrollRows, 12);
-      expect(s.danmakuBlockTop, isTrue);
-      expect(s.danmakuBlockWords, '旧词');
     });
 
     testWidgets('滚动行数滑杆拖动改值（钳在 1~30）', (tester) async {
@@ -195,27 +169,6 @@ void main() {
       expect(container.read(settingsProvider).danmakuBlockWords, '剧透, 广告');
     });
 
-    testWidgets('限制同屏数量开 → 出现上限滑杆，拖动写入', (tester) async {
-      final container = await _pumpConfig(tester);
-      await _scrollTo(tester, '限制同屏数量');
-
-      await tester.tap(_switchOf('限制同屏数量'));
-      await tester.pumpAndSettle();
-      expect(container.read(settingsProvider).danmakuLimitCount, isTrue);
-      expect(
-          find.byKey(const ValueKey('danmakuMaxCountSlider')), findsOneWidget);
-
-      await tester.drag(
-        find.byKey(const ValueKey('danmakuMaxCountSlider')),
-        const Offset(500, 0),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        container.read(settingsProvider).danmakuMaxCount,
-        AppSettings.danmakuMaxCountMax,
-      );
-    });
-
     testWidgets('恢复默认把改过的弹幕项全部归位并清空输入框', (tester) async {
       final container = await _pumpConfig(
         tester,
@@ -225,8 +178,6 @@ void main() {
           danmakuScrollRows: 9,
           danmakuBlockTop: true,
           danmakuBlockWords: '广告',
-          danmakuLimitCount: true,
-          danmakuMaxCount: 2000,
           danmakuSpeed: 2.0,
         ),
       );
@@ -241,9 +192,9 @@ void main() {
       expect(s.danmakuScrollRows, 30);
       expect(s.danmakuBlockTop, isFalse);
       expect(s.danmakuBlockWords, '');
-      expect(s.danmakuLimitCount, isFalse);
-      expect(s.danmakuMaxCount, 500);
       expect(s.danmakuSpeed, 0.7);
+      // 698：服务器列表也一并清空。
+      expect(s.danmakuServers, isEmpty);
       // 地址/屏蔽词输入框内容已随恢复默认清空（controller 归 State 所有，
       // 懒卸载不影响；此处以 settings 落盘值为准）
       expect(s.danmakuApiUrl, isEmpty);
@@ -305,7 +256,8 @@ void main() {
       expect(find.byType(DanmakuConfigScreen), findsOneWidget);
       expect(find.text('弹幕配置'), findsWidgets);
       expect(find.byKey(const ValueKey('danmakuQrConfigEntry')), findsNothing);
-      expect(find.byKey(const ValueKey('danmakuApiUrlField')), findsOneWidget);
+      // 698：进入后能看到「添加弹幕源」入口（地址输入框已删除）。
+      expect(find.byKey(const ValueKey('danmakuServerAdd')), findsOneWidget);
     });
   });
 }

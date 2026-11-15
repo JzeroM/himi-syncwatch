@@ -1360,7 +1360,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   int _dmSampled = 0;
   int _dmOnscreen = 0;
 
-  List<NativeDanmakuItem> _buildDanmakuWindow() {
+  List<NativeDanmakuItem> _buildDanmakuWindow([int? positionMs]) {
     if (_nativeDanmakuComments.isEmpty) return const [];
     var comments = _nativeDanmakuComments;
     // 屏蔽链（588）：与 Flutter `DanmakuTimeline._filter` 逐条同序 ——
@@ -1384,18 +1384,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // 数量上限：超量按时间等间隔采样（照抄 Flutter DanmakuTimeline._sampleEvenly：
     // 排序后确定性采样、保留首条）。在窗口切片前对全量采样 = 与 Flutter 全局
     // 采样语义一致，且样本稳定（弹幕不会中途互换进出，防闪烁）。
-    final maxCount = _nativeUiExtras.danmakuMaxCount;
-    if (maxCount != null && maxCount > 0 && comments.length > maxCount) {
-      _dmSampled = comments.length - maxCount;
-      final sorted = [...comments]..sort((a, b) => a.time.compareTo(b.time));
-      final total = sorted.length;
-      final sampled = <DanmakuComment>[];
-      for (var i = 0; i < maxCount; i++) {
-        sampled.add(sorted[(i * total) ~/ maxCount]);
-      }
-      comments = sampled;
-    }
-    final posSec = _positionMs / 1000.0;
+    final posSec = (positionMs ?? _positionMs) / 1000.0;
     final speed = _nativeUiExtras.danmakuSpeed.clamp(0.25, 4.0);
     final travelSec = 8.0 / speed;
     final keepSec = (travelSec > 4.0 ? travelSec : 4.0) + 2.0;
@@ -2452,10 +2441,18 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   ///
   /// 内部仍走 [_buildNativePlayerState]，保证与安卓/鸿蒙原生 UI 拿到的
   /// 是**同一份** 87 字段结构，三端行为天然一致。
-  NativePlayerState buildNativePlayerState() => _buildNativePlayerState();
+  /// 构建原生 UI 权威快照。
+  ///
+  /// [positionMsOverride]：Qt 模式下 Dart 的 `_player` 是**空闲引擎**，
+  /// `_positionMs` 恒 0——弹幕切窗/统计必须用 Qt 的真实播放位置，否则
+  /// 只推前 30s 弹幕、`在屏` 恒 0、一条都不显示（真机回归）。
+  NativePlayerState buildNativePlayerState({int? positionMsOverride}) =>
+      _buildNativePlayerState(positionMsOverride: positionMsOverride);
 
   /// 把适配器当前状态转成原生 UI 权威快照（计划书 §7.4 数据源）。
-  NativePlayerState _buildNativePlayerState() {    final paused = _state == AdapterPlaybackState.paused ||
+  NativePlayerState _buildNativePlayerState({int? positionMsOverride}) {
+    final posMs = positionMsOverride ?? _positionMs;
+    final paused = _state == AdapterPlaybackState.paused ||
         _state == AdapterPlaybackState.stopped;
     final buffering =
         (_mediaStatus.rawValue & AdapterMediaStatus.buffering.rawValue) != 0;
@@ -2528,7 +2525,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       surfaceAttached: _surfaceAttached,
       surfaceId: _surfaceId,
       surfaceError: _surfaceError,
-      positionMs: _positionMs,
+      positionMs: posMs,
       durationMs: _durationMs,
       bufferedMs: _bufferedMs,
       paused: paused,
@@ -2570,11 +2567,10 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       danmakuScrollRows: _nativeUiExtras.danmakuScrollRows,
       danmakuTopRows: _nativeUiExtras.danmakuTopRows,
       danmakuBottomRows: _nativeUiExtras.danmakuBottomRows,
-      danmakuMaxCount: _nativeUiExtras.danmakuMaxCount,
       // 弹幕时间窗：原生 UI 下 Flutter 弹幕层随视频区一并退场，弹幕改由
       // 原生层渲染（真机回归「弹幕开关点了没反应」）。窗口随每次状态推送
       // 刷新，原生端按 timeMs 与当前播放位置自调度（seek 自愈）。
-      danmakuItems: _buildDanmakuWindow(),
+      danmakuItems: _buildDanmakuWindow(posMs),
       segmentEnabled: _nativeUiExtras.segmentEnabled,
       segmentIntroEndMs: _nativeUiExtras.segmentIntroEndMs,
       segmentOutroStartMs: _nativeUiExtras.segmentOutroStartMs,

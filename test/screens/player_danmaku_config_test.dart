@@ -24,16 +24,10 @@ void main() {
       expect(c.blockWords, ['广告', '刷屏']);
     });
 
-    test('限制数量开关：关 → null，开 → 上限值', () {
+    test('698：数量上限恒为 null（设置页已删除「限制同屏数量」）', () {
       expect(
         PlayerScreen.danmakuTimelineConfig(const AppSettings()).maxCount,
         isNull,
-      );
-      expect(
-        PlayerScreen.danmakuTimelineConfig(
-          const AppSettings(danmakuLimitCount: true, danmakuMaxCount: 300),
-        ).maxCount,
-        300,
       );
     });
 

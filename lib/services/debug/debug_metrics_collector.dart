@@ -382,11 +382,6 @@ class DebugMetricsCollector {
           severity: st.onscreen > 200 ? Severity.warn : Severity.normal,
         ),
         DebugMetricRow('已屏蔽', '${st.blocked}'),
-        DebugMetricRow(
-          '采样丢弃',
-          '${st.sampled}',
-          severity: st.sampled > 0 ? Severity.warn : Severity.normal,
-        ),
       ],
     );
   }
