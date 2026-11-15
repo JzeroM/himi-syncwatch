@@ -650,7 +650,7 @@ class NativePlayerState {
 
   /// 弹幕数量上限（null = 不限制；超限由 Dart 等间隔采样后入窗口）。
 
-  /// P4 统计：总条数 / 屏蔽数 / 采样丢弃数 / 当前在屏数。
+  /// P4 统计：总条数 / 屏蔽数 / 当前在屏数（698 起无采样）。
   final int danmakuTotal;
   final int danmakuBlocked;
   final int danmakuSampled;

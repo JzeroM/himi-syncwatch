@@ -69,7 +69,7 @@ class LanConfigNotifier extends StateNotifier<LanConfigState> {
       onDanmaku: danmakuHandler == null
           ? null
           : (body) =>
-              _guard(danmakuHandler, body, successMessage: '弹幕 API 地址已配置'),
+              _guard(danmakuHandler, body, successMessage: '弹幕源已配置'),
       onRoute: routeHandler == null
           ? null
           : (body) => _guard(routeHandler, body, successMessage: '备用线路已添加'),

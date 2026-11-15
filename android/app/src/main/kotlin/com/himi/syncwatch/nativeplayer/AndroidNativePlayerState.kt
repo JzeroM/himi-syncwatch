@@ -294,7 +294,7 @@ data class AndroidNativePlayerState(
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
-    /** P4 统计：总条数 / 屏蔽 / 采样丢弃 / 在屏。 */
+    /** P4 统计：总条数 / 屏蔽 / 在屏（698 起无采样）。 */
     val danmakuTotal: Int = 0,
     val danmakuBlocked: Int = 0,
     val danmakuSampled: Int = 0,

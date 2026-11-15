@@ -94,8 +94,8 @@ void main() {
   testWidgets('mode=danmaku：标题与提示切换为弹幕配置，二维码带 mode 参数', (tester) async {
     await pumpScreen(tester, mode: 'danmaku');
 
-    expect(find.text('扫码配置弹幕 API'), findsOneWidget);
-    expect(find.textContaining('填写弹幕 API 地址'), findsOneWidget);
+    expect(find.text('扫码配置弹幕源'), findsOneWidget);
+    expect(find.textContaining('填写弹幕源地址'), findsOneWidget);
     expect(find.textContaining('mode=danmaku'), findsOneWidget);
     expect(find.byType(QrImageView), findsOneWidget);
   });

@@ -28,14 +28,14 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
   bool get _isRoute => widget.mode == 'route';
 
   String get _title => switch (widget.mode) {
-        'danmaku' => '扫码配置弹幕 API',
+        'danmaku' => '扫码配置弹幕源',
         'route' => '扫码添加备用线路',
         'tmdb' => '扫码配置 TMDB',
         _ => '扫码配置 Emby',
       };
 
   String get _tip => switch (widget.mode) {
-        'danmaku' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写弹幕 API 地址并提交',
+        'danmaku' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写弹幕源地址并提交',
         'route' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写线路信息并提交',
         'tmdb' => '用手机扫描二维码\n或在手机浏览器打开下方地址\n在手机上填写 TMDB API Key、代理地址与区域并提交',
         _ => '用手机扫描二维码\n或在手机浏览器打开下方地址',

@@ -105,8 +105,8 @@ String buildLanConfigHtml({
 </section>
 
 <section id="danmaku">
-  <h2>配置弹幕 API 地址</h2>
-  <label>弹幕 API 地址</label>
+  <h2>配置弹幕源地址</h2>
+  <label>弹幕源地址</label>
   <input id="danmaku_url" type="url" placeholder="http://192.168.1.10:9321/<token>" autocomplete="url">
   <button id="danmaku_btn" onclick="submitDanmaku()">保存到电视</button>
   <div class="msg" id="danmaku_msg"></div>

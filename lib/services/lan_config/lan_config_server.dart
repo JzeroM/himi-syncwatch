@@ -26,7 +26,7 @@ class LanConfigServer {
 
   final LanConfigHandler onEmby;
 
-  /// 弹幕 API 地址提交回调（null = 未接入弹幕配置，对应路由 404）。
+  /// 弹幕源地址提交回调（null = 未接入弹幕配置，对应路由 404）。
   final LanConfigHandler? onDanmaku;
 
   /// 备用线路提交回调（null = 未接入，对应路由 404）。
@@ -151,7 +151,7 @@ class LanConfigServer {
       }
       final danmaku = onDanmaku;
       if (req.method == 'POST' && path == '/api/danmaku' && danmaku != null) {
-        await _handleAction(req, danmaku, success: '弹幕 API 地址已配置');
+        await _handleAction(req, danmaku, success: '弹幕源已配置');
         return;
       }
       final tmdb = onTmdb;

@@ -458,7 +458,7 @@ export class NativePlayerUiState {
   danmakuSpeed: number = 1.0;
   danmakuFontSize: number = 0.5;
   danmakuOpacity: number = 0.6;
-  /** P4 统计：总条数 / 屏蔽 / 采样丢弃 / 在屏。 */
+  /** P4 统计：总条数 / 屏蔽 / 在屏（698 起无采样）。 */
   danmakuTotal: number = 0;
   danmakuBlocked: number = 0;
   danmakuSampled: number = 0;

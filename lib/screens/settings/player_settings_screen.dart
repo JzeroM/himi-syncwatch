@@ -97,7 +97,7 @@ class PlayerSettingsScreen extends ConsumerWidget {
                 key: const ValueKey('danmakuConfigEntry'),
                 leading: const Icon(Icons.comment),
                 title: const Text('弹幕配置'),
-                subtitle: const Text('弹幕 API 地址、行数、屏蔽与同屏上限'),
+                subtitle: const Text('弹幕源、行数、屏蔽与样式'),
                 trailing: const Icon(
                   Icons.chevron_right,
                   size: 18,

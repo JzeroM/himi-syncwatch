@@ -158,10 +158,11 @@ export struct DebugPanel {
         severity: s.danmakuOnscreen > 200 ? DebugSeverity.WARN : DebugSeverity.NORMAL,
       };
       playback.push(dmRow);
-      if (s.danmakuBlocked > 0 || s.danmakuSampled > 0) {
+      // 698：设置页删除「限制同屏数量」→ 不再有采样丢弃。
+      if (s.danmakuBlocked > 0) {
         const filterRow: DebugRowSpec = {
-          label: '弹幕过滤',
-          value: `屏蔽 ${s.danmakuBlocked} · 采样丢弃 ${s.danmakuSampled}`,
+          label: '弹幕屏蔽',
+          value: `${s.danmakuBlocked}`,
           severity: DebugSeverity.NORMAL,
         };
         playback.push(filterRow);

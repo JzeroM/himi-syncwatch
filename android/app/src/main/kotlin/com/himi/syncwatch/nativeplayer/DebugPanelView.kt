@@ -219,12 +219,9 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
                     "总 ${state.danmakuTotal} · 在屏 ${state.danmakuOnscreen}",
                     if (state.danmakuOnscreen > 200) fmt.SEV_WARN else fmt.SEV_NORMAL,
                 )
-                if (state.danmakuBlocked > 0 || state.danmakuSampled > 0) {
-                    addRow(
-                        "弹幕过滤",
-                        "屏蔽 ${state.danmakuBlocked} · 采样丢弃 ${state.danmakuSampled}",
-                        fmt.SEV_NORMAL,
-                    )
+                // 698：设置页删除「限制同屏数量」→ 不再有采样丢弃。
+                if (state.danmakuBlocked > 0) {
+                    addRow("弹幕屏蔽", "${state.danmakuBlocked}", fmt.SEV_NORMAL)
                 }
             }
         }
