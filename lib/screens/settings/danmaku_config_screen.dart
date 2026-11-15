@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_server.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
@@ -25,11 +27,20 @@ class DanmakuConfigScreen extends ConsumerStatefulWidget {
 class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
   late final TextEditingController _blockWords;
 
+  /// 694 M3：已保存的弹幕绑定（匹配记忆管理列表）。
+  List<DanmakuMatchEntry> _matchEntries = const [];
+
   @override
   void initState() {
     super.initState();
     final s = ref.read(settingsProvider);
     _blockWords = TextEditingController(text: s.danmakuBlockWords);
+    _loadMatchEntries();
+  }
+
+  Future<void> _loadMatchEntries() async {
+    final entries = await DanmakuCaches.matchMemory.all();
+    if (mounted) setState(() => _matchEntries = entries);
   }
 
   @override
@@ -445,6 +456,56 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 ],
               ),
             ),
+            // ── 694 M3：已保存的弹幕绑定（匹配记忆管理）──
+            _sectionHeader('已保存的弹幕绑定'),
+            if (_matchEntries.isEmpty)
+              const ListTile(
+                dense: true,
+                title: Text(
+                  '暂无绑定记录（自动/手动匹配成功后自动保存）',
+                  style: TextStyle(fontSize: 13, color: Colors.white54),
+                ),
+              ),
+            for (final entry in _matchEntries)
+              ListTile(
+                key: ValueKey('danmakuMatch-${entry.key}'),
+                dense: true,
+                title: Text(
+                  entry.record.animeTitle.isNotEmpty
+                      ? '${entry.record.animeTitle}'
+                          '${entry.record.episodeTitle.isNotEmpty ? ' · ${entry.record.episodeTitle}' : ''}'
+                      : 'episodeId ${entry.record.episodeId}',
+                ),
+                subtitle: Text(
+                  '${entry.record.source == DanmakuMatchSource.manual ? '手动绑定' : '自动匹配'}'
+                  ' · ${DateTime.fromMillisecondsSinceEpoch(entry.record.savedAtMs).toString().substring(0, 16)}',
+                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+                trailing: IconButton(
+                  key: ValueKey('danmakuMatchDelete-${entry.key}'),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                  onPressed: () async {
+                    await DanmakuCaches.matchMemory
+                        .remove(itemKey: entry.key, nameKey: entry.key);
+                    await _loadMatchEntries();
+                  },
+                ),
+              ),
+            if (_matchEntries.isNotEmpty)
+              Center(
+                child: TextButton(
+                  key: const ValueKey('danmakuClearMatches'),
+                  onPressed: () async {
+                    await DanmakuCaches.matchMemory.clear();
+                    await _loadMatchEntries();
+                  },
+                  child: const Text('全部清除'),
+                ),
+              ),
             const Divider(height: 1),
             Center(
               child: TextButton(

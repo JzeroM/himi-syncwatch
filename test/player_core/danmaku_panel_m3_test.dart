@@ -162,4 +162,16 @@ void main() {
       expect(kotlinView, contains('0xFFFF8A3D.toInt() else Color.WHITE'));
     });
   });
+
+  group('5. 设置页绑定管理区块', () {
+    test('5.1 「已保存的弹幕绑定」列表 + 删除 + 全部清除', () {
+      final config = File('lib/screens/settings/danmaku_config_screen.dart')
+          .readAsStringSync();
+      expect(config, contains('已保存的弹幕绑定'));
+      expect(config, contains('DanmakuCaches.matchMemory.all()'));
+      expect(config, contains("remove(itemKey: entry.key, nameKey: entry.key)"));
+      expect(config, contains('DanmakuCaches.matchMemory.clear()'));
+      expect(config, contains('手动绑定'));
+    });
+  });
 }
