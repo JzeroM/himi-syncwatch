@@ -91,7 +91,8 @@ void main() {
 
     test('3.3 鸿蒙面板同构', () {
       expect(ohosHost, contains('danmakuTotal: number'));
-      expect(ohosPanel, contains('弹幕过滤'));
+      // 698：文案改为「弹幕屏蔽」（采样功能已移除）。
+      expect(ohosPanel, contains('弹幕屏蔽'));
       expect(ohosPanel, contains('s.danmakuOnscreen'));
     });
 
