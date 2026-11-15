@@ -207,6 +207,27 @@ ANativeWindow Surface，Vulkan 没有帧导入互操作 → 解码成功但出�
 
 声明类型也要写 `int`（写 `real` 会让 QML 认为可能收到小数）。
 
+### QML 属性名不能遮蔽全局单例（`playerState`）
+
+`playerState` 是 `qmlRegisterSingletonInstance` 注册的**全局单例**。
+在子组件里再声明同名属性会**遮蔽**它：
+
+```qml
+// DanmakuLayer.qml —— 错
+property var playerState: null
+// Overlay.qml
+DanmakuLayer { playerState: playerState }   // ← 自赋值！
+```
+
+QML 报 `Binding loop detected for property "playerState"`，然后读到 null。
+699 真机的后果是**弹幕时钟恒 0**（`currentPos()` 拿不到
+`danmakuPositionMs`）→ 时间窗全被判「超前过多」丢弃 → 一条都不画，
+而面板仍然显示「在屏 20」（那个数由 Dart 侧算，与 QML 无关）。
+
+**正确做法**：换个名字传引用，例如 `stateRef: playerState`。
+CI 的 QML 冒烟自检会把这条 `WARN` 打出来——**别忽略冒烟日志里的
+Binding loop**，它不是噪音。
+
 ### 鸿蒙本地构建所需工具链
 
 `scripts/build_ohos_local.sh` 会自动探测，但需知道这些位置：

@@ -5573,6 +5573,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _positionNotifier.value = _position;
       }
       _evaluateSkipPrompt(pos);
+      // 【699 真机：Windows 弹幕「在屏 0」】
+      //
+      // Qt 模式下 mpv 在 Qt 进程里，Dart 侧**没有** 200ms 的原生 UI 轮询
+      // （那条链路 `_pushNativeUiState` 只服务安卓/鸿蒙的同进程原生宿主）。
+      // `_syncNativePanelData()` 此前只在事件（起播/切集/改设置/弹幕到达）
+      // 时调用 → 弹幕时间窗冻结在**首次推送的位置** → 播放推进后窗口里
+      // 没有任何条目落在生命周期内 → 面板「在屏 0」、画面一条不显示。
+      //
+      // 这里跟随 500ms 位置节拍重推（Qt 侧 `setDanmakuItems` 有内容相等
+      // 短路，未变化时不发信号，不会白刷 QML）。
+      if (defaultTargetPlatform == TargetPlatform.windows &&
+          MpvSessionPlatform.activeQtAdapter != null) {
+        _syncNativePanelData();
+      }
       // 播完自动下一集兜底：仅服务不上报 end 位的引擎（media_kit/Erika）；
       // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。
       // seek 冷却期内同样忽略。

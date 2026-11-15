@@ -93,6 +93,29 @@ void main() {
     });
   });
 
+  group('2.8 弹幕窗口必须跟随播放位置重算', () {
+    test('2.8.1 Windows Qt 分支在 500ms 位置节拍里重推', () {
+      // Qt 模式没有安卓/鸿蒙那条 200ms 原生 UI 轮询（_pushNativeUiState
+      // 只服务同进程宿主）。此前 _syncNativePanelData 只在事件时调用
+      // → 弹幕时间窗冻结在首次推送位置 → 在屏恒 0（699 真机）。
+      final screen = read('lib/screens/player/player_screen.dart');
+      final idx = screen.indexOf('_evaluateSkipPrompt(pos);');
+      expect(idx, greaterThan(0));
+      final after = screen.substring(idx, idx + 1200);
+      expect(after, contains('_syncNativePanelData();'));
+      expect(after, contains('TargetPlatform.windows'));
+      expect(after, contains('activeQtAdapter != null'));
+    });
+
+    test('2.8.2 Qt 侧 setDanmakuItems 有内容相等短路（不白刷 QML）', () {
+      final cpp = read('native/windows_qt_player/src/player_state.cpp');
+      final idx = cpp.indexOf('void PlayerState::setDanmakuItems');
+      expect(idx, greaterThan(0));
+      final body = cpp.substring(idx, idx + 1200);
+      expect(body, contains('if (same) return;'));
+    });
+  });
+
   group('3. 面板可观测', () {
     test('3.1 调试面板显示 Qt 侧弹幕时钟实际值', () {
       expect(mainCpp, contains('时钟 %3ms'));
