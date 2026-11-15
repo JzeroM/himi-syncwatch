@@ -1080,14 +1080,16 @@ void main() {
           reason: '全量重分配（laneKey 缓存）= 最老条目移除后整屏上移一行');
     });
 
-    test('弹幕观感照抄 Flutter（w500 + 黑 blur3 描影）', () {
+    test('弹幕观感照抄 Flutter（w500 + 四向偏移描边）', () {
       final danmaku = File(
         'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/'
         'DanmakuLayer.ets',
       ).readAsStringSync();
       expect(danmaku, contains('.fontWeight(500)'));
-      // P3：描边改由设置驱动（宽度/颜色可配），默认视觉与旧 blur3 接近。
-      expect(danmaku, contains('danmakuOutlineWidth * 1.5'));
+      // 694：描边改四向偏移伪描边（旧 Text.shadow 是组件**矩形盒**盒阴影
+      // → 每条弹幕四周「矩形边框」，真机回归）；宽度/颜色仍由设置驱动。
+      expect(danmaku, contains('StrokeText'));
+      expect(danmaku, isNot(contains('.shadow({')));
       expect(danmaku, contains('danmakuOutlineColor'),);
     });
 

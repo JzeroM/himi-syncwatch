@@ -386,7 +386,7 @@ void main() {
         qtPanel,
         contains('Layout.preferredHeight: Math.min(resultsCol.implicitHeight, 320)'),
       );
-      expect(qtPanel, contains('height: hitCol.implicitHeight + 16'));
+      expect(qtPanel, contains('preferredHeight: hitCol.implicitHeight + 16'));
     });
 
     test('9.3 四壳加宽（Qt 460 / 安卓 480 / 鸿蒙 480·52%）', () {
@@ -439,6 +439,53 @@ void main() {
       expect(controller, contains('搜索标题无效或属于协议前缀'));
       expect(controller, contains('_safeSearch(kw, episode: episodeNumber)'));
       expect(screen, contains('episodeNumber: _currentEpisodeNumber'));
+    });
+  });
+
+  group('10. 图1/图2 真机回归（694：绑定按钮/边框/歪/卡顿）', () {
+    late String qtPanel;
+    late String qtLayer;
+    late String ohosLayer;
+    late String ohosPanel;
+
+    setUpAll(() {
+      qtPanel = File('native/windows_qt_player/src/qml/DanmakuPanel.qml')
+          .readAsStringSync();
+      qtLayer = File('native/windows_qt_player/src/qml/DanmakuLayer.qml')
+          .readAsStringSync();
+      ohosLayer = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DanmakuLayer.ets')
+          .readAsStringSync();
+      ohosPanel = File(
+              'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DanmakuPanel.ets')
+          .readAsStringSync();
+    });
+
+    test('10.1 Win「绑定」胶囊按钮 + 显式行高（布局博弈修复）', () {
+      expect(qtPanel, contains('id: bindBtn'));
+      expect(qtPanel, contains('radius: 16'));
+      expect(qtPanel, contains('Layout.preferredHeight: hitCol.implicitHeight + 16'));
+      expect(qtPanel, contains('anchors.right: bindBtn.left'));
+    });
+
+    test('10.2 Win 弹幕帧驱动 vsync 对齐（DV P5 卡顿）', () {
+      expect(qtLayer, contains('FrameAnimation {'));
+      expect(qtLayer, isNot(contains('Timer {')));
+    });
+
+    test('10.3 鸿蒙弹幕无盒阴影（矩形边框）→ 四向偏移伪描边', () {
+      expect(ohosLayer, isNot(contains('.shadow({')));
+      expect(ohosLayer, contains('this.StrokeText(it, -1, -1)'));
+      expect(ohosLayer, contains('@Builder'));
+    });
+
+    test('10.4 鸿蒙开关圆钮精确居中（TopStart + 无 y 偏移）', () {
+      expect(ohosPanel, contains('Alignment.TopStart'));
+      expect(
+        ohosPanel,
+        isNot(contains('alignContent: Alignment.Start')),
+      );
+      expect(ohosPanel, contains("offsetY: 0 }"));
     });
   });
 

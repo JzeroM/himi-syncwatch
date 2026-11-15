@@ -276,8 +276,10 @@ EUI.ECard {
                     model: stateRef ? stateRef.danmakuSearchResults : []
                     delegate: Rectangle {
                         Layout.fillWidth: true
-                        // 行高随内容（完整换行显示，694 不省略）
-                        height: hitCol.implicitHeight + 16
+                        // 行高：显式 Layout.preferredHeight（Layout 托管下
+                        // 直绑 height 会被布局覆盖，行内容/按钮被压没——
+                        // 真机回归「搜索结果没有绑定按钮」）。
+                        Layout.preferredHeight: hitCol.implicitHeight + 16
                         radius: 8
                         color: Qt.rgba(1, 1, 1, 0.06)
 
@@ -285,8 +287,8 @@ EUI.ECard {
                             id: hitCol
                             anchors.left: parent.left
                             anchors.leftMargin: 10
-                            anchors.right: parent.right
-                            anchors.rightMargin: 70
+                            anchors.right: bindBtn.left
+                            anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
                             Text {
                                 width: parent.width
@@ -310,14 +312,31 @@ EUI.ECard {
                             }
                         }
 
-                        Text {
+                        // 694：显性「绑定」胶囊按钮（此前纯文本按钮在布局
+                        // 博弈下不可见——真机回归「搜索结果没有绑定按钮」）。
+                        Rectangle {
+                            id: bindBtn
                             anchors.right: parent.right
-                            anchors.rightMargin: 12
+                            anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
+                            width: 56
+                            height: 32
+                            radius: 16
                             color: "#6366F1"
-                            font.pixelSize: Theme.panelOptionSize
-                            text: "绑定"
+                            Text {
+                                anchors.centerIn: parent
+                                color: "white"
+                                font.pixelSize: Theme.panelOptionSize
+                                text: "绑定"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked:
+                                    root.bindRequested(modelData.episodeId)
+                            }
                         }
+
+                        // 整行点击同样绑定（快捷路径；与按钮同语义）
                         MouseArea {
                             anchors.fill: parent
                             onClicked:

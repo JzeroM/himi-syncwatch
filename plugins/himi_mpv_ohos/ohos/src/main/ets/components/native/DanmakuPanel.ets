@@ -259,7 +259,9 @@ export struct DanmakuPanelContent {
    */
   @Builder
   SwitchCapsule() {
-    Stack({ alignContent: Alignment.Start }) {
+    // 694：必须 TopStart——ArkUI 的 Alignment.Start 是「左+垂直居中」，
+    // 圆钮已居中再叠 margin(top:3) 会偏下 3px（真机回归「白色圆偏下」）。
+    Stack({ alignContent: Alignment.TopStart }) {
       if (this.on()) {
         Row() {}
           .width(56)
@@ -275,7 +277,7 @@ export struct DanmakuPanelContent {
       }
       Circle({ width: 24, height: 24 })
         .fill(Color.White)
-        .shadow({ radius: 4, color: '#40000000', offsetY: 1 })
+        .shadow({ radius: 4, color: '#40000000', offsetY: 0 })
         .margin({ left: 3, top: 3 })
         .translate({ x: this.on() ? 26 : 0 })
         .animation({ duration: 180, curve: Curve.EaseOut })

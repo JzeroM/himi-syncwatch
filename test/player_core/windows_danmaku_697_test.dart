@@ -162,7 +162,10 @@ void main() {
     });
 
     test('4.2 30fps 帧驱动（与鸿蒙一致）', () {
-      expect(layer, contains('frameIntervalMs: 33'));
+      // 694：帧驱动 vsync 对齐（33ms Timer 与 15.6ms 时钟节拍互质
+      // → DV P5 下弹幕一卡一卡；FrameAnimation 每 vsync 触发）。
+      expect(layer, contains('FrameAnimation {'));
+      expect(layer, isNot(contains('frameIntervalMs')));
     });
 
     test('4.3 暂停时冻结（不空转）', () {

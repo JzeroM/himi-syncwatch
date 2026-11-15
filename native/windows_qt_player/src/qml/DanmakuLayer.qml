@@ -136,7 +136,10 @@ Item {
     readonly property real trackGapMs: 150    // trackGapMs
     readonly property real lifeSlackMs: 500   // lifeSlackMs
     readonly property real keepAheadMs: 35000 // keepAheadMs
-    readonly property int frameIntervalMs: 33 // 30fps
+    // 694：帧驱动改 FrameAnimation（vsync 对齐）。旧 33ms Timer 与
+    // Windows 15.6ms 时钟节拍互质 → 33/48ms 锯齿抖动，DV P5
+    //（gpu-next + d3d11 HDR 管线）合成带宽紧时弹幕一卡一卡。
+    // tick() 按绝对位置算（currentPos()），只欠帧率对齐。
     /// 弹幕池上限（同屏最多渲染多少条）。
     readonly property int poolSize: 150
 
@@ -364,11 +367,10 @@ Item {
         frameItems = out
     }
 
-    /// 帧驱动：只在播放中推进（暂停冻结，对应安卓 `paused` 逻辑）。
-    Timer {
-        interval: root.frameIntervalMs
+    /// 帧驱动：vsync 对齐（FrameAnimation，Qt 6.3+，本仓 Qt 6.8.3）。
+    /// 只在播放中推进（暂停冻结，对应安卓 `paused` 逻辑）。
+    FrameAnimation {
         running: root.danmakuEnabled && root.playing && root.visible
-        repeat: true
         onTriggered: root.tick()
     }
 

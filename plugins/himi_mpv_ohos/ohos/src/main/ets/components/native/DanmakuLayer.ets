@@ -328,27 +328,48 @@ export struct DanmakuLayer {
     return out;
   }
 
+  /** 694：描边层（四向偏移伪描边单层；偏移量 = clamp(outlineWidth,1,2)）。 */
+  @Builder
+  StrokeText(it: DanmakuFrameItem, sx: number, sy: number) {
+    Text(it.text)
+      .fontSize(it.fontSize)
+      .fontWeight(500)
+      .fontColor(argbToCss(HimiMpvNativeHost.getInstance().state.danmakuOutlineColor))
+      .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
+      .position({
+        x: sx * Math.max(1, Math.min(2, HimiMpvNativeHost.getInstance().state.danmakuOutlineWidth)),
+        y: sy * Math.max(1, Math.min(2, HimiMpvNativeHost.getInstance().state.danmakuOutlineWidth)),
+      })
+  }
+
   /** 颜色模式：源色 / 统一白 / 自定义（P3）。 */
   build() {
     Stack() {
       ForEach(this.items, (it: DanmakuFrameItem) => {
-        Text(it.text)
-          .fontSize(it.fontSize)
-          // 观感照抄 Flutter DanmakuOverlay：w500 + 描边（颜色/宽度可配）。
-          .fontWeight(500)
-          .shadow({
-            radius: HimiMpvNativeHost.getInstance().state.danmakuOutlineWidth * 1.5,
-            color: argbToCss(HimiMpvNativeHost.getInstance().state.danmakuOutlineColor),
-            offsetX: 0,
-            offsetY: 0,
-          })
-          .fontColor(effectiveColor(
-            it.color,
-            HimiMpvNativeHost.getInstance().state.danmakuColorMode,
-            HimiMpvNativeHost.getInstance().state.danmakuCustomColor,
-          ))
-          .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
-          .position({ x: it.x, y: it.y })
+        Stack() {
+          // 694：描边用**四向偏移双层文字**伪描边。旧实现用 Text.shadow
+          // 冒充描边——ArkUI 的 shadow 是围绕**组件矩形盒**的盒阴影，
+          // 每条弹幕四周出现「矩形边框」（真机回归「弹幕周围有矩形边框」）。
+          // ArkUI Text 无原生 stroke，Flutter 侧是真描边，四向偏移是
+          // ArkTS 下最接近的等价物；outlineWidth=0 时不加。
+          if (HimiMpvNativeHost.getInstance().state.danmakuOutlineWidth > 0) {
+            this.StrokeText(it, -1, -1);
+            this.StrokeText(it, 1, -1);
+            this.StrokeText(it, -1, 1);
+            this.StrokeText(it, 1, 1);
+          }
+          Text(it.text)
+            .fontSize(it.fontSize)
+            // 观感照抄 Flutter DanmakuOverlay：w500。
+            .fontWeight(500)
+            .fontColor(effectiveColor(
+              it.color,
+              HimiMpvNativeHost.getInstance().state.danmakuColorMode,
+              HimiMpvNativeHost.getInstance().state.danmakuCustomColor,
+            ))
+            .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
+        }
+        .position({ x: it.x, y: it.y })
       }, (it: DanmakuFrameItem): string => it.key);
     }
     .width('100%')
