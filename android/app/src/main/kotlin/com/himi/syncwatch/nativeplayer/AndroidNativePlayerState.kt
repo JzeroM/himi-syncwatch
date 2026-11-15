@@ -184,6 +184,13 @@ data class AndroidEngineOption(
  * 字段名与 Dart 侧 `toJson()` **逐字一致**；改动任一键名必须同步改 Dart
  * 侧并跑 `AndroidNativePlayerStateTest`。
  */
+/** 694 M3：弹幕搜索结果条目（与 Dart NativeDanmakuSearchResult 同构）。 */
+data class DanmakuSearchHit(
+    val episodeId: Int = 0,
+    val animeTitle: String = "",
+    val episodeTitle: String = "",
+)
+
 data class AndroidNativePlayerState(
     // 输出与 HDR 诊断
     val engine: String = "mpv",
@@ -291,6 +298,12 @@ data class AndroidNativePlayerState(
     val subtitleDelayEnabled: Boolean = false,
     val subtitleStyleDisabled: Boolean = false,
     val danmakuEnabled: Boolean = false,
+
+    /** 694 M3：弹幕弹窗状态（绑定文案 / 搜索结果 / 搜索中 / 错误）。 */
+    val danmakuBinding: String = "",
+    val danmakuSearchResults: List<DanmakuSearchHit> = emptyList(),
+    val danmakuSearching: Boolean = false,
+    val danmakuSearchError: String = "",
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
@@ -501,6 +514,20 @@ data class AndroidNativePlayerState(
             subtitleDelayEnabled = json.optBoolean("subtitleDelayEnabled", false),
             subtitleStyleDisabled = json.optBoolean("subtitleStyleDisabled", false),
             danmakuEnabled = json.optBoolean("danmakuEnabled", false),
+            danmakuBinding = json.optString("danmakuBinding", ""),
+            danmakuSearchResults = json.optJSONArray("danmakuSearchResults")
+                ?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i ->
+                        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                        DanmakuSearchHit(
+                            episodeId = o.optInt("episodeId", 0),
+                            animeTitle = o.optString("animeTitle", ""),
+                            episodeTitle = o.optString("episodeTitle", ""),
+                        )
+                    }
+                } ?: emptyList(),
+            danmakuSearching = json.optBoolean("danmakuSearching", false),
+            danmakuSearchError = json.optString("danmakuSearchError", ""),
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),

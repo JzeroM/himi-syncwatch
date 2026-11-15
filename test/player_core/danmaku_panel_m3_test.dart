@@ -109,5 +109,57 @@ void main() {
       expect(screen, contains('danmakuBinding: _dmBindingLabel'));
       expect(screen, contains('danmakuSearchResults: _dmSearchResults'));
     });
+
+    test('3.4 空关键词 = 预填标题（TV 无输入法可直搜）', () {
+      expect(screen, contains('_danmakuSearchKeyword() ?? '));
+    });
+  });
+
+  group('4. Android TV Kotlin 壳', () {
+    late String kotlinView;
+    late String kotlinState;
+    late String kotlinHost;
+
+    setUpAll(() {
+      const dir =
+          'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer';
+      kotlinView = File('$dir/NativePlayerScreenView.kt').readAsStringSync();
+      kotlinState = File('$dir/AndroidNativePlayerState.kt').readAsStringSync();
+      kotlinHost = File('$dir/AndroidNativePlayerHost.kt').readAsStringSync();
+    });
+
+    test('4.1 弹幕按钮点击弹窗（PANEL_DANMAKU，不再直接 toggle）', () {
+      expect(kotlinView, contains('openPanel(PANEL_DANMAKU)'));
+      expect(kotlinView, contains('PANEL_DANMAKU -> buildDanmakuContent()'));
+      expect(kotlinView, contains('PANEL_DANMAKU -> "弹幕"'));
+    });
+
+    test('4.2 动效开关胶囊 + 搜索结果绑定 + 解除绑定', () {
+      expect(kotlinView, contains('danmakuSwitchCapsule'));
+      expect(kotlinView, contains('listener?.onSearchDanmaku("")'));
+      expect(kotlinView, contains('listener?.onBindDanmaku(hit.episodeId)'));
+      expect(kotlinView, contains('listener?.onUnbindDanmaku()'));
+    });
+
+    test('4.3 Listener 三回调 + Host 命令路由', () {
+      expect(kotlinView, contains('fun onSearchDanmaku(keyword: String)'));
+      expect(kotlinView, contains('fun onBindDanmaku(episodeId: Int)'));
+      expect(kotlinView, contains('fun onUnbindDanmaku()'));
+      expect(kotlinHost, contains('"type" to "searchDanmaku"'));
+      expect(kotlinHost, contains('"type" to "bindDanmaku"'));
+      expect(kotlinHost, contains('"type" to "unbindDanmaku"'));
+    });
+
+    test('4.4 状态解析四字段 + 搜索结果模型', () {
+      expect(kotlinState, contains('data class DanmakuSearchHit('));
+      expect(kotlinState, contains('optString("danmakuBinding"'));
+      expect(kotlinState, contains('optJSONArray("danmakuSearchResults")'));
+      expect(kotlinState, contains('optBoolean("danmakuSearching"'));
+      expect(kotlinState, contains('optString("danmakuSearchError"'));
+    });
+
+    test('4.5 弹幕按钮图标随开关状态变色', () {
+      expect(kotlinView, contains('0xFFFF8A3D.toInt() else Color.WHITE'));
+    });
   });
 }

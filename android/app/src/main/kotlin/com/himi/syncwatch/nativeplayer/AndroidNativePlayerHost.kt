@@ -201,6 +201,20 @@ class AndroidNativePlayerHost(
                 view?.render(lastState, System.currentTimeMillis())
             }
 
+            override fun onSearchDanmaku(keyword: String) {
+                lastState = lastState.copy(danmakuSearching = true, danmakuSearchError = "")
+                commandSink.send(mapOf("type" to "searchDanmaku", "keyword" to keyword))
+                view?.render(lastState, System.currentTimeMillis())
+            }
+
+            override fun onBindDanmaku(episodeId: Int) {
+                commandSink.send(mapOf("type" to "bindDanmaku", "episodeId" to episodeId))
+            }
+
+            override fun onUnbindDanmaku() {
+                commandSink.send(mapOf("type" to "unbindDanmaku"))
+            }
+
             override fun onCycleVideoFit() {
                 val next = when (lastState.videoFit) {
                     "contain" -> "cover"

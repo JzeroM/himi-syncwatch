@@ -10868,9 +10868,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _searchDanmakuFromPanel(String keyword) async {
     final controller = _danmakuPanelController();
     if (controller == null) return;
+    // 空关键词 = 用预填标题（TV 无输入法，D-pad 直接触发搜索）。
+    final kw = keyword.trim().isEmpty
+        ? (_danmakuSearchKeyword() ?? '')
+        : keyword;
     setState(() => _dmSearching = true);
     _syncNativePanelData();
-    await controller.search(keyword);
+    await controller.search(kw);
     if (!mounted || _disposed) return;
     _dmSearching = false;
     _dmSearchError = controller.error ?? '';

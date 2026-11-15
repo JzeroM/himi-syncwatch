@@ -68,6 +68,15 @@ class NativePlayerScreenView(
         fun onSwitchEngine(engine: String)
         fun onSetDecodeMode(mode: String)
         fun onToggleDanmaku()
+
+        /** 694 M3：弹幕弹窗搜索（空关键词 = Dart 用预填标题）。 */
+        fun onSearchDanmaku(keyword: String)
+
+        /** 694 M3：弹幕弹窗绑定候选（manual 记忆 + 立即重载）。 */
+        fun onBindDanmaku(episodeId: Int)
+
+        /** 694 M3：弹幕弹窗解除绑定（回自动匹配）。 */
+        fun onUnbindDanmaku()
         fun onCycleVideoFit()
         fun onToggleOrientation()
         fun onToggleLock()
@@ -1686,8 +1695,9 @@ class NativePlayerScreenView(
         configureTransportButton(danmakuButton, NativePlayerIcons.ICON_DANMAKU_ON, 24)
         applyPressFeedback(danmakuButton)
         danmakuButton.setOnClickListener {
-            listener?.onToggleDanmaku()
-            scheduleAutoHide()
+            // 694 M3：点击弹幕按钮 → 弹幕弹窗（开关/绑定/搜索），
+            // 不再直接 toggle；开关能力全在弹窗内。
+            openPanel(PANEL_DANMAKU)
         }
         trailingGroup.addView(danmakuButton, llp(dp(32), dp(32)))
         versionButton = badgeButton(
@@ -2385,6 +2395,7 @@ class NativePlayerScreenView(
                     ) { listener?.onSelectVersion(it) }
                     PANEL_KERNEL -> buildKernelContent()
                     PANEL_DISPLAY -> buildDisplayContent()
+                    PANEL_DANMAKU -> buildDanmakuContent()
                     // PANEL_DECODE 走独立 popover（见函数开头分支）。
                     else -> Unit
                 }
@@ -2408,6 +2419,7 @@ class NativePlayerScreenView(
         PANEL_KERNEL -> "播放内核"
         PANEL_DISPLAY -> "显示调节"
         PANEL_DECODE -> "解码模式"
+        PANEL_DANMAKU -> "弹幕"
         else -> "设置"
     }
 
@@ -2653,6 +2665,126 @@ class NativePlayerScreenView(
         }
         panelContainer.addView(scrollWrap(list))
     }
+
+    // ── 弹幕弹窗（694 M3）─────────────────────────────────────────
+
+    /**
+     * 弹幕弹窗：胶囊动效开关（视觉主角）+ 绑定状态 + 搜索/换绑 + 结果绑定。
+     * 搜索/绑定/记忆全在 Dart `DanmakuSearchController`，这里只发意图，
+     * 渲染状态回流（danmakuBinding / danmakuSearchResults）。
+     */
+    private fun buildDanmakuContent() {
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+
+        // ① 动效开关行（胶囊指示：开 = 橙渐变 + 白滑钮右置）
+        list.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V), dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V))
+                isClickable = true
+                setOnClickListener { listener?.onToggleDanmaku() }
+                addView(
+                    TextView(context).apply {
+                        text = "弹幕"
+                        setTextColor(NPTheme.PANEL_TEXT)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+                        typeface = NPTheme.bodyTypeface
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                )
+                addView(danmakuSwitchCapsule(lastState.danmakuEnabled))
+            },
+        )
+
+        // ② 绑定状态
+        list.addView(danmakuInfoRow(lastState.danmakuBinding))
+
+        // ③ 搜索/换绑（空关键词 = Dart 用预填标题；TV 无输入法可直搜）
+        list.addView(
+            optionRow("搜索 / 换绑", false) { listener?.onSearchDanmaku("") },
+        )
+        if (lastState.danmakuSearching) {
+            list.addView(danmakuInfoRow("搜索中…"))
+        }
+        if (lastState.danmakuSearchError.isNotEmpty()) {
+            list.addView(danmakuInfoRow(lastState.danmakuSearchError, color = 0xFFFFA040.toInt()))
+        }
+
+        // ④ 搜索结果绑定
+        lastState.danmakuSearchResults.forEach { hit ->
+            list.addView(
+                optionRow(
+                    if (hit.animeTitle.isEmpty()) {
+                        "episodeId ${hit.episodeId}"
+                    } else {
+                        "${hit.animeTitle} · ${hit.episodeTitle}"
+                    },
+                    false,
+                ) {
+                    listener?.onBindDanmaku(hit.episodeId)
+                },
+            )
+        }
+
+        // ⑤ 解除绑定（有绑定才显示）
+        if (lastState.danmakuBinding.isNotEmpty() &&
+            lastState.danmakuBinding != "未匹配"
+        ) {
+            list.addView(
+                optionRow("解除绑定（回自动匹配）", false) {
+                    listener?.onUnbindDanmaku()
+                },
+            )
+        }
+        panelContainer.addView(scrollWrap(list))
+    }
+
+    /** 胶囊动效开关（694 M3 三壳同款：开 = 橙渐变滑轨 + 白滑钮右置）。 */
+    private fun danmakuSwitchCapsule(on: Boolean): View {
+        val capsule = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(56), dp(30))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(15).toFloat()
+                if (on) {
+                    colors = intArrayOf(0xFFFF8A3D.toInt(), 0xFFE06A1B.toInt())
+                } else {
+                    setColor(0xFF4A4F57.toInt())
+                }
+            }
+        }
+        val knob = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(24), dp(24)).also {
+                it.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                it.marginStart = dp(3)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(android.graphics.Color.WHITE)
+            }
+        }
+        capsule.addView(knob)
+        // 滑钮缓动到位（180ms，OutBack 观感由 overshoot 位移近似）
+        knob.post {
+            knob.animate()
+                .translationX(if (on) dp(26).toFloat() else 0f)
+                .setDuration(180)
+                .start()
+        }
+        return capsule
+    }
+
+    /** 弹幕弹窗信息行（次要文案，弱化显示）。 */
+    private fun danmakuInfoRow(text: String, color: Int = 0x8CFFFFFF.toInt()): TextView =
+        TextView(context).apply {
+            this.text = text
+            setTextColor(color)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, NPTheme.PANEL_BODY_SIZE)
+            typeface = NPTheme.bodyTypeface
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(NPTheme.PANEL_PAD_H), dp(6), dp(NPTheme.PANEL_PAD_H), dp(6))
+        }
 
     // ── 内核面板 ──────────────────────────────────────────────────
 
@@ -4243,7 +4375,8 @@ class NativePlayerScreenView(
         episodeButton?.visibility =
             if (!state.isRoom && state.episodes.size > 1) VISIBLE else GONE
 
-        // 弹幕图标随开关切换（comment ↔ comments_disabled）
+        // 弹幕图标随开关切换（comment ↔ comments_disabled）并变色
+        // （694 M3：开 = 主题橙，与 Flutter/QML 壳一致）
         danmakuButton.text = String(
             Character.toChars(
                 if (state.danmakuEnabled) {
@@ -4252,6 +4385,9 @@ class NativePlayerScreenView(
                     NativePlayerIcons.ICON_DANMAKU_OFF
                 },
             ),
+        )
+        danmakuButton.setTextColor(
+            if (state.danmakuEnabled) 0xFFFF8A3D.toInt() else Color.WHITE,
         )
         // 锁图标随锁定态切换（lock_open ↔ lock，与 Flutter PlayerLockButton 一致）
         lockButton.text = String(
@@ -4488,6 +4624,7 @@ class NativePlayerScreenView(
         const val PANEL_EPISODE = "episode"
         const val PANEL_VERSION = "version"
         const val PANEL_KERNEL = "kernel"
+        const val PANEL_DANMAKU = "danmaku"
         const val PANEL_DISPLAY = "display"
         const val PANEL_DECODE = "decode"
 
