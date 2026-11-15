@@ -77,6 +77,7 @@ import 'package:himi_syncwatch/screens/player/danmaku_control_sheet.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_search_controller.dart';
+import 'package:himi_syncwatch/services/danmaku/danmaku_server_pool.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_timeline.dart';
 import 'package:himi_syncwatch/services/danmaku/dandanplay_client.dart';
@@ -11241,28 +11242,38 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ? _episodes[_currentEpisodeIndex].id
               : widget.itemId;
       ({int id, List<DanmakuComment> comments})? found;
-      // P2：按优先级依次尝试**所有启用**的服务器（真正的多源回退）。
-      // 单源命中即停；全部失败才提示「未匹配到弹幕」。
+      // P2（694 M4）：所有启用服务器**并发**搜索，严格优先级仲裁——
+      // 高优先级命中立即采用；低优先级先到也要等高优先级定局；
+      // 每源 15s 超时兜底（并发执行，总墙钟 ≈ 15s = 全局超时语义）。
       final servers = settings.danmakuServers
           .where((e) => e.enabled)
           .toList()
         ..sort((a, b) => a.priority.compareTo(b.priority));
-      for (final srv in servers) {
-        if (!mounted || seq != _danmakuLoadSeq) return;
-        final c = _danmakuClientFor(srv.baseUrl);
-        if (!c.isConfigured) continue;
-        found = await _loadDanmakuFromClient(
-          client: c,
-          fileName: fileName,
-          cacheKey: cacheKey,
-          seq: seq,
-        );
-        if (found != null) {
-          LogService().log('Danmaku', '命中服务器: ${srv.name}（${srv.baseUrl}）');
-          break;
-        }
-        LogService().log('Danmaku', '服务器无命中，尝试下一个: ${srv.name}');
-      }
+      final winner = await runDanmakuServers<
+          ({int id, List<DanmakuComment> comments})>(
+        count: servers.length,
+        timeout: const Duration(seconds: 15),
+        run: (i) async {
+          if (!mounted || seq != _danmakuLoadSeq) return null;
+          final srv = servers[i];
+          final c = _danmakuClientFor(srv.baseUrl);
+          if (!c.isConfigured) return null;
+          final hit = await _loadDanmakuFromClient(
+            client: c,
+            fileName: fileName,
+            cacheKey: cacheKey,
+            seq: seq,
+          );
+          if (hit != null) {
+            LogService().log('Danmaku', '命中服务器: ${srv.name}（${srv.baseUrl}）');
+          } else {
+            LogService().log('Danmaku', '服务器无命中: ${srv.name}');
+          }
+          return hit;
+        },
+      );
+      if (!mounted || seq != _danmakuLoadSeq) return;
+      found = winner?.result;
       if (!mounted || seq != _danmakuLoadSeq) return;
       if (found == null) {
         throw const DanmakuApiException(

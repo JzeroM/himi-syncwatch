@@ -119,12 +119,13 @@ void main() {
       expect(p, contains('return found;'));
     });
 
-    test('5.2 按优先级循环所有启用服务器，命中即停', () {
+    test('5.2 并发搜索所有启用服务器，严格优先级仲裁（694 M4）', () {
       final p = read('lib/screens/player/player_screen.dart');
       expect(p, contains('.where((e) => e.enabled)'));
       expect(p, contains('..sort((a, b) => a.priority.compareTo(b.priority))'));
-      expect(p, contains('服务器无命中，尝试下一个'));
-      expect(p, contains('break;'));
+      expect(p, contains('runDanmakuServers<'));
+      expect(p, contains('timeout: const Duration(seconds: 15)'));
+      expect(p, contains('服务器无命中'));
     });
 
     test('5.3 起播前只要求「至少一条可用」，不是只认第一条', () {

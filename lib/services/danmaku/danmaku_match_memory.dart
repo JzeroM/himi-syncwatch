@@ -143,6 +143,15 @@ class LocalDanmakuMatchMemory implements DanmakuMatchRepository {
   /// auto 绑定 TTL（30 天）。
   static const Duration autoTtl = Duration(days: 30);
 
+  /// 写串行化锁（694 M4：多服务器并发命中时防 read-modify-write 竞态）。
+  Future<void> _writeLock = Future<void>.value();
+
+  Future<T> _synchronized<T>(Future<T> Function() op) {
+    final next = _writeLock.then((_) => op());
+    _writeLock = next.then<void>((_) {}, onError: (_) {});
+    return next;
+  }
+
   Future<File> _file() async {
     final dir = _directory ?? (await getApplicationDocumentsDirectory()).path;
     return File('$dir${Platform.pathSeparator}$fileName');
@@ -203,7 +212,8 @@ class LocalDanmakuMatchMemory implements DanmakuMatchRepository {
     String? itemKey,
     String? nameKey,
     required DanmakuMatchRecord record,
-  }) async {
+  }) {
+    return _synchronized(() async {
     final records = await _load();
     final saved = record.copyWith(savedAtMs: _now().millisecondsSinceEpoch);
     for (final key in [itemKey, nameKey]) {
@@ -215,17 +225,20 @@ class LocalDanmakuMatchMemory implements DanmakuMatchRepository {
       records.remove(records.keys.first);
     }
     await _save(records);
+    });
   }
 
   @override
-  Future<void> remove({String? itemKey, String? nameKey}) async {
-    final records = await _load();
-    var dirty = false;
-    for (final key in [itemKey, nameKey]) {
-      if (key == null) continue;
-      dirty = records.remove(key) != null || dirty;
-    }
-    if (dirty) await _save(records);
+  Future<void> remove({String? itemKey, String? nameKey}) {
+    return _synchronized(() async {
+      final records = await _load();
+      var dirty = false;
+      for (final key in [itemKey, nameKey]) {
+        if (key == null) continue;
+        dirty = records.remove(key) != null || dirty;
+      }
+      if (dirty) await _save(records);
+    });
   }
 
   @override
@@ -240,9 +253,11 @@ class LocalDanmakuMatchMemory implements DanmakuMatchRepository {
   }
 
   @override
-  Future<void> clear() async {
-    final records = await _load();
-    if (records.isEmpty) return;
-    await _save({});
+  Future<void> clear() {
+    return _synchronized(() async {
+      final records = await _load();
+      if (records.isEmpty) return;
+      await _save({});
+    });
   }
 }
