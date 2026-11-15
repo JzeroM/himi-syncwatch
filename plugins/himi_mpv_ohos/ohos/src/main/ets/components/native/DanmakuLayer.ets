@@ -37,6 +37,13 @@ function argbToCss(argb: number): string {
   return `#${hex(a)}${hex(r)}${hex(g)}${hex(b)}`;
 }
 
+/** 弹幕颜色模式：color（源色）/ white / custom（P3，与四端同语义）。 */
+function effectiveColor(itemColor: string, mode: string, customColor: number): string {
+  if (mode === 'white') return '#FFFFFF';
+  if (mode === 'custom') return argbToCss(customColor);
+  return itemColor;
+}
+
 /** 单帧弹幕排布项（ArkTS 禁止对象字面量作 ForEach 泛型，用类承载）。 */
 class DanmakuFrameItem {
   key: string = '';
@@ -322,15 +329,6 @@ export struct DanmakuLayer {
   }
 
   /** 颜色模式：源色 / 统一白 / 自定义（P3）。 */
-  private effectiveColor(itemColor: string): string {
-    const mode: string = HimiMpvNativeHost.getInstance().state.danmakuColorMode;
-    if (mode === 'white') return '#FFFFFF';
-    if (mode === 'custom') {
-      return argbToCss(HimiMpvNativeHost.getInstance().state.danmakuCustomColor);
-    }
-    return itemColor;
-  }
-
   build() {
     Stack() {
       ForEach(this.items, (it: DanmakuFrameItem) => {
@@ -344,7 +342,11 @@ export struct DanmakuLayer {
             offsetX: 0,
             offsetY: 0,
           })
-          .fontColor(effectiveColor(it.color))
+          .fontColor(effectiveColor(
+            it.color,
+            HimiMpvNativeHost.getInstance().state.danmakuColorMode,
+            HimiMpvNativeHost.getInstance().state.danmakuCustomColor,
+          ))
           .opacity(Math.min(1, Math.max(0, HimiMpvNativeHost.getInstance().state.danmakuOpacity)))
           .position({ x: it.x, y: it.y })
       }, (it: DanmakuFrameItem): string => it.key);

@@ -150,18 +150,21 @@ export struct DebugPanel {
       },
     ];
     // P4：弹幕实时统计（总条数 / 在屏 / 过滤）。
+    // ArkTS 对对象字面量要求可推断类型：先声明再用，避免 push 报类型错。
     if (s.danmakuTotal > 0) {
-      playback.push({
+      const dmRow: DebugRowSpec = {
         label: '弹幕',
         value: `总 ${s.danmakuTotal} · 在屏 ${s.danmakuOnscreen}`,
         severity: s.danmakuOnscreen > 200 ? DebugSeverity.WARN : DebugSeverity.NORMAL,
-      });
+      };
+      playback.push(dmRow);
       if (s.danmakuBlocked > 0 || s.danmakuSampled > 0) {
-        playback.push({
+        const filterRow: DebugRowSpec = {
           label: '弹幕过滤',
           value: `屏蔽 ${s.danmakuBlocked} · 采样丢弃 ${s.danmakuSampled}`,
           severity: DebugSeverity.NORMAL,
-        });
+        };
+        playback.push(filterRow);
       }
     }
     groups.push({

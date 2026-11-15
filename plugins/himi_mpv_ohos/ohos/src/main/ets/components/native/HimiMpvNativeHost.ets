@@ -923,11 +923,7 @@ export class HimiMpvNativeHost {
   }
 
   /** 立即对齐到当前状态（seek / 暂停切换 / 倍速变化后调用）。 */
-  danmakuClockHardResync(
-    paused: boolean = this.state.paused || this.state.buffering ||
-      this.state.ended || this.state.speed <= 0,
-    rate: number = this.state.speed > 0 ? this.state.speed : 1,
-  ): void {
+  danmakuClockHardResync(paused: boolean, rate: number): void {
     const pos: number = this.state.positionMs;
     this.dmAnchorPosMs = pos < 0 ? 0 : pos;
     this.dmAnchorAtMs = Date.now();
@@ -1089,7 +1085,11 @@ export class HimiMpvNativeHost {
   optimisticTogglePaused(): void {
     this.state.paused = !this.state.paused;
     this.lastStateAtMs = Date.now();
-    this.danmakuClockHardResync();
+    this.danmakuClockHardResync(
+      this.state.paused || this.state.buffering || this.state.ended ||
+        this.state.speed <= 0,
+      this.state.speed > 0 ? this.state.speed : 1,
+    );
     this.sendCommand('togglePlay', null);
     this.notify();
   }
@@ -1100,7 +1100,11 @@ export class HimiMpvNativeHost {
       : Math.max(positionMs, 0);
     this.state.positionMs = clamped;
     this.lastStateAtMs = Date.now();
-    this.danmakuClockHardResync();
+    this.danmakuClockHardResync(
+      this.state.paused || this.state.buffering || this.state.ended ||
+        this.state.speed <= 0,
+      this.state.speed > 0 ? this.state.speed : 1,
+    );
     const fields: Map<string, Object> = new Map<string, Object>();
     fields.set('positionMs', clamped);
     this.sendCommand('seekTo', fields);
@@ -1113,7 +1117,11 @@ export class HimiMpvNativeHost {
   optimisticSetSpeed(speed: number): void {
     this.state.speed = speed;
     this.lastStateAtMs = Date.now();
-    this.danmakuClockHardResync();
+    this.danmakuClockHardResync(
+      this.state.paused || this.state.buffering || this.state.ended ||
+        this.state.speed <= 0,
+      this.state.speed > 0 ? this.state.speed : 1,
+    );
     const fields: Map<string, Object> = new Map<string, Object>();
     fields.set('speed', speed);
     this.sendCommand('setSpeed', fields);
