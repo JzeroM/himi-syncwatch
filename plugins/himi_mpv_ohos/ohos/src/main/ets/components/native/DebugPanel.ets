@@ -89,6 +89,61 @@ export struct DebugPanel {
   @State private offsetX: number = 0;
   @State private offsetY: number = 0;
 
+  /** 自驱重建纪元（DanmakuPanel 同款：绕开 `revision++` 真机不可靠）。 */
+  @State private epoch: number = 0;
+  private lastSig: string = '';
+  private timer: number = -1;
+
+  aboutToAppear(): void {
+    this.lastSig = this.stateSig();
+    // 200ms 签名轮询（DanmakuLayer/DanmakuPanel 自驱 timer 同款已验证机制）：
+    // 宿主 `state().X` 不在 ArkUI 观察链上，靠 epoch++ → ForEach key 变重建。
+    this.timer = setInterval((): void => {
+      const sig = this.stateSig();
+      if (sig !== this.lastSig) {
+        this.lastSig = sig;
+        this.epoch = this.epoch + 1;
+      }
+    }, 200);
+  }
+
+  aboutToDisappear(): void {
+    if (this.timer >= 0) {
+      clearInterval(this.timer);
+      this.timer = -1;
+    }
+  }
+
+  /** A4K 状态签名（epoch 驱动重建；只在变化时触发，避免每帧抖）。 */
+  private stateSig(): string {
+    const s: NativePlayerUiState = this.host.state;
+    return `${s.anime4kEnabled}|${s.anime4kStatus}`;
+  }
+
+  /** 694：A4K 状态行 + 隐藏开关（点击乐观切换）。 */
+  @Builder
+  A4KRow() {
+    Row() {
+      Text(this.state().anime4kEnabled ? 'A4K 开' : 'A4K 关')
+        .fontSize(10.5)
+        .fontColor(this.state().anime4kEnabled ? ACCENT_GREEN : LABEL_COLOR)
+        .fontWeight(FontWeight.Bold)
+        .width(66);
+      Text(this.state().anime4kStatus)
+        .fontSize(10.5)
+        .fontColor(NORMAL_COLOR)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis });
+    }
+    .width('100%')
+    .height(22)
+    .padding({ left: 14, right: 8 })
+    .onClick((): void => {
+      this.host.optimisticToggleAnime4K();
+    });
+  }
+
   private isCollapsed(key: string): boolean {
     return this.collapsed.indexOf(key) >= 0;
   }
@@ -402,25 +457,10 @@ export struct DebugPanel {
           Column() {
             // ── 694：Anime4K 状态行 + 隐藏开关（真机验证入口；点击切换）──
             // 状态串是 Dart 管线产物（跨端一致）；点击回发 toggleAnime4K。
-            Row() {
-              Text(this.state().anime4kEnabled ? 'A4K 开' : 'A4K 关')
-                .fontSize(10.5)
-                .fontColor(this.state().anime4kEnabled ? ACCENT_GREEN : LABEL_COLOR)
-                .fontWeight(FontWeight.Bold)
-                .width(66);
-              Text(this.state().anime4kStatus)
-                .fontSize(10.5)
-                .fontColor(NORMAL_COLOR)
-                .layoutWeight(1)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis });
-            }
-            .width('100%')
-            .height(22)
-            .padding({ left: 14, right: 8 })
-            .onClick((): void => {
-              this.host.optimisticToggleAnime4K();
-            });
+            // 用 epoch 自驱重建（revision++ 真机不可靠），见文件头。
+            ForEach([this.epoch], (e: number) => {
+              this.A4KRow();
+            }, (e: number): string => `a4k-row-${e}`);
 
             ForEach(this.buildGroups(), (group: DebugGroupSpec) => {
               // 【必须单一根节点】ArkTS 的 ForEach builder 只允许一个根组件，

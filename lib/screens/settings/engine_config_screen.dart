@@ -290,10 +290,8 @@ List<Widget> _mpvChildren(
     // 场景。运行时由 `MpvSessionPlatform.qtPlayerEnabled` 恒 true 兜底。
 
     // ── 694：Anime4K 实时画质增强（mpv glsl-shaders）──
-    // 鸿蒙一期「接线预留、UI 待实测后开」（拍板项 C）——等真机验证
-    // 通过再放开入口，故此处 `!isOhos` 门控隐藏。
-    if (!PlayerEngineFactory.isOhos) ...[
-      const Divider(height: 1),
+    // 694 真机验证后四端一致展示（含鸿蒙；调试面板另有快捷开关）。
+    const Divider(height: 1),
       const ListTile(
         leading: Icon(Icons.auto_awesome),
         title: Text('Anime4K 画质增强'),
@@ -362,7 +360,6 @@ List<Widget> _mpvChildren(
           onChanged: (v) => notifier.update(anime4kOnHdr: v),
         ),
       ),
-    ],
   ];
   }
 
