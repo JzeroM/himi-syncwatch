@@ -377,15 +377,16 @@ void main() {
       expect(s, contains('"toggleAnime4K"'));
     });
 
-    test('鸿蒙 ArkTS 调试面板：状态行 + 点击 toggleAnime4K', () {
+    test('鸿蒙 ArkTS 调试面板：状态行 + 点击经宿主乐观切换', () {
       final s = read(
           'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/DebugPanel.ets');
       expect(s, contains('anime4kStatus'));
-      expect(s, contains("'toggleAnime4K'"));
+      expect(s, contains('optimisticToggleAnime4K'));
       final host = read(
           'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/HimiMpvNativeHost.ets');
       expect(host, contains('anime4kStatus: string'));
       expect(host, contains('anime4kEnabled: boolean'));
+      expect(host, contains("'toggleAnime4K'")); // 命令串在宿主转发
     });
 
     test('Android Kotlin 调试面板：状态行 + 回调 toggleAnime4K', () {

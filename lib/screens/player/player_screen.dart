@@ -4643,6 +4643,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       case ToggleAnime4K():
         // 694：调试面板隐藏开关（真机验证入口；设置页开关是正式入口）。
         final cur = ref.read(settingsProvider).anime4kEnabled;
+        LogService().log('Anime4K', 'toggle cmd received, cur=$cur -> ${!cur}');
         unawaited(ref
             .read(settingsProvider.notifier)
             .update(anime4kEnabled: !cur));

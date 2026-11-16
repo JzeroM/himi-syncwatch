@@ -1270,6 +1270,17 @@ export class HimiMpvNativeHost {
     this.notify();
   }
 
+  /** 694：A4K 开关（本地乐观翻转，与弹幕开关同模式——否则点击等回程、
+   *  真机表现「没反应」）。回程由 Dart `_applyAnime4K` 落 glsl-shaders +
+   *  推送权威状态。 */
+  optimisticToggleAnime4K(): void {
+    this.state.anime4kEnabled = !this.state.anime4kEnabled;
+    hilog.info(DOMAIN, TAG, 'A4K toggle clicked -> %{public}s',
+      this.state.anime4kEnabled ? 'on' : 'off');
+    this.sendCommand('toggleAnime4K', null);
+    this.notify();
+  }
+
   /** 694 M3：弹幕弹窗搜索（空关键词 = Dart 用预填标题，TV 无输入法可直搜）。 */
   searchDanmaku(keyword: string): void {
     this.state.danmakuSearching = true;

@@ -416,9 +416,10 @@ export struct DebugPanel {
                 .textOverflow({ overflow: TextOverflow.Ellipsis });
             }
             .width('100%')
-            .padding({ left: 14, top: 1, bottom: 1 })
-            .onClick(() => {
-              this.host.sendCommand('toggleAnime4K', null);
+            .height(22)
+            .padding({ left: 14, right: 8 })
+            .onClick((): void => {
+              this.host.optimisticToggleAnime4K();
             });
 
             ForEach(this.buildGroups(), (group: DebugGroupSpec) => {
