@@ -10906,28 +10906,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '${mpv is MpvPlayerAdapter ? mpv.isHdrContent : false}';
     if (!force && sig == _anime4kSig) return;
     _anime4kSig = sig;
+    // 694 真机回归：ArtCNN 命中不安全尺寸（高%8≠0）→ 临时降 C+（设置不动）。
+    final setMode = Anime4KMode.fromId(settings.anime4kMode);
+    final videoHeight = size?.height.toInt() ?? 0;
+    final effectiveMode = Anime4KResolve.resolveEffectiveMode(
+      mode: setMode,
+      videoHeight: videoHeight,
+    );
     final result = await Anime4KPipeline.apply(
       enabled: settings.anime4kEnabled,
-      mode: Anime4KMode.fromId(settings.anime4kMode),
+      mode: effectiveMode,
       quality: Anime4KQuality.fromId(settings.anime4kQuality),
       in4k: settings.anime4kIn4k,
       onHdr: settings.anime4kOnHdr,
       videoWidth: size?.width.toInt() ?? 0,
-      videoHeight: size?.height.toInt() ?? 0,
+      videoHeight: videoHeight,
       isHdrContent: mpv is MpvPlayerAdapter ? mpv.isHdrContent : false,
       setProperty: _setMpvProperty,
       readProperty: _readMpvProperty,
       recentErrors: _recentMpvErrors,
     );
-    if (_anime4kStatus != result.statusLabel) {
-      _anime4kStatus = result.statusLabel;
+    var status = result.statusLabel;
+    if (effectiveMode != setMode && result.applied) {
+      // 标注临时降档（设置仍是 artcnn，仅本片源临时用 C+）。
+      status = '$status（ArtCNN 临时降档：片源高%8≠0）';
+    }
+    if (_anime4kStatus != status) {
+      _anime4kStatus = status;
       // 694 真机回归：状态变了必须推送到原生面板——否则 A4K 行冻结在旧值
       // （开关已开、着色器已设进 mpv，但面板仍显示「关」）。走
       // `_syncNativePanelData` → `applyNativePanelData` → `_nativeUiExtras`
       // → `_buildNativePlayerState`（顶层 anime4kStatus）→ 各壳面板。
       if (mounted && !_disposed) _syncNativePanelData();
     }
-    LogService().log('Anime4K', result.statusLabel);
+    LogService().log('Anime4K', status);
   }
 
   /// 694 M3：弹幕弹窗共用控制器工厂（Flutter sheet / QML / Android 面板）。

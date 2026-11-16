@@ -43,6 +43,32 @@ class Anime4KGuard {
   }
 }
 
+/// 694 真机回归：ArtCNN 临时降档判定（某些片源尺寸让 ArtCNN 越界崩溃）。
+///
+/// 根因：ArtCNN 中间缓冲高 = `LUMA.h × 2`，compute 块高 16。高 %8 ≠ 0 时
+/// 缓冲高非 16 倍数 → 残块越界 `imageStore`（着色器无钳位）→ GPU 崩 /
+/// 全屏花屏。实测校准：720x540（高%8=4）崩、1280x720（高%8=0）正常；
+/// **宽度不触发**（1280x720 宽%3≠0 仍正常）。
+class Anime4KResolve {
+  Anime4KResolve._();
+
+  /// ArtCNN 在该片源高度下是否不安全（高 %8 ≠ 0）。
+  static bool isArtCnnUnsafe({required int videoHeight}) =>
+      videoHeight % 8 != 0;
+
+  /// 解析实际生效档：ArtCNN 命中不安全尺寸 → 临时降 C+（**设置不动**）。
+  static Anime4KMode resolveEffectiveMode({
+    required Anime4KMode mode,
+    required int videoHeight,
+  }) {
+    if (mode == Anime4KMode.artCnn &&
+        isArtCnnUnsafe(videoHeight: videoHeight)) {
+      return Anime4KMode.cPlus;
+    }
+    return mode;
+  }
+}
+
 /// 着色器资产解包：Flutter assets → 真实文件路径（mpv `glsl-shaders`
 /// 只吃文件路径）。
 class Anime4KAssets {

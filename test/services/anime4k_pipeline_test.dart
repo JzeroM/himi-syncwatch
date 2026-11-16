@@ -355,6 +355,63 @@ void main() {
   });
 
   // ────────────────────────────────────────────────────────────
+  // 4c. ArtCNN 临时降档判定（高%8≠0 → C+；设置不动）
+  // ────────────────────────────────────────────────────────────
+  group('Anime4KResolve ArtCNN 临时降档', () {
+    test('720x540（高%8≠0）→ 降 C+', () {
+      expect(Anime4KResolve.isArtCnnUnsafe(videoHeight: 540), isTrue);
+      expect(
+        Anime4KResolve.resolveEffectiveMode(
+            mode: Anime4KMode.artCnn, videoHeight: 540),
+        Anime4KMode.cPlus,
+      );
+    });
+
+    test('1280x720（高%8=0）→ 保持 ArtCNN', () {
+      expect(Anime4KResolve.isArtCnnUnsafe(videoHeight: 720), isFalse);
+      expect(
+        Anime4KResolve.resolveEffectiveMode(
+            mode: Anime4KMode.artCnn, videoHeight: 720),
+        Anime4KMode.artCnn,
+      );
+    });
+
+    test('1080p / DVD 720x480 → 保持 ArtCNN', () {
+      for (final h in [1080, 480, 576, 720]) {
+        expect(
+          Anime4KResolve.resolveEffectiveMode(
+              mode: Anime4KMode.artCnn, videoHeight: h),
+          Anime4KMode.artCnn,
+          reason: 'height=$h 高%8=0 应保持 ArtCNN',
+        );
+      }
+    });
+
+    test('其它模式不受影响（a/b/c 任意高度都不降档）', () {
+      for (final m in [
+        Anime4KMode.a,
+        Anime4KMode.b,
+        Anime4KMode.c,
+        Anime4KMode.cPlus,
+        Anime4KMode.bPlus,
+      ]) {
+        expect(
+          Anime4KResolve.resolveEffectiveMode(mode: m, videoHeight: 540),
+          m,
+          reason: '${m.id} 不该被降档',
+        );
+      }
+    });
+
+    test('奇数/非 8 倍数高度也判不安全', () {
+      for (final h in [540, 548, 486, 242, 1001]) {
+        expect(Anime4KResolve.isArtCnnUnsafe(videoHeight: h), isTrue,
+            reason: 'height=$h 高%8≠0 应判不安全');
+      }
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────
   // 5. AppSettings 五字段往返
   // ────────────────────────────────────────────────────────────
   group('AppSettings Anime4K 五字段', () {
@@ -422,7 +479,7 @@ void main() {
         s.indexOf('DanmakuSearchController? _danmakuPanelController'),
       );
       // 状态赋值后必须紧跟推送调用。
-      expect(applyBody, contains('_anime4kStatus = result.statusLabel'));
+      expect(applyBody, contains('_anime4kStatus = status'));
       expect(applyBody, contains('_syncNativePanelData()'));
     });
 
@@ -451,6 +508,18 @@ void main() {
       final scr = read('lib/screens/player/player_screen.dart');
       expect(scr, contains('_readMpvProperty'));
       expect(scr, contains('_recentMpvErrors'));
+    });
+
+    test('降档接线：_applyAnime4K 用生效档 + 设置不动', () {
+      final mgr = read('lib/services/player/anime4k/anime4k_manager.dart');
+      expect(mgr, contains('class Anime4KResolve'));
+      expect(mgr, contains('resolveEffectiveMode'));
+      expect(mgr, contains('videoHeight % 8 != 0'));
+      final scr = read('lib/screens/player/player_screen.dart');
+      expect(scr, contains('Anime4KResolve.resolveEffectiveMode'));
+      // 用生效档应用 + 降档标注
+      expect(scr, contains('mode: effectiveMode'));
+      expect(scr, contains('ArtCNN 临时降档'));
     });
 
     test('命令路由：toggleAnime4K → ToggleAnime4K', () {
