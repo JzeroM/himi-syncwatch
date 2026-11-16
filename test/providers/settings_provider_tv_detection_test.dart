@@ -67,8 +67,8 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: true);
 
       expect(notifier.state.tvMode, isFalse);
-      // 640：默认解码模式改为「硬解」（原 'auto'）。
-      expect(notifier.state.decodeMode, 'hw');
+      // 694：默认解码模式改为「硬解+」（tvMode 关时无 TV 默认覆盖）。
+      expect(notifier.state.decodeMode, 'hwplus');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
     });
@@ -111,8 +111,8 @@ void main() {
       await notifier.applyTvAutoDetection(isTelevision: false);
 
       expect(notifier.state.tvMode, isFalse);
-      // 640：默认解码模式改为「硬解」（原 'auto'）。
-      expect(notifier.state.decodeMode, 'hw');
+      // 694：默认解码模式改为「硬解+」（tvMode 关时无 TV 默认覆盖）。
+      expect(notifier.state.decodeMode, 'hwplus');
       expect(notifier.state.videoOutput, 'texture');
       expect(notifier.state.audioRenderer, 'auto');
       expect(notifier.persistCount, 0, reason: '无变更不落盘');
@@ -232,14 +232,14 @@ void main() {
       expect(notifier.state.decodeModeUserSet, isTrue);
     });
 
-    test('640：默认已是 hw，只有 sw/auto 视为手动设置', () async {
-      // 640：默认解码模式改为 'hw'，故旧数据 'hw' 与默认同值 → 不算手动。
+    test('694：默认 hwplus，hw/sw 视为手动设置', () async {
+      // 694：默认解码模式改为 'hwplus'，故 'hw' 偏离默认 → 算手动设置。
       final hw = FakeSettingsNotifier(
         AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'hw'}),
       );
       await hw.applyTvAutoDetection(isTelevision: true);
       expect(hw.state.decodeMode, 'hw');
-      expect(hw.state.decodeModeUserSet, isFalse);
+      expect(hw.state.decodeModeUserSet, isTrue);
 
       final sw = FakeSettingsNotifier(
         AppSettings.fromJson(const {'tvMode': true, 'decodeMode': 'sw'}),

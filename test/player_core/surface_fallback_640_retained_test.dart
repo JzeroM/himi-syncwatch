@@ -73,8 +73,8 @@ void main() {
   });
 
   group('② MPV 硬解默认生效', () {
-    test('设置默认解码模式为 hw', () {
-      expect(settings, contains("this.decodeMode = 'hw',"));
+    test('设置默认解码模式为 hwplus', () {
+      expect(settings, contains("this.decodeMode = 'hwplus',"));
     });
 
     test('videoDecoders setter 平台无关识别硬解器', () {

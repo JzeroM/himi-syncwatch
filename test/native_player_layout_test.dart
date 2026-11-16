@@ -154,7 +154,7 @@ void main() {
   });
 
   group('显隐谓词（与 Flutter PlayerScreen 静态谓词同语义）', () {
-    test('解码按钮：TV 隐藏', () {
+    test('解码按钮：非 TV 顶栏 / TV 底栏（694 移到播放器胶囊）', () {
       expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
       expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
       // 双端原生都按 `!tv` 实现。

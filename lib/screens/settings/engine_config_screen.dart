@@ -234,38 +234,8 @@ List<Widget> _mpvChildren(
         'Windows 走原生顶层窗口 + vo=gpu-next，支持 HDR 直出',
       ),
     ),
-    const Divider(height: 1),
-    settingOptionTile(
-      context: context,
-      tvMode: settings.tvMode,
-      title: '解码方式',
-      subtitle: decodeModeDescription(settings.decodeMode),
-      labels: AppSettings.decodeModeLabels,
-      value: settings.decodeMode,
-      onSelected: (v) => notifier.update(decodeMode: v),
-    ),
-    const Divider(height: 1),
-    // 685：Windows **不再展示**「视频路径」——
-    // Windows 只有 Surface 可用（texture 会 0xc0000005 闪退），
-    // 给一个点了就崩的下拉框没有意义。运行时由
-    // `AppSettings.effectiveMpvVideoOutput` 恒返回 'surface' 兜底。
-    //
-    // Android/鸿蒙保留可切换（Surface / 纹理都能跑）。
-    if (defaultTargetPlatform != TargetPlatform.windows) ...[
-      settingOptionTile(
-        context: context,
-        tvMode: settings.tvMode,
-        title: '视频路径',
-        subtitle: '默认 Surface 直出（HDR 需显示端支持）；'
-            '若出现有声音无画面，请手动切到「纹理」',
-        labels: AppSettings.mpvVideoOutputLabels,
-        value: AppSettings.effectiveMpvVideoOutput(
-          settings.mpvVideoOutput,
-          userSet: settings.mpvVideoOutputUserSet,
-        ),
-        onSelected: (v) => notifier.update(mpvVideoOutput: v),
-      ),
-    ],
+    // 694：解码方式与视频路径从设置页移除——解码模式改为播放器顶栏胶囊
+    // （SW/HW/HW+），视频路径 MPV 全平台恒 Surface（按解码模式自动路由）。
     // 655：渲染器手动选择（仅 Android Surface 路径有意义）。
     //
     // 取代 639 的「GLES 版本自动探测」——版本号无法预测 gpu-next 能否
@@ -305,7 +275,7 @@ List<Widget> _mpvChildren(
         onTap: () => notifier.update(anime4kEnabled: !settings.anime4kEnabled),
         child: SwitchListTile(
           title: const Text('启用增强'),
-          subtitle: const Text('总开关；下方选择增强模式与画质档'),
+          subtitle: const Text('总开关；仅在 HW（硬解）档生效（HW+/软解档自动禁用）'),
           value: settings.anime4kEnabled,
           onChanged: (v) => notifier.update(anime4kEnabled: v),
         ),
@@ -373,15 +343,6 @@ List<Widget> _mdkChildren(
     // 启动设备能力评估结果（HDR/GL/Vulkan/硬解/DV）+ 路由策略预览
     const DeviceCapabilityCard(),
     const SizedBox(height: 4),
-    settingOptionTile(
-      context: context,
-      tvMode: settings.tvMode,
-      title: '解码方式',
-      subtitle: decodeModeDescription(settings.decodeMode),
-      labels: AppSettings.decodeModeLabels,
-      value: settings.decodeMode,
-      onSelected: (v) => notifier.update(decodeMode: v),
-    ),
     const Divider(height: 1),
     settingsTvWrapRow(
       tvMode: settings.tvMode,

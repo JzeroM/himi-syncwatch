@@ -453,12 +453,9 @@ class AppSettings {
   static const Object unsetValue = Object();
 
   const AppSettings({
-    // 640：默认解码模式改为**硬解**（原 'auto'）。
-    //
-    // 真机反馈「MPV 默认解码模式为硬解」：auto 在部分设备上会先尝试软解
-    // 路径（或硬解失败后静默回退），观感是「没走硬解」。改为 'hw' 后
-    // 明确优先纯硬解；用户仍可在设置里切回「智能」或「软解」。
-    this.decodeMode = 'hw',
+    // 694：默认解码模式改为「硬解+」（Direct Surface，低功耗）；DV/增强
+    // 内容自动回硬解（copy-back）。用户可切软解/硬解。
+    this.decodeMode = 'hwplus',
     this.decodeModeUserSet = false,
     this.playerKernel = '',
     this.anime4kEnabled = false,
@@ -931,24 +928,24 @@ class AppSettings {
     // 640：默认解码模式改为「硬解」（与构造器默认值保持一致）。
     // 未存过设置的新用户 / 旧版无该字段 → 'hw'；显式存过则按存档。
     String mode;
-    if (raw is String && ['auto', 'hw', 'sw'].contains(raw)) {
+    if (raw is String && ['hwplus', 'hw', 'sw'].contains(raw)) {
       mode = raw;
-    } else if (raw == 'hw+') {
-      mode = 'hw';
+    } else if (raw == 'auto' || raw == 'hw+') {
+      // 694：旧 'auto'/'hw+' → 'hw+'（Direct Surface，默认档）。
+      mode = 'hwplus';
     } else if (raw == true || json['hardwareDecoding'] == true) {
       mode = 'hw';
     } else if (raw == false || json['hardwareDecoding'] == false) {
       mode = 'sw';
     } else {
-      mode = 'hw';
+      mode = 'hwplus';
     }
-    // 未显式标记时，只有**明确非默认且非历史默认**才算「用户手动设置」。
+    // 未显式标记时，只有**明确非默认**才算「用户手动设置」。
     //
-    // 640：默认值从 'auto' 改为 'hw'，但旧数据里存的是 'auto'（当时的
-    // 默认值）——它并不代表用户手动选过「智能」。故把 'auto' 也视为
-    // 未手动设置，让 TV 自动识别仍能把旧数据迁移到硬解。
+    // 694：默认值改为 'hwplus'；旧 'auto'/'hw+' 迁移而来视为未手动设置，
+    // 让默认档仍可随版本演进。
     final decodeModeUserSet = json['decodeModeUserSet'] as bool? ??
-        (mode != const AppSettings().decodeMode && mode != 'auto');
+        (mode != const AppSettings().decodeMode);
     final bufferMin = _clampInt(
       json['mdkBufferMinMs'],
       mdkBufferMinMsDefault,
@@ -1169,9 +1166,9 @@ class AppSettings {
   }
 
   static const decodeModeLabels = {
-    'auto': '智能',
-    'hw': '硬解',
     'sw': '软解',
+    'hw': '硬解',
+    'hwplus': '硬解+',
   };
 
   static const audioRendererLabels = {

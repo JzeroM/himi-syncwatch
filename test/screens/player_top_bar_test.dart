@@ -12,7 +12,7 @@ PlayerTopBar _bar({
   String title = '',
   String? networkSpeedText,
   bool showDecodeButton = false,
-  bool decodeMenuOpen = false,
+  String decodeModeLabel = 'HW+',
   bool showKernelButton = false,
   String kernelLabel = 'MDK',
   bool kernelMenuOpen = false,
@@ -37,7 +37,7 @@ PlayerTopBar _bar({
       title: title,
       networkSpeedText: networkSpeedText,
       showDecodeButton: showDecodeButton,
-      decodeMenuOpen: decodeMenuOpen,
+      decodeModeLabel: decodeModeLabel,
       showKernelButton: showKernelButton,
       kernelLabel: kernelLabel,
       kernelMenuOpen: kernelMenuOpen,
@@ -50,7 +50,7 @@ PlayerTopBar _bar({
       onCycleVideoFit: () {},
       showShare: showShare,
       onBack: () {},
-      onToggleDecode: () {},
+      onCycleDecode: () {},
       onShare: () {},
       showSubtitleStyleButton: showSubtitleStyleButton,
       subtitleStyleMenuOpen: subtitleStyleMenuOpen,
@@ -203,8 +203,8 @@ void main() {
     });
   });
 
-  group('字幕样式按钮（网速与解码之间）', () {
-    testWidgets('按钮渲染且位于网速右侧、解码左侧', (tester) async {
+  group('字幕样式按钮（网速右侧）', () {
+    testWidgets('按钮渲染且位于网速右侧、解码右侧', (tester) async {
       await tester.pumpWidget(_host(_bar(
         networkSpeedText: '4.89 MB/s',
         showDecodeButton: true,
@@ -222,7 +222,7 @@ void main() {
           .getTopLeft(find.byKey(const ValueKey('playerDecodeButton')))
           .dx;
       expect(speedX, lessThan(styleX), reason: '网速在样式按钮左侧');
-      expect(styleX, lessThan(decodeX), reason: '样式按钮在解码左侧');
+      expect(decodeX, lessThan(styleX), reason: '解码胶囊已移到最左，在样式左侧');
     });
 
     testWidgets('网速关闭（null）时按钮仍渲染', (tester) async {
@@ -385,7 +385,7 @@ void main() {
       final container = tester.widget<Container>(
         find
             .descendant(
-              of: find.byKey(const ValueKey('playerDecodeButton')),
+              of: find.byKey(const ValueKey('playerKernelButton')),
               matching: find.byType(Container),
             )
             .first,
@@ -393,13 +393,13 @@ void main() {
       return container.decoration! as BoxDecoration;
     }
 
-    testWidgets('图标 only 无文字，点击触发 onToggleDecode', (tester) async {
-      var toggled = false;
+    testWidgets('文字胶囊显示当前档，点击触发 onCycleDecode', (tester) async {
+      var cycled = false;
       await tester.pumpWidget(_host(PlayerTopBar(
         title: '',
         networkSpeedText: null,
         showDecodeButton: true,
-        decodeMenuOpen: false,
+        decodeModeLabel: 'HW+',
         glassEnabled: true,
         showVideoFitButton: false,
         videoFitIcon: Icons.fit_screen,
@@ -407,21 +407,20 @@ void main() {
         onCycleVideoFit: () {},
         showShare: false,
         onBack: () {},
-        onToggleDecode: () => toggled = true,
+        onCycleDecode: () => cycled = true,
         onShare: () {},
       )));
 
       expect(find.byKey(const ValueKey('playerDecodeButton')), findsOneWidget);
-      expect(find.byIcon(Icons.memory), findsOneWidget);
-      expect(find.byType(Text), findsNothing, reason: '文字已移入解码面板，顶栏纯图标');
+      expect(find.text('HW+'), findsOneWidget, reason: '文字胶囊显示当前档');
       await tester.tap(find.byKey(const ValueKey('playerDecodeButton')));
       await tester.pumpAndSettle();
-      expect(toggled, isTrue);
+      expect(cycled, isTrue);
     });
 
     testWidgets('玻璃开：收起白细描边无发光 / 展开 accent 描边 + 外发光', (tester) async {
       await tester.pumpWidget(
-          _host(_bar(showDecodeButton: true, decodeMenuOpen: false)));
+          _host(_bar(showKernelButton: true, kernelMenuOpen: false)));
       await tester.pumpAndSettle();
       final closed = _chipDecoration(tester);
       expect(closed.border!.top.width, 0.8);
@@ -430,7 +429,7 @@ void main() {
       expect(closed.gradient, isNotNull, reason: '玻璃渐变底');
 
       await tester.pumpWidget(
-          _host(_bar(showDecodeButton: true, decodeMenuOpen: true)));
+          _host(_bar(showKernelButton: true, kernelMenuOpen: true)));
       await tester.pumpAndSettle();
       final open = _chipDecoration(tester);
       expect(open.border!.top.color, const Color(0xFF6366F1));
@@ -440,7 +439,7 @@ void main() {
 
     testWidgets('玻璃关（降级）：收起白 15% 平底 / 展开实心 accent', (tester) async {
       await tester.pumpWidget(_host(_bar(
-          showDecodeButton: true, decodeMenuOpen: false, glassEnabled: false)));
+          showKernelButton: true, kernelMenuOpen: false, glassEnabled: false)));
       await tester.pumpAndSettle();
       final closed = _chipDecoration(tester);
       expect(closed.color, Colors.white.withValues(alpha: 0.15));
@@ -448,7 +447,7 @@ void main() {
       expect(closed.border, isNull);
 
       await tester.pumpWidget(_host(_bar(
-          showDecodeButton: true, decodeMenuOpen: true, glassEnabled: false)));
+          showKernelButton: true, kernelMenuOpen: true, glassEnabled: false)));
       await tester.pumpAndSettle();
       final open = _chipDecoration(tester);
       expect(open.color, const Color(0xFF6366F1));

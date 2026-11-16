@@ -655,6 +655,11 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// `hwdec-software-fallback=yes` 兜底。
   String _sessionHwdec(String requested) {
     if (requested == 'no') return 'no';
+    // 694：DV 内容 + 直写档（HW+/mediacodec）→ 强制 copy-back（RPU 重塑
+    // 需帧在内存；直写锁 Surface 跑不了 libplacebo，NeoPlayer 同款回退）。
+    if (_dvContentForMedia && requested == 'mediacodec') {
+      return 'mediacodec-copy';
+    }
     if (defaultTargetPlatform != TargetPlatform.android) return requested;
     if (!HimiMpvAndroidSession.vulkanRenderingPreferred) return requested;
     return 'mediacodec,mediacodec-copy,no';

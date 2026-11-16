@@ -13,7 +13,7 @@ class PlayerTopBar extends StatelessWidget {
     required this.title,
     required this.networkSpeedText,
     required this.showDecodeButton,
-    required this.decodeMenuOpen,
+    required this.decodeModeLabel,
     required this.glassEnabled,
     required this.showVideoFitButton,
     required this.videoFitIcon,
@@ -21,7 +21,7 @@ class PlayerTopBar extends StatelessWidget {
     required this.onCycleVideoFit,
     required this.showShare,
     required this.onBack,
-    required this.onToggleDecode,
+    required this.onCycleDecode,
     required this.onShare,
     this.showKernelButton = false,
     this.kernelLabel = 'MDK',
@@ -52,7 +52,9 @@ class PlayerTopBar extends StatelessWidget {
   final String? networkSpeedText;
 
   final bool showDecodeButton;
-  final bool decodeMenuOpen;
+
+  /// 解码模式标签（SW / HW / HW+；Erika/MDK 无 HW+）。
+  final String decodeModeLabel;
 
   /// 播放内核胶囊（MDK / Erika / MPV）：打开右侧内核选择面板。
   final bool showKernelButton;
@@ -75,7 +77,7 @@ class PlayerTopBar extends StatelessWidget {
   final bool showShare;
 
   final VoidCallback onBack;
-  final VoidCallback onToggleDecode;
+  final VoidCallback onCycleDecode;
   final VoidCallback onShare;
 
   /// 字幕样式按钮（网速显示与解码控件之间）：开关右侧选择器面板。
@@ -260,6 +262,32 @@ class PlayerTopBar extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
+          // 解码模式胶囊（SW / HW / HW+）：显示当前档，点击循环切换。
+          // 放引擎（内核）控件左侧。
+          if (showDecodeButton) ...[
+            TvFocusable(
+              key: const ValueKey('playerDecodeButton'),
+              radius: 10,
+              onTap: onCycleDecode,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: _decodeChipDecoration(
+                  open: false,
+                  glass: glassEnabled,
+                ),
+                child: Text(
+                  decodeModeLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           // 播放内核胶囊：显示当前内核短名，点击打开右侧内核面板
           if (showKernelButton) ...[
             TvFocusable(
@@ -304,24 +332,6 @@ class PlayerTopBar extends StatelessWidget {
                   glass: glassEnabled,
                 ),
                 child: const Icon(Icons.tune, color: Colors.white, size: 18),
-              ),
-            ),
-            if (showDecodeButton) const SizedBox(width: 8),
-          ],
-          // 解码模式按钮（TV 隐藏：解码模式仅走设置页切换）
-          // 图标化玻璃方块：文字信息移入 DecodeModePanel 标题行
-          if (showDecodeButton) ...[
-            TvFocusable(
-              key: const ValueKey('playerDecodeButton'),
-              radius: 10,
-              onTap: onToggleDecode,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: _decodeChipDecoration(
-                  open: decodeMenuOpen,
-                  glass: glassEnabled,
-                ),
-                child: const Icon(Icons.memory, color: Colors.white, size: 18),
               ),
             ),
           ],

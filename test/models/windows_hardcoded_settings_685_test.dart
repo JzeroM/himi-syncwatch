@@ -176,13 +176,9 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('C 设置页不再渲染这两项（Windows）', () {
-    test('C1 「视频路径」只在非 Windows 渲染', () {
+    test('C1 「视频路径」整项已移除（694 按解码模式自动路由 Surface）', () {
       final body = extract(engineConfigScreen, 'List<Widget> _mpvChildren(');
-      final idx = body.indexOf("title: '视频路径'");
-      expect(idx, greaterThan(0), reason: 'Android/鸿蒙仍需展示');
-      // 必须被 `!= windows` 条件包裹
-      final before = body.substring(0, idx);
-      expect(before, contains('defaultTargetPlatform != TargetPlatform.windows'));
+      expect(body, isNot(contains("title: '视频路径'")));
     });
 
     test('C2 「使用 Qt 播放器窗口」整项已删除', () {

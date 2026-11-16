@@ -100,15 +100,15 @@ void main() {
       expect(settings.decodeMode, equals('sw'));
     });
 
-    test('新版 decodeMode 字符串值 auto', () {
+    test('decodeMode auto 迁移到 hwplus（694）', () {
       final settings = AppSettings.fromJson({'decodeMode': 'auto'});
-      expect(settings.decodeMode, equals('auto'));
+      expect(settings.decodeMode, equals('hwplus'));
     });
 
-    // 640：默认解码模式改为 'hw'，hw+/true 都迁移到硬解。
-    test('旧版 hw+ 迁移到 hw', () {
+    // 694：默认解码模式改为 'hwplus'，hw+/auto 都迁移到硬解+。
+    test('旧版 hw+ 迁移到 hwplus', () {
       final settings = AppSettings.fromJson({'decodeMode': 'hw+'});
-      expect(settings.decodeMode, equals('hw'));
+      expect(settings.decodeMode, equals('hwplus'));
     });
 
     test('旧版 hardwareDecoding=true → hw', () {
@@ -121,9 +121,9 @@ void main() {
       expect(settings.decodeMode, equals('sw'));
     });
 
-    test('无效值 → 默认 hw', () {
+    test('无效值 → 默认 hwplus', () {
       final settings = AppSettings.fromJson({'decodeMode': 123});
-      expect(settings.decodeMode, equals('hw'));
+      expect(settings.decodeMode, equals('hwplus'));
     });
   });
 

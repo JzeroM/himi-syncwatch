@@ -97,7 +97,6 @@ import 'package:himi_syncwatch/screens/player/player_hotkey.dart';
 import 'package:himi_syncwatch/screens/player/player_orientation.dart';
 import 'package:himi_syncwatch/screens/player/player_platform.dart';
 import 'package:himi_syncwatch/screens/player/track_initial_selection.dart';
-import 'package:himi_syncwatch/screens/player/widgets/decode_mode_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/display_adjust_panel.dart';
 import 'package:himi_syncwatch/screens/player/widgets/danmaku_overlay.dart';
 import 'package:himi_syncwatch/screens/player/widgets/episode_select_panel.dart';
@@ -533,7 +532,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
     }
   }
 
-  /// 顶栏解码模式按钮是否显示：TV 模式隐藏（解码模式仅走设置页）。
+  /// 顶栏解码模式胶囊是否显示：仅非 TV（TV 的解码胶囊在底栏引擎控件左侧）。
   @visibleForTesting
   static bool showDecodeButton({required bool tvMode}) => !tvMode;
 
@@ -10154,16 +10153,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               ),
             ),
 
-          // 解码模式选择面板
-          if (_showDecodeModeMenu)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 48,
-              right: 12,
-              child: DecodeModePanel(
-                onSwitchMode: _switchDecodeMode,
-              ),
-            ),
-
           // 手势提示浮层（快进快退/双击播放暂停）
           if (_showGestureOverlay)
             Positioned(
@@ -10438,11 +10427,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       networkSpeedText: showNetworkSpeed && _networkSpeedBps != null
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
-      // Erika 无解码档位（自动硬解/软解回退）→ 隐藏解码控件
-      showDecodeButton:
-          PlayerScreen.showDecodeButton(tvMode: tvMode) &&
-              _currentEngine != PlayerEngine.erika,
-      decodeMenuOpen: _showDecodeModeMenu,
+      // 解码模式胶囊：全平台所有引擎显示（MPV: SW/HW/HW+；Erika/MDK: SW/HW）。
+      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: tvMode),
+      decodeModeLabel: _decodeModeLabel,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
           PlayerScreen.showTopSubtitleStyleButton(tvMode: tvMode),
@@ -10476,8 +10463,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 643：走安全退出（先卸视频层 → 等纹理释放 → 再 pop）。
         if (shouldPop) await _safePopPlayerPage();
       },
-      onToggleDecode: () =>
-          setState(() => _showDecodeModeMenu = !_showDecodeModeMenu),
+      onCycleDecode: _cycleDecodeMode,
       onShare: _showShareRoomDialog,
       // 697：TV 时钟在左上角——开启时标题让位（预留 112px），
       // 关闭时标题回到原来的最左位置。
@@ -10900,7 +10886,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
     final mpv = _player;
     final size = _videoNativeSize;
-    final sig = '${settings.anime4kEnabled}|${settings.anime4kMode}|'
+    // 694：Anime4K 仅 HW（copy-back）档生效——HW+（Direct Surface）帧锁在
+    // Surface 跑不了着色器，SW 按规则也禁用。非 HW 档时清空 + 标注原因。
+    if (settings.anime4kEnabled && settings.decodeMode != 'hw') {
+      const status = '已禁用：仅 HW 档生效';
+      await _setMpvProperty('glsl-shaders', '');
+      if (_anime4kStatus != status) {
+        _anime4kStatus = status;
+        if (mounted && !_disposed) _syncNativePanelData();
+      }
+      return;
+    }
+    final sig = '${settings.anime4kEnabled}|${settings.decodeMode}|'
+        '${settings.anime4kMode}|'
         '${settings.anime4kQuality}|${settings.anime4kIn4k}|'
         '${settings.anime4kOnHdr}|${size?.width ?? 0}x${size?.height ?? 0}|'
         '${mpv is MpvPlayerAdapter ? mpv.isHdrContent : false}';
@@ -11633,6 +11631,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 解码模式胶囊标签：MPV 三档（SW/HW/HW+）；Erika/MDK 两档（SW/HW）。
+  String get _decodeModeLabel {
+    final mode = ref.read(settingsProvider).decodeMode;
+    return AppSettings.decodeModeLabels[mode] ?? '硬解';
+  }
+
+  /// 循环切换解码模式：MPV SW→HW→HW+；Erika/MDK SW→HW（无 Direct Surface 档）。
+  void _cycleDecodeMode() {
+    final modes = _currentEngine == PlayerEngine.mpv
+        ? const <String>['sw', 'hw', 'hwplus']
+        : const <String>['sw', 'hw'];
+    final cur = ref.read(settingsProvider).decodeMode;
+    final idx = modes.indexOf(cur);
+    final next = modes[(idx < 0 ? 0 : idx + 1) % modes.length];
+    unawaited(_switchDecodeMode(next));
+  }
+
   Future<void> _switchDecodeMode(String mode) async {
     if (_isSwitchingDecode) return;
     _isSwitchingDecode = true;
@@ -12218,9 +12233,36 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ),
                   const SizedBox(width: 20),
 
+                  // 694：解码模式胶囊（SW/HW/HW+）：文字，点击循环切换。
+                  // TV 放底栏引擎控件左侧。
+                  if (tvMode) ...[
+                    TvFocusable(
+                      key: const ValueKey('playerDecodeButton'),
+                      radius: 10,
+                      onTap: _cycleDecodeMode,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _decodeModeLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                  ],
+
                   // 640：TV 模式的引擎切换（从顶栏移来，紧邻弹幕开关）。
                   // 遥控链路：OK → _toggleKernelMenu → _openSelectorPanel
-                  // 把焦点交给面板首项；面板内 D-pad 选择；返回 → 
+                  // 把焦点交给面板首项；面板内 D-pad 选择；返回 →
                   // _closeSelectorPanel 把焦点还给本按钮。
                   // 681：TV 保留三引擎才显示；单引擎平台（鸿蒙/Windows/iOS）
                   // 即使在 TV 模式下也不显示。

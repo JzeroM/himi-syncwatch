@@ -12,6 +12,7 @@ class DecodeModeService {
       case 'sw':
         return ['FFmpeg'];
       case 'hw':
+      case 'hwplus':
         return _platformHwOnlyDecoders();
       case 'auto':
       default:

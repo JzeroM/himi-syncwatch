@@ -194,9 +194,9 @@ void main() {
       );
     });
 
-    test('Android 文案给出手动切换指引', () {
-      expect(engineConfig, contains('有声音无画面'));
-      expect(engineConfig, contains('手动切到'));
+    test('Android 文案已随视频路径移除（694 自动路由 Surface）', () {
+      expect(engineConfig, isNot(contains('有声音无画面')));
+      expect(engineConfig, isNot(contains('手动切到')));
     });
 
     test('685：Windows 已移除「视频路径」项（不再有会崩的入口）', () {
@@ -205,8 +205,8 @@ void main() {
       // `effectiveMpvVideoOutput` 恒返回 surface 兜底。
       expect(engineConfig, isNot(contains('Windows 默认 Surface')));
       expect(engineConfig, isNot(contains('纹理路径在 Windows 会闪退')));
-      // Android/鸿蒙仍保留该项
-      expect(engineConfig, contains("title: '视频路径'"));
+      // 694：视频路径整项移除（MPV 全平台恒 Surface，按解码模式自动路由）
+      expect(engineConfig, isNot(contains("title: '视频路径'")));
     });
   });
 

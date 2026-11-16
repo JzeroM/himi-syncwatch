@@ -960,21 +960,7 @@ void main() {
 
   // ---- TV 模式 × 解码方式/音频后端（DropdownButton 遥控不可选 → 弹窗） ----
 
-  testWidgets('非 TV：解码方式仍为 DropdownButton 下拉', (tester) async {
-    // 681：非 TV 语义 → 显式 tvMode:false（默认值已改为 true 以覆盖 MDK）
-    await _pumpMdkSettings(tester, tvMode: false);
-    expect(find.text('解码方式'), findsOneWidget);
-    final decodeDropdown = find.descendant(
-      of: find.ancestor(
-        of: find.text('解码方式'),
-        matching: find.byType(ListTile),
-      ),
-      matching: find.byType(DropdownButton<String>),
-    );
-    expect(decodeDropdown, findsOneWidget);
-  });
-
-  // ---- 视频输出通道（Android 黑屏多档取证） ----
+// ---- 视频输出通道（Android 黑屏多档取证） ----
 
   testWidgets('Android 展示视频输出设置，默认纹理', (tester) async {
     final container = await _pumpMdkSettings(tester);
@@ -994,19 +980,13 @@ void main() {
     expect(container.read(settingsProvider).videoOutput, 'texture');
   });
 
-  testWidgets('681：非 TV 安卓手机只有 MPV 页（视频路径而非视频输出）', (tester) async {
+  testWidgets('681/694：非 TV 安卓手机只有 MPV 页，视频路径已移除', (tester) async {
     final container = await _pumpMdkSettings(tester, tvMode: false);
-    await tester.scrollUntilVisible(
-      find.text('视频路径'),
-      250,
-      scrollable: _subScrollable(),
-    );
     await tester.pumpAndSettle();
 
-    // 681：手机只有 MPV → 有「视频路径」，没有 MDK 专属的「视频输出」
-    expect(find.text('视频路径'), findsOneWidget);
+    // 694：视频路径整项移除（MPV 全平台恒 Surface）；MDK 专属「视频输出」仍在。
+    expect(find.text('视频路径'), findsNothing);
     expect(find.text('视频输出'), findsNothing);
-    expect(find.byType(DropdownButton<String>), findsWidgets);
     expect(container.read(settingsProvider).videoOutput, 'texture');
   });
 
@@ -1047,7 +1027,7 @@ void main() {
 
       expect(find.text('视频输出'), findsNothing);
       expect(find.text('渲染兼容模式（实验）'), findsNothing, reason: '实验项不在播放器子页');
-      expect(find.text('解码方式'), findsOneWidget);
+      expect(find.text('解码方式'), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
@@ -1111,30 +1091,7 @@ void main() {
     expect(container.read(settingsProvider).deepDiagnostics, isTrue);
   });
 
-  testWidgets('TV：解码方式行点开居中弹层，选择软解写入', (tester) async {
-    final container = await _pumpMdkSettings(tester,
-        initial: const AppSettings(tvMode: true));
-    expect(find.byType(DropdownButton<String>), findsNothing);
-
-    await tester.tap(find.text('解码方式'));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('settingOption_auto')), findsOneWidget);
-    expect(find.byKey(const Key('settingOption_hw')), findsOneWidget);
-    expect(find.byKey(const Key('settingOption_sw')), findsOneWidget);
-    // 640：默认解码模式改为「硬解」（原 'auto'）。
-    expect(container.read(settingsProvider).decodeMode, 'hw');
-
-    await tester.tap(find.byKey(const Key('settingOption_sw')));
-    await tester.pumpAndSettle();
-
-    expect(container.read(settingsProvider).decodeMode, 'sw');
-    expect(find.byKey(const Key('settingOption_sw')), findsNothing,
-        reason: '选中后弹窗应关闭');
-    expect(find.text('软解'), findsWidgets, reason: '行尾显示当前值');
-  });
-
-  testWidgets('TV：音频后端行点开居中弹层，选择 AAudio 写入', (tester) async {
+testWidgets('TV：音频后端行点开居中弹层，选择 AAudio 写入', (tester) async {
     tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -1154,126 +1111,9 @@ void main() {
     expect(find.byKey(const Key('settingOption_AAudio')), findsNothing);
   });
 
-  testWidgets('TV：弹层方向键上下切换焦点，弹层不关闭，Enter 才写入（v1.1.176 回归）', (tester) async {
-    final container = await _pumpMdkSettings(tester,
-        initial: const AppSettings(tvMode: true), remote: true);
+// ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----
 
-    await tester.tap(find.text('解码方式'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget, reason: '居中弹层');
-    expect(find.byType(BottomSheet), findsNothing, reason: '不再用底部弹窗');
-    // 640：默认解码模式改为「硬解」，故当前值行是 hw。
-    expect(container.read(settingsProvider).decodeMode, 'hw');
-
-    // 打开后当前值行 autofocused
-    final currentRow =
-        tester.widget<TvFocusable>(find.byKey(const Key('settingOption_hw')));
-    expect(currentRow.autofocus, isTrue);
-
-    // 方向键下移焦点：弹层不关闭、设置不变（RadioGroup 劫持回归验证）
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(find.byType(AlertDialog), findsOneWidget, reason: '方向键不应关闭弹层');
-    expect(container.read(settingsProvider).decodeMode, 'hw',
-        reason: '方向键不应触发选择');
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(find.byType(AlertDialog), findsOneWidget);
-
-    // Enter 选中当前焦点行（第 3 项 = sw）
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(container.read(settingsProvider).decodeMode, 'sw');
-    expect(find.byKey(const Key('settingOption_sw')), findsNothing,
-        reason: '选中后弹层关闭');
-  });
-
-  // ---- TV 焦点样式统一（"同屏两个焦点框"回归） ----
-
-  testWidgets('TV：设置行移动焦点后同屏仅一个描边，落点为 TvFocusable 包装', (tester) async {
-    tester.view.physicalSize = const Size(800, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-
-    final container = await _pumpMdkSettings(
-      tester,
-      remote: true,
-      initial: const AppSettings(tvMode: true),
-    );
-
-    final switchTiles = find.byType(SwitchListTile);
-    expect(switchTiles, findsWidgets);
-    for (final tile in tester.widgetList<SwitchListTile>(switchTiles)) {
-      expect(
-        find.ancestor(
-            of: find.byWidget(tile), matching: find.byType(ExcludeFocus)),
-        findsWidgets,
-        reason: 'TV 模式开关行应 ExcludeFocus（防内层蓝底双显）',
-      );
-    }
-
-    Finder tvWrappers() => find.byWidgetPredicate(
-        (w) => w is Focus && w.focusNode?.debugLabel == 'TvFocusable');
-
-    int outlineCount() => tester
-        .widgetList<AnimatedContainer>(find.descendant(
-          of: tvWrappers(),
-          matching: find.byType(AnimatedContainer),
-        ))
-        .where((c) => c.foregroundDecoration != null)
-        .length;
-
-    final decodeWrapper = find.ancestor(
-      of: find.text('解码方式'),
-      matching: tvWrappers(),
-    );
-    final decodeNode = tester.widget<Focus>(decodeWrapper).focusNode!;
-    decodeNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(outlineCount(), 1, reason: '落焦后仅该行有描边');
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    final stereoNode = FocusManager.instance.primaryFocus;
-    expect(stereoNode?.debugLabel, 'TvFocusable',
-        reason: '焦点应落在 TvFocusable 包装上（而非 SwitchListTile 内层）');
-    expect(stereoNode, isNot(decodeNode), reason: '焦点确实移动了');
-    expect(outlineCount(), 1, reason: '同屏仅一个焦点描边目标（失焦行零时长瞬时移除）');
-
-    final durations = tester
-        .widgetList<AnimatedContainer>(find.descendant(
-          of: tvWrappers(),
-          matching: find.byType(AnimatedContainer),
-        ))
-        .map((c) => c.duration)
-        .toList();
-    expect(
-      durations.where((d) => d == const Duration(milliseconds: 120)).length,
-      1,
-      reason: '仅立体声行聚焦淡入（120ms）',
-    );
-    expect(
-      durations.where((d) => d != Duration.zero).length,
-      1,
-      reason: '其余行全部失焦 0ms 瞬时移除（防双焦点框）',
-    );
-
-    final initial = container.read(settingsProvider).stereoDownmix;
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(container.read(settingsProvider).stereoDownmix, isNot(initial),
-        reason: 'TV OK 键应切换开关');
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    final nextNode = FocusManager.instance.primaryFocus;
-    expect(nextNode?.debugLabel, 'TvFocusable');
-    expect(nextNode, isNot(stereoNode), reason: '焦点继续下移');
-    expect(outlineCount(), 1);
-  });
-
-  testWidgets('外观子页：分类页每行海报数滑块默认自动，改值落盘，0 回自动', (tester) async {
+testWidgets('外观子页：分类页每行海报数滑块默认自动，改值落盘，0 回自动', (tester) async {
     final container = await _pumpScreen(tester, category: '外观');
 
     final sliderFinder = find.byKey(const ValueKey('categoryColumnsSlider'));
