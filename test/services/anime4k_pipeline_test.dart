@@ -343,6 +343,19 @@ void main() {
       expect(s, contains('case ToggleAnime4K():'));
     });
 
+    test('状态回显：_applyAnime4K 状态变化后必推送（防面板冻结在旧值）', () {
+      // 694 真机回归：开关开了、着色器设进 mpv 了，但面板状态串冻结在「关」。
+      // 根因是 _applyAnime4K 更新 _anime4kStatus 后没触发 _syncNativePanelData。
+      final s = read('lib/screens/player/player_screen.dart');
+      final applyBody = s.substring(
+        s.indexOf('Future<void> _applyAnime4K'),
+        s.indexOf('DanmakuSearchController? _danmakuPanelController'),
+      );
+      // 状态赋值后必须紧跟推送调用。
+      expect(applyBody, contains('_anime4kStatus = result.statusLabel'));
+      expect(applyBody, contains('_syncNativePanelData()'));
+    });
+
     test('命令路由：toggleAnime4K → ToggleAnime4K', () {
       final s = read('lib/services/player/native/native_player_command.dart');
       expect(s, contains("'toggleAnime4K'"));

@@ -10894,6 +10894,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     );
     if (_anime4kStatus != result.statusLabel) {
       _anime4kStatus = result.statusLabel;
+      // 694 真机回归：状态变了必须推送到原生面板——否则 A4K 行冻结在旧值
+      // （开关已开、着色器已设进 mpv，但面板仍显示「关」）。走
+      // `_syncNativePanelData` → `applyNativePanelData` → `_nativeUiExtras`
+      // → `_buildNativePlayerState`（顶层 anime4kStatus）→ 各壳面板。
+      if (mounted && !_disposed) _syncNativePanelData();
     }
     LogService().log('Anime4K', result.statusLabel);
   }
