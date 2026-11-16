@@ -97,6 +97,9 @@ class NativePlayerScreenView(
         /** 697：关闭播放调试面板（等价于在设置里关掉「播放调试面板」）。 */
         fun onCloseDebugPanel()
 
+        /** 694：调试面板「A4K」隐藏开关（真机验证入口）。 */
+        fun onToggleAnime4K()
+
         /** 房间模式「资源面板」开关（对齐 Flutter `_showPanel`）。 */
         fun onToggleResourcePanel()
 
@@ -1210,6 +1213,9 @@ class NativePlayerScreenView(
         debugPanel.onClose = {
             // 关闭 = 关设置项（下次进播放页不再自动弹）。
             listener?.onCloseDebugPanel()
+        }
+        debugPanel.onToggleAnime4K = {
+            listener?.onToggleAnime4K()
         }
         // 限高：分组全展开时约 30 行，小屏上必须可滚动而不是溢出屏幕。
         debugPanel.applyMaxHeight(resources.displayMetrics.heightPixels)

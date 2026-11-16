@@ -52,6 +52,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> update({
     String? decodeMode,
     String? playerKernel,
+    bool? anime4kEnabled,
+    String? anime4kMode,
+    String? anime4kQuality,
+    bool? anime4kIn4k,
+    bool? anime4kOnHdr,
     int? mdkBufferMinMs,
     int? mdkBufferMaxMs,
     int? mdkDemuxCacheRanges,
@@ -125,6 +130,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       // 手动改动解码方式即标记「用户已设置」，TV 模式默认硬解不再覆盖
       decodeModeUserSet: decodeMode != null ? true : null,
       playerKernel: playerKernel,
+      anime4kEnabled: anime4kEnabled,
+      anime4kMode: anime4kMode,
+      anime4kQuality: anime4kQuality,
+      anime4kIn4k: anime4kIn4k,
+      anime4kOnHdr: anime4kOnHdr,
       mdkBufferMinMs: mdkBufferMinMs,
       mdkBufferMaxMs: mdkBufferMaxMs,
       mdkDemuxCacheRanges: mdkDemuxCacheRanges,

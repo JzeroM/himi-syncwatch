@@ -76,6 +76,8 @@ import 'package:himi_syncwatch/services/danmaku/danmaku_comment.dart';
 import 'package:himi_syncwatch/screens/player/danmaku_control_sheet.dart';
 import 'package:himi_syncwatch/screens/settings/danmaku_config_screen.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
+import 'package:himi_syncwatch/services/player/anime4k/anime4k_catalog.dart';
+import 'package:himi_syncwatch/services/player/anime4k/anime4k_manager.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_search_controller.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_server_pool.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_matcher.dart';
@@ -2744,6 +2746,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _videoNativeSize = size;
     });
     _applyVideoAvfilter(size);
+    // 694：尺寸就绪 → 4K 守卫可判定，重放 Anime4K（签名不变化时跳过）。
+    unawaited(_applyAnime4K());
     // 尺寸/媒体信息就绪 → 运行期复核 HDR（自动路由依据）
     _refreshHdrContent();
     _nudgeOverlayRepaint('尺寸变更 ${size.width.toInt()}x${size.height.toInt()}');
@@ -2811,6 +2815,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (applySize != null) {
         _videoNativeSize = applySize;
         _applyVideoAvfilter(applySize);
+        // 694：同上，重建后按新尺寸重放 Anime4K。
+        unawaited(_applyAnime4K());
       }
     });
     LogService().log('Diag',
@@ -4427,6 +4433,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         danmakuSearching: _dmSearching,
         danmakuSearchError: _dmSearchError,
         danmakuSearchKeyword: _danmakuSearchKeyword() ?? '',
+        anime4kStatus: _anime4kStatus,
+        anime4kEnabled: ref.read(settingsProvider).anime4kEnabled,
         danmakuSpeed: settings.danmakuSpeed,
         danmakuFontSize: settings.danmakuFontSize,
         danmakuColorMode: settings.danmakuColorMode,
@@ -4520,6 +4528,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 694 M3：弹幕弹窗共用控制器（Flutter sheet / QML / Android 面板）。
   DanmakuSearchController? _dmPanelController;
   String _dmPanelSignature = '';
+
+  /// 694：Anime4K 状态行（调试面板显示）与应用签名（变化才重放）。
+  String _anime4kStatus = '关';
+  String _anime4kSig = '';
 
   /// 弹幕弹窗状态镜像（进 NativePlayerUiExtras 快照，原生壳只读渲染）。
   String _dmBindingLabel = '未匹配';
@@ -4628,6 +4640,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         }
       case ToggleDanmaku():
         _toggleDanmaku();
+      case ToggleAnime4K():
+        // 694：调试面板隐藏开关（真机验证入口；设置页开关是正式入口）。
+        final cur = ref.read(settingsProvider).anime4kEnabled;
+        unawaited(ref
+            .read(settingsProvider.notifier)
+            .update(anime4kEnabled: !cur));
+        unawaited(_applyAnime4K(force: true));
       case SearchDanmaku(:final keyword):
         unawaited(_searchDanmakuFromPanel(keyword));
       case BindDanmaku(:final episodeId):
@@ -4872,6 +4891,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _player.setProperty('subtitle.shadow', '1');
     }
     _applySubtitleStyle();
+    // 694 S2：引擎属性就绪后应用 Anime4K（初值；尺寸就绪后会签名重放）。
+    unawaited(_applyAnime4K());
     final renderer = AppSettings.effectiveAudioRenderer(
         ref.read(settingsProvider).audioRenderer);
     if (renderer != 'auto') {
@@ -5593,6 +5614,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         timer.cancel();
         return;
       }
+      // 694：Anime4K 签名检查（设置/尺寸/HDR 变化才重放，纯字符串比较）。
+      unawaited(_applyAnime4K());
       // 冻结兜底（v1.1.69 F-h；v1.2.14 修条件漏洞）：直写档（故障直写 /
       // 手动 surfaceViewDirect）下 fvp 未装 render callback，mdk renderer
       // 可能在等外部驱动（himi_logs_4：帧被内部 renderer 持续 not rendered
@@ -10832,6 +10855,47 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (p != null) unawaited(p.setDanmakuEnabled(_danmakuOn));
     }
     _syncNativePanelData();
+  }
+
+  /// 694 S2：mpv 属性路由（Windows Qt 走管道命令；安卓/鸿蒙走会话）。
+  Future<void> _setMpvProperty(String name, String value) async {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        qt != null &&
+        qt.isAlive) {
+      qt.setMpvProperty(name, value);
+      return;
+    }
+    _player.setProperty(name, value);
+  }
+
+  /// 694 S2：应用 Anime4K（守卫 → 解包 → glsl-shaders；签名不变则跳过）。
+  /// 调用时机：初始化 / 尺寸就绪 / 500ms 节拍签名检查 / 设置变更。
+  Future<void> _applyAnime4K({bool force = false}) async {
+    final settings = ref.read(settingsProvider);
+    final mpv = _player;
+    final size = _videoNativeSize;
+    final sig = '${settings.anime4kEnabled}|${settings.anime4kMode}|'
+        '${settings.anime4kQuality}|${settings.anime4kIn4k}|'
+        '${settings.anime4kOnHdr}|${size?.width ?? 0}x${size?.height ?? 0}|'
+        '${mpv is MpvPlayerAdapter ? mpv.isHdrContent : false}';
+    if (!force && sig == _anime4kSig) return;
+    _anime4kSig = sig;
+    final result = await Anime4KPipeline.apply(
+      enabled: settings.anime4kEnabled,
+      mode: Anime4KMode.fromId(settings.anime4kMode),
+      quality: Anime4KQuality.fromId(settings.anime4kQuality),
+      in4k: settings.anime4kIn4k,
+      onHdr: settings.anime4kOnHdr,
+      videoWidth: size?.width.toInt() ?? 0,
+      videoHeight: size?.height.toInt() ?? 0,
+      isHdrContent: mpv is MpvPlayerAdapter ? mpv.isHdrContent : false,
+      setProperty: _setMpvProperty,
+    );
+    if (_anime4kStatus != result.statusLabel) {
+      _anime4kStatus = result.statusLabel;
+    }
+    LogService().log('Anime4K', result.statusLabel);
   }
 
   /// 694 M3：弹幕弹窗共用控制器工厂（Flutter sheet / QML / Android 面板）。

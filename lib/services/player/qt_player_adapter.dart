@@ -426,6 +426,14 @@ class QtPlayerAdapter implements PlayerAdapter {
   /// 推送完整状态给 Qt（由播放页调用，200ms 节流）。
   ///
   /// [stateJson] 是 `NativePlayerState.toJson()` 的结果。
+  /// 694：通用 mpv 属性透传（Qt `setProperty` 管道命令，main.cpp 已支持）。
+  /// Anime4K `glsl-shaders` 等属性走这里。
+  void setMpvProperty(String name, String value) {
+    _pipe.sendCommandRaw(
+      <String, Object?>{'type': 'setProperty', 'name': name, 'value': value},
+    );
+  }
+
   void pushNativeState(Map<String, Object?> stateJson, {String? playUrl}) {
     if (_disposed) return;
     _pipe.pushState(stateJson, playUrl: playUrl);

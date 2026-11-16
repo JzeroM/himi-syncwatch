@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.6.13+693
+version: 1.6.14+694
 
 environment:
   sdk: ^3.6.0
@@ -157,6 +157,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - third_party/anime4k/glsl/
     - assets/subfont.ttf
     - assets/images/
     - assets/images/platforms/

@@ -307,6 +307,9 @@ data class AndroidNativePlayerState(
 
     /** 搜索关键词预填（cleanTitle 产物；输入框用）。 */
     val danmakuSearchKeyword: String = "",
+    /** 694：Anime4K 状态行与开关态（调试面板隐藏开关用）。 */
+    val anime4kStatus: String = "",
+    val anime4kEnabled: Boolean = false,
     val danmakuSpeed: Double = 1.0,
     val danmakuFontSize: Double = 0.5,
     val danmakuOpacity: Double = 0.6,
@@ -532,6 +535,8 @@ data class AndroidNativePlayerState(
             danmakuSearching = json.optBoolean("danmakuSearching", false),
             danmakuSearchError = json.optString("danmakuSearchError", ""),
             danmakuSearchKeyword = json.optString("danmakuSearchKeyword", ""),
+            anime4kStatus = json.optString("anime4kStatus", ""),
+            anime4kEnabled = json.optBoolean("anime4kEnabled", false),
             danmakuSpeed = json.optDouble("danmakuSpeed", 1.0),
             danmakuFontSize = json.optDouble("danmakuFontSize", 0.5),
             danmakuOpacity = json.optDouble("danmakuOpacity", 0.6),

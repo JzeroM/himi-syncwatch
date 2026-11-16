@@ -97,6 +97,37 @@ Column {
         }
     }
 
+    // ── 694：Anime4K 状态行 + 隐藏开关（真机验证入口；点击切换）──
+    // 状态串是 Dart 管线产物（跨端一致）；点击回发 toggleAnime4K。
+    Row {
+        spacing: 8
+
+        Text {
+            text: playerState.anime4kEnabled ? "A4K 开" : "A4K 关"
+            color: playerState.anime4kEnabled ? "#66FF99" : "#8AFFFFFF"
+            font.pixelSize: 11
+            font.bold: true
+            style: Text.Outline
+            styleColor: Qt.rgba(0, 0, 0, 0.85)
+            MouseArea {
+                anchors.fill: parent
+                anchors.margins: -4
+                cursorShape: Qt.PointingHandCursor
+                onClicked: pipeServer.sendCommand({"type": "toggleAnime4K"})
+            }
+        }
+
+        Text {
+            width: root.textMaxWidth - 60
+            text: playerState.anime4kStatus
+            color: "#CCFFFFFF"
+            font.pixelSize: 11
+            style: Text.Outline
+            styleColor: Qt.rgba(0, 0, 0, 0.85)
+            elide: Text.ElideRight
+        }
+    }
+
     // ── 指标正文（多行）──
     Text {
         width: root.textMaxWidth

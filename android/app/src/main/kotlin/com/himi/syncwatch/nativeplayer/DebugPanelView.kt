@@ -64,6 +64,9 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
     /** 关闭回调（由宿主接回设置项）。 */
     var onClose: (() -> Unit)? = null
 
+    /** 694：A4K 隐藏开关回调（由宿主转 toggleAnime4K 命令）。 */
+    var onToggleAnime4K: (() -> Unit)? = null
+
     /** 拖动中的按下坐标（相对父容器）。 */
     private var dragStartX = 0f
     private var dragStartY = 0f
@@ -184,6 +187,9 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
     private fun render(state: AndroidNativePlayerState) {
         contentColumn.removeAllViews()
         val fmt = DebugPanelFormat
+
+        // ── 694：Anime4K 状态行 + 隐藏开关（真机验证入口；点击切换）──
+        addA4kRow(state)
 
         // ── 播放 ──
         addGroup(KEY_PLAYBACK, "播放", highlighted = false)
@@ -424,6 +430,32 @@ internal class DebugPanelView(context: Context) : LinearLayout(context) {
         val valueView = TextView(context).apply {
             text = value
             setTextColor(severityColor(severity))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            isSingleLine = true
+        }
+        row.addView(valueView, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        contentColumn.addView(row)
+    }
+
+    /// 694：Anime4K 可点击行（点击切换开关；状态串是 Dart 管线产物）。
+    private fun addA4kRow(state: AndroidNativePlayerState) {
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(1), 0, dp(1))
+            setOnClickListener { onToggleAnime4K?.invoke() }
+        }
+        val labelView = TextView(context).apply {
+            text = if (state.anime4kEnabled) "A4K 开" else "A4K 关"
+            setTextColor(if (state.anime4kEnabled) ACCENT_GREEN else 0x61FFFFFF)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            isSingleLine = true
+        }
+        row.addView(labelView, LayoutParams(dp(66), LayoutParams.WRAP_CONTENT))
+        val valueView = TextView(context).apply {
+            text = state.anime4kStatus
+            setTextColor(DebugPanelFormat.SEV_NORMAL.let { severityColor(it) })
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
             isSingleLine = true
         }

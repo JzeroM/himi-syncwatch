@@ -1,0 +1,154 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+
+import 'anime4k_catalog.dart';
+
+/// 守卫拦截原因（状态行/调试面板直接显示）。
+enum Anime4KSkipReason {
+  none(''),
+  off('关'),
+  highRes('已跳过：4K 内容（可在设置强开）'),
+  hdr('已跳过：HDR 内容（可在设置强开）');
+
+  const Anime4KSkipReason(this.label);
+  final String label;
+}
+
+/// 694 S1：Anime4K 三重守卫（借鉴 NeoPlayer QualityGuard，代码自写）。
+///
+/// - **4K+ 视频默认跳过**（防过热；设置 `anime4kIn4k` 可强开）
+/// - **HDR/DV 内容默认跳过**（tone map 管线与着色器顺序未经实测；
+///   设置 `anime4kOnHdr` 可强开）
+/// - 关闭状态直接短路
+class Anime4KGuard {
+  Anime4KGuard._();
+
+  static Anime4KSkipReason check({
+    required bool enabled,
+    required Anime4KMode mode,
+    required int videoWidth,
+    required int videoHeight,
+    required bool isHdrContent,
+    required bool in4k,
+    required bool onHdr,
+  }) {
+    if (!enabled || mode == Anime4KMode.off) return Anime4KSkipReason.off;
+    final longEdge =
+        videoWidth > videoHeight ? videoWidth : videoHeight;
+    if (longEdge >= 3840 && !in4k) return Anime4KSkipReason.highRes;
+    if (isHdrContent && !onHdr) return Anime4KSkipReason.hdr;
+    return Anime4KSkipReason.none;
+  }
+}
+
+/// 着色器资产解包：Flutter assets → 真实文件路径（mpv `glsl-shaders`
+/// 只吃文件路径）。
+class Anime4KAssets {
+  Anime4KAssets._();
+
+  /// 资产版本（换着色器时递增，触发重新解包）。
+  static const String assetVersion = 'v1';
+
+  static Future<String> Function()? debugDirOverride;
+
+  /// 确保着色器已解包，返回目录路径（幂等）。
+  static Future<String> ensureUnpacked({
+    AssetBundle? bundle,
+  }) async {
+    final AssetBundle b = bundle ?? rootBundle;
+    final String dirPath;
+    if (debugDirOverride != null) {
+      dirPath = await debugDirOverride!();
+    } else {
+      final base = await getApplicationSupportDirectory();
+      dirPath = '${base.path}${Platform.pathSeparator}anime4k$assetVersion';
+    }
+    final dir = Directory(dirPath);
+    final marker = File('${dirPath}${Platform.pathSeparator}.ok');
+    if (await marker.exists()) return dirPath;
+    await dir.create(recursive: true);
+    for (final name in Anime4KShaderCatalog.allFileNames) {
+      final data = await b.load('third_party/anime4k/glsl/$name');
+      await File('${dirPath}${Platform.pathSeparator}$name')
+          .writeAsBytes(data.buffer.asUint8List(), flush: true);
+    }
+    await marker.writeAsString('ok');
+    return dirPath;
+  }
+}
+
+/// apply 结果（状态行/调试面板直接消费）。
+class Anime4KApplyResult {
+  const Anime4KApplyResult({
+    required this.statusLabel,
+    this.applied = false,
+    this.error,
+  });
+
+  final String statusLabel;
+  final bool applied;
+  final String? error;
+}
+
+/// 694 S2：管线——把「模式 × 质量」落到 mpv `glsl-shaders`。
+class Anime4KPipeline {
+  Anime4KPipeline._();
+
+  /// 着色器链的 mpv 列表分隔符（unix `:` / windows `;`）。
+  static String get listSeparator => Platform.isWindows ? ';' : ':';
+
+  /// 应用当前配置：守卫 → 解包 → 写属性；关/拦截时清空属性。
+  ///
+  /// [setProperty] 由调用方注入（安卓/鸿蒙走 himi_mpv 会话，Windows 走
+  /// Qt `setProperty` 管道命令）。
+  static Future<Anime4KApplyResult> apply({
+    required bool enabled,
+    required Anime4KMode mode,
+    required Anime4KQuality quality,
+    required bool in4k,
+    required bool onHdr,
+    required int videoWidth,
+    required int videoHeight,
+    required bool isHdrContent,
+    required Future<void> Function(String name, String value) setProperty,
+    AssetBundle? bundle,
+  }) async {
+    final skip = Anime4KGuard.check(
+      enabled: enabled,
+      mode: mode,
+      videoWidth: videoWidth,
+      videoHeight: videoHeight,
+      isHdrContent: isHdrContent,
+      in4k: in4k,
+      onHdr: onHdr,
+    );
+    if (skip != Anime4KSkipReason.none) {
+      // 拦截/关闭一律清空（换内容后不残留着色器）。
+      await setProperty('glsl-shaders', '');
+      return Anime4KApplyResult(statusLabel: skip.label);
+    }
+    try {
+      final dir = await Anime4KAssets.ensureUnpacked(bundle: bundle);
+      final chain = Anime4KShaderCatalog.chain(mode, quality);
+      final value = [
+        for (final f in chain) '$dir${Platform.pathSeparator}$f',
+      ].join(listSeparator);
+      await setProperty('glsl-shaders', value);
+      return Anime4KApplyResult(
+        statusLabel: '✓ ${mode.label} / ${quality.label}（${chain.length} 链）',
+        applied: true,
+      );
+    } catch (e) {
+      // 失败：清空 + 状态行带原因（真机截图即诊断）。
+      try {
+        await setProperty('glsl-shaders', '');
+      } catch (_) {}
+      return Anime4KApplyResult(
+        statusLabel: '✗ 失败：$e',
+        error: '$e',
+      );
+    }
+  }
+}

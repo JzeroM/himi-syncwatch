@@ -64,6 +64,22 @@ class AppSettings {
 
   /// 播放内核 id：'' = 平台默认；'mdk' / 'erika' / 'mpv'。
   final String playerKernel;
+
+  // ── 694：Anime4K 实时画质增强（mpv glsl-shaders；默认关）──
+  /// 总开关。
+  final bool anime4kEnabled;
+
+  /// 模式 id（见 `Anime4KMode`：off/a/a_plus/b/b_plus/c/c_plus/artcnn）。
+  final String anime4kMode;
+
+  /// 质量 id（fast/balanced/high → S/M/L）。
+  final String anime4kQuality;
+
+  /// 4K+ 内容强开（默认关：防过热）。
+  final bool anime4kIn4k;
+
+  /// HDR/DV 内容强开（默认关：管线兼容未实测）。
+  final bool anime4kOnHdr;
   final bool showSyncDebug;
 
   // ── MDK 引擎专属（网络流缓冲，下次起播生效）──
@@ -445,6 +461,11 @@ class AppSettings {
     this.decodeMode = 'hw',
     this.decodeModeUserSet = false,
     this.playerKernel = '',
+    this.anime4kEnabled = false,
+    this.anime4kMode = 'b',
+    this.anime4kQuality = 'balanced',
+    this.anime4kIn4k = false,
+    this.anime4kOnHdr = false,
     this.mdkBufferMinMs = mdkBufferMinMsDefault,
     this.mdkBufferMaxMs = mdkBufferMaxMsDefault,
     this.mdkDemuxCacheRanges = demuxCacheRangesDefault,
@@ -576,6 +597,11 @@ class AppSettings {
     String? decodeMode,
     bool? decodeModeUserSet,
     String? playerKernel,
+    bool? anime4kEnabled,
+    String? anime4kMode,
+    String? anime4kQuality,
+    bool? anime4kIn4k,
+    bool? anime4kOnHdr,
     int? mdkBufferMinMs,
     int? mdkBufferMaxMs,
     int? mdkDemuxCacheRanges,
@@ -652,6 +678,11 @@ class AppSettings {
       decodeMode: decodeMode ?? this.decodeMode,
       decodeModeUserSet: decodeModeUserSet ?? this.decodeModeUserSet,
       playerKernel: playerKernel ?? this.playerKernel,
+      anime4kEnabled: anime4kEnabled ?? this.anime4kEnabled,
+      anime4kMode: anime4kMode ?? this.anime4kMode,
+      anime4kQuality: anime4kQuality ?? this.anime4kQuality,
+      anime4kIn4k: anime4kIn4k ?? this.anime4kIn4k,
+      anime4kOnHdr: anime4kOnHdr ?? this.anime4kOnHdr,
       mdkBufferMinMs: mdkBufferMinMs ?? this.mdkBufferMinMs,
       mdkBufferMaxMs: mdkBufferMaxMs ?? this.mdkBufferMaxMs,
       mdkDemuxCacheRanges: mdkDemuxCacheRanges ?? this.mdkDemuxCacheRanges,
@@ -758,6 +789,11 @@ class AppSettings {
         'decodeMode': decodeMode,
         'decodeModeUserSet': decodeModeUserSet,
         'playerKernel': playerKernel,
+        'anime4kEnabled': anime4kEnabled,
+        'anime4kMode': anime4kMode,
+        'anime4kQuality': anime4kQuality,
+        'anime4kIn4k': anime4kIn4k,
+        'anime4kOnHdr': anime4kOnHdr,
         'mdkBufferMinMs': mdkBufferMinMs,
         'mdkBufferMaxMs': mdkBufferMaxMs,
         'mdkDemuxCacheRanges': mdkDemuxCacheRanges,
@@ -940,6 +976,15 @@ class AppSettings {
     return AppSettings(
       decodeMode: mode,
       decodeModeUserSet: decodeModeUserSet,
+      anime4kEnabled: json['anime4kEnabled'] == true,
+      anime4kMode: json['anime4kMode'] is String
+          ? json['anime4kMode'] as String
+          : 'b',
+      anime4kQuality: json['anime4kQuality'] is String
+          ? json['anime4kQuality'] as String
+          : 'balanced',
+      anime4kIn4k: json['anime4kIn4k'] == true,
+      anime4kOnHdr: json['anime4kOnHdr'] == true,
       // 'media_kit' 为已移除引擎（694 引擎收敛死码清理），旧存档容错。
       playerKernel:
           const ['mdk', 'erika', 'mpv'].contains(json['playerKernel'])

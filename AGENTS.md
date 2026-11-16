@@ -274,6 +274,51 @@ Binding loop**，它不是噪音。
 > 遮蔽坑，但 @State 必须 build 显式读取（589 教训，本壳经 @Prop
 > revision + 宿主快照驱动）。
 
+### Anime4K 实时画质增强（694，借鉴 NeoPlayer 只抄设计）
+
+mpv `glsl-shaders` 管线。着色器资产按 **MIT vendor**（`third_party/anime4k/`，
+16 文件：14×bloc97/Anime4K + 2×Artoriuz/ArtCNN，见 `NOTICE.md` + 双 LICENSE）。
+**链组装/守卫/接入代码全自写**（`lib/services/player/anime4k/`），只抄语义。
+
+**链组装**（`anime4k_catalog.dart` 纯表驱动，可单测）：8 模式 × 3 质量
+（Fast/Balanced/High→CNN 尺寸 S/M/L）。链语义（mpv 有序执行：超分在前、
+修复在后、钳制收尾）：
+
+| 模式 | 链 |
+|---|---|
+| A  | AutoDownscalePre_x2 → Upscale_CNN_x2 → Restore_CNN |
+| A+ | A 但 Restore 换 Soft 变体 |
+| B  | A 但 Upscale 换 Denoise 变体 |
+| B+ | A 但 Upscale→Denoise、Restore→Soft |
+| C  | A 的链 → Clamp_Highlights |
+| C+ | B+ 的链 → Clamp_Highlights |
+| ArtCNN | 端到端（Fast=C4F16，其余=C4F32） |
+
+> **坑**：C+ 的 `denoise` 判定要含 `cPlus`（C+ = B+ 的链 + Clamp，B+ 含
+> Denoise）。初版漏了 `cPlus`，被链矩阵单测抓住——**别信注释，跑测试**。
+
+**守卫**（`Anime4KGuard`，借鉴 NeoPlayer QualityGuard）：关/`off` 短路 ·
+4K+（长边 ≥3840）默认跳过（`anime4kIn4k` 强开）· HDR/DV 默认跳过
+（`anime4kOnHdr` 强开）。拦截/关闭一律 `glsl-shaders=''`（换内容不残留）。
+
+**解包**（`Anime4KAssets.ensureUnpacked`）：mpv 只吃**文件路径**，故把
+Flutter assets 解包到 `getApplicationSupportDirectory()/anime4k$assetVersion/`
+（幂等，`.ok` 标记；换着色器递增 `assetVersion` 触发重解包）。测试用
+`debugDirOverride` + fake `AssetBundle` 注入（`Anime4KPipeline.apply` 也留
+`bundle` 参数，默认 `rootBundle`）。
+
+**属性写入**：`glsl-shaders` 值 = 绝对路径列表，分隔符 unix `:` / windows
+`;`（`Anime4KPipeline.listSeparator`）。四端路由：Windows Qt 走
+`QtPlayerAdapter.setMpvProperty`（管道 `setProperty` 命令），其余走
+`_player.setProperty`。应用时机（`player_screen._applyAnime4K`，签名变化才
+重放）：初始化尾 + `_videoNativeSize` 就绪后 + 500ms `_positionTimer` 签名检查。
+
+**真机验证入口**：三端调试面板（QML/ArkTS/Kotlin）都加了 **A4K 状态行 +
+点击 `toggleAnime4K`** 隐藏开关（正式 UI 鸿蒙一期按拍板项 C 隐藏，
+`!isOhos` 门控）。状态串 `anime4kStatus` 是 Dart 管线产物（跨端一致），经
+`NativePlayerState`/`PlayerState`(C++)/`NativePlayerUiState`(ArkTS)/
+`AndroidNativePlayerState` 透传到各面板。
+
 ### Windows：Qt 逻辑像素 ↔ Win32 物理像素，交界必换算 dpr
 
 Qt 6 高 DPI 缩放恒开：`QWindow::setGeometry`/`QScreen::geometry` 是

@@ -400,6 +400,27 @@ export struct DebugPanel {
         // ── 内容区 ──
         Scroll() {
           Column() {
+            // ── 694：Anime4K 状态行 + 隐藏开关（真机验证入口；点击切换）──
+            // 状态串是 Dart 管线产物（跨端一致）；点击回发 toggleAnime4K。
+            Row() {
+              Text(this.state().anime4kEnabled ? 'A4K 开' : 'A4K 关')
+                .fontSize(10.5)
+                .fontColor(this.state().anime4kEnabled ? ACCENT_GREEN : LABEL_COLOR)
+                .fontWeight(FontWeight.Bold)
+                .width(66);
+              Text(this.state().anime4kStatus)
+                .fontSize(10.5)
+                .fontColor(NORMAL_COLOR)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis });
+            }
+            .width('100%')
+            .padding({ left: 14, top: 1, bottom: 1 })
+            .onClick(() => {
+              this.host.sendCommand('toggleAnime4K', null);
+            });
+
             ForEach(this.buildGroups(), (group: DebugGroupSpec) => {
               // 【必须单一根节点】ArkTS 的 ForEach builder 只允许一个根组件，
               // 兄弟节点会编译报错或静默丢弃 → 用 Column 包住「标题 + 行」。

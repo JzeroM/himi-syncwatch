@@ -505,6 +505,9 @@ export class NativePlayerUiState {
   danmakuSearchError: string = '';
   /** 搜索关键词预填（cleanTitle 产物；输入框用）。 */
   danmakuSearchKeyword: string = '';
+  /** 694：Anime4K 状态行与开关态（调试面板隐藏开关用）。 */
+  anime4kStatus: string = '';
+  anime4kEnabled: boolean = false;
   /** 片头片尾功能开关与已存标记（毫秒；无标记为 null）。 */
   segmentEnabled: boolean = false;
   segmentIntroEndMs: number | null = null;
@@ -665,6 +668,8 @@ export class NativePlayerUiState {
     this.danmakuSearching = jsonBool(obj.danmakuSearching, this.danmakuSearching);
     this.danmakuSearchError = jsonStr(obj.danmakuSearchError, this.danmakuSearchError);
     this.danmakuSearchKeyword = jsonStr(obj.danmakuSearchKeyword, this.danmakuSearchKeyword);
+    this.anime4kStatus = jsonStr(obj.anime4kStatus, this.anime4kStatus);
+    this.anime4kEnabled = jsonBool(obj.anime4kEnabled, this.anime4kEnabled);
     this.segmentEnabled = jsonBool(obj.segmentEnabled, this.segmentEnabled);
     this.segmentIntroEndMs = jsonNullableInt(obj.segmentIntroEndMs);
     this.segmentOutroStartMs = jsonNullableInt(obj.segmentOutroStartMs);

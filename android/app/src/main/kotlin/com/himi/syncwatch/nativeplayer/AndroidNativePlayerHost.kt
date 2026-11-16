@@ -306,6 +306,11 @@ class AndroidNativePlayerHost(
                 commandSink.send(mapOf("type" to "toggleDebug"))
             }
 
+            override fun onToggleAnime4K() {
+                // 694：调试面板 A4K 隐藏开关（真机验证入口）。
+                commandSink.send(mapOf("type" to "toggleAnime4K"))
+            }
+
             override fun onToggleResourcePanel() {
                 // 房间模式资源面板开关（对齐 Flutter `_showPanel`）。
                 // **不能发 requestBack**（旧实现点一下直接退出播放页）。

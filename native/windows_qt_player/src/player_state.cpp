@@ -233,6 +233,10 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     dirty |= assign(videoFormat_,
                     readString(json, "videoFormat", videoFormat_));
     dirty |= assign(showDebug_, readBool(json, "showDebug", showDebug_));
+    dirty |= assign(anime4kStatus_,
+                    readString(json, "anime4kStatus", anime4kStatus_));
+    dirty |= assign(anime4kEnabled_,
+                    readBool(json, "anime4kEnabled", anime4kEnabled_));
 
     // ── 选集 ──
     const QJsonValue eps = json.value(QLatin1String("episodes"));

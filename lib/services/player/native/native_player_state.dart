@@ -477,6 +477,8 @@ class NativePlayerState {
     this.danmakuSearching = false,
     this.danmakuSearchError = '',
     this.danmakuSearchKeyword = '',
+    this.anime4kStatus = '关',
+    this.anime4kEnabled = false,
     this.danmakuTotal = 0,
     this.danmakuBlocked = 0,
     this.danmakuSampled = 0,
@@ -698,6 +700,11 @@ class NativePlayerState {
   /// 搜索关键词预填（cleanTitle 产物；原生壳输入框用）。
   final String danmakuSearchKeyword;
 
+  /// 694：Anime4K 状态行（调试面板显示，如「✓ C+ / 均衡（4 链）」）
+  /// 与开关态（隐藏开关显示用）。
+  final String anime4kStatus;
+  final bool anime4kEnabled;
+
   /// 弹幕数量上限（698 起已不使用，恒 null；字段保留兼容旧快照）。
 
   /// P4 统计：总条数 / 屏蔽数 / 当前在屏数（698 起无采样）。
@@ -879,6 +886,8 @@ class NativePlayerState {
       danmakuSearching: json['danmakuSearching'] == true,
       danmakuSearchError: json['danmakuSearchError'] as String? ?? '',
       danmakuSearchKeyword: json['danmakuSearchKeyword'] as String? ?? '',
+      anime4kStatus: json['anime4kStatus'] as String? ?? '关',
+      anime4kEnabled: json['anime4kEnabled'] == true,
       roomCode: json['roomCode'] as String?,
       isHost: json['isHost'] == true,
       roomMembers: ((json['roomMembers'] as List<Object?>?) ?? const <Object?>[])
@@ -1020,6 +1029,8 @@ class NativePlayerState {
         'danmakuSearching': danmakuSearching,
         'danmakuSearchError': danmakuSearchError,
         'danmakuSearchKeyword': danmakuSearchKeyword,
+        'anime4kStatus': anime4kStatus,
+        'anime4kEnabled': anime4kEnabled,
         'roomCode': roomCode,
         'isHost': isHost,
         'roomMembers':
@@ -1654,6 +1665,8 @@ class NativePlayerUiExtras {
     this.danmakuSearching = false,
     this.danmakuSearchError = '',
     this.danmakuSearchKeyword = '',
+    this.anime4kStatus = '关',
+    this.anime4kEnabled = false,
     this.danmakuBlockTop = false,
     this.danmakuBlockBottom = false,
     this.danmakuBlockWords = const <String>[],
@@ -1713,6 +1726,10 @@ class NativePlayerUiExtras {
   final bool danmakuSearching;
   final String danmakuSearchError;
   final String danmakuSearchKeyword;
+
+  /// 694：Anime4K 状态行与开关态（调试面板用）。
+  final String anime4kStatus;
+  final bool anime4kEnabled;
 
   /// 弹幕屏蔽（588 补齐）：原生 UI 下 Flutter 弹幕层退场，屏蔽链必须由
   /// Dart 侧在切窗时先过滤（与 `DanmakuTimeline._filter` 同序）。

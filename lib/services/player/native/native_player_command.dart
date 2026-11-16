@@ -77,6 +77,8 @@ sealed class NativePlayerCommand {
         );
       case 'unbindDanmaku':
         return const UnbindDanmaku();
+      case 'toggleAnime4K':
+        return const ToggleAnime4K();
       case 'updateDanmakuSettings':
         final values = map['values'];
         return UpdateDanmakuSettings(
@@ -371,6 +373,18 @@ class BindDanmaku extends NativePlayerCommand {
 }
 
 /// 694 M3：弹幕弹窗「解除绑定」（回自动匹配）。
+/// 694：调试面板「A4K」隐藏开关（真机验证入口）。
+class ToggleAnime4K extends NativePlayerCommand {
+  const ToggleAnime4K();
+
+  @override
+  bool get requiresImmediatePush => true;
+
+  @override
+  Map<String, Object?> toMap() =>
+      const <String, Object?>{'type': 'toggleAnime4K'};
+}
+
 class UnbindDanmaku extends NativePlayerCommand {
   const UnbindDanmaku();
 

@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
+import 'package:himi_syncwatch/services/player/anime4k/anime4k_catalog.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -287,6 +288,81 @@ List<Widget> _mpvChildren(
     // Qt 窗口是 Windows 上唯一完整的播放器（进度条/播放控制/音量/
     // 选集/音轨/字幕）。关掉只剩「有视频没控件」的裸窗口，没有合理
     // 场景。运行时由 `MpvSessionPlatform.qtPlayerEnabled` 恒 true 兜底。
+
+    // ── 694：Anime4K 实时画质增强（mpv glsl-shaders）──
+    // 鸿蒙一期「接线预留、UI 待实测后开」（拍板项 C）——等真机验证
+    // 通过再放开入口，故此处 `!isOhos` 门控隐藏。
+    if (!PlayerEngineFactory.isOhos) ...[
+      const Divider(height: 1),
+      const ListTile(
+        leading: Icon(Icons.auto_awesome),
+        title: Text('Anime4K 画质增强'),
+        subtitle: Text(
+          '实时超分 + 线条锐化（GLSL 着色器）。默认关闭；'
+          '增强会占用 GPU，低配设备/4K/HDR 内容默认跳过（可强开）',
+        ),
+      ),
+      settingsTvWrapRow(
+        tvMode: settings.tvMode,
+        onTap: () => notifier.update(anime4kEnabled: !settings.anime4kEnabled),
+        child: SwitchListTile(
+          title: const Text('启用增强'),
+          subtitle: const Text('总开关；下方选择增强模式与画质档'),
+          value: settings.anime4kEnabled,
+          onChanged: (v) => notifier.update(anime4kEnabled: v),
+        ),
+      ),
+      const Divider(height: 1),
+      settingOptionTile(
+        context: context,
+        tvMode: settings.tvMode,
+        title: '增强模式',
+        subtitle: 'A=标准 / B=抗噪 / C=高画质（+ 高光钳制）；'
+            '+ =柔和修复；ArtCNN=画质最好耗电最高',
+        // 「关闭」由总开关控制，模式下拉不含 off；历史存档若为 off 则回退 b。
+        labels: {
+          for (final m in Anime4KMode.values)
+            if (m != Anime4KMode.off) m.id: m.label,
+        },
+        value: settings.anime4kMode == Anime4KMode.off.id
+            ? Anime4KMode.b.id
+            : settings.anime4kMode,
+        onSelected: (v) => notifier.update(anime4kMode: v),
+      ),
+      const Divider(height: 1),
+      settingOptionTile(
+        context: context,
+        tvMode: settings.tvMode,
+        title: '画质档',
+        subtitle: 'CNN 尺寸（Fast=S / Balanced=M / High=L）；'
+            '越高越清晰，也越耗 GPU',
+        labels: {for (final q in Anime4KQuality.values) q.id: q.label},
+        value: settings.anime4kQuality,
+        onSelected: (v) => notifier.update(anime4kQuality: v),
+      ),
+      const Divider(height: 1),
+      settingsTvWrapRow(
+        tvMode: settings.tvMode,
+        onTap: () => notifier.update(anime4kIn4k: !settings.anime4kIn4k),
+        child: SwitchListTile(
+          title: const Text('4K 内容强开'),
+          subtitle: const Text('默认跳过 4K+ 内容防过热；开启后强制增强'),
+          value: settings.anime4kIn4k,
+          onChanged: (v) => notifier.update(anime4kIn4k: v),
+        ),
+      ),
+      const Divider(height: 1),
+      settingsTvWrapRow(
+        tvMode: settings.tvMode,
+        onTap: () => notifier.update(anime4kOnHdr: !settings.anime4kOnHdr),
+        child: SwitchListTile(
+          title: const Text('HDR 内容强开'),
+          subtitle: const Text('默认跳过 HDR/DV 内容（管线兼容未实测）；开启后强制增强'),
+          value: settings.anime4kOnHdr,
+          onChanged: (v) => notifier.update(anime4kOnHdr: v),
+        ),
+      ),
+    ],
   ];
   }
 

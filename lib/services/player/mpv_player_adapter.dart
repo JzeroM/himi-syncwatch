@@ -2577,6 +2577,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       danmakuSearching: _nativeUiExtras.danmakuSearching,
       danmakuSearchError: _nativeUiExtras.danmakuSearchError,
       danmakuSearchKeyword: _nativeUiExtras.danmakuSearchKeyword,
+      anime4kStatus: _nativeUiExtras.anime4kStatus,
+      anime4kEnabled: _nativeUiExtras.anime4kEnabled,
       // 弹幕时间窗：原生 UI 下 Flutter 弹幕层随视频区一并退场，弹幕改由
       // 原生层渲染（真机回归「弹幕开关点了没反应」）。窗口随每次状态推送
       // 刷新，原生端按 timeMs 与当前播放位置自调度（seek 自愈）。

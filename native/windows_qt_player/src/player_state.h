@@ -158,6 +158,12 @@ class PlayerState : public QObject {
     /// 697：调试面板开关（设置页「播放调试面板」）。
     Q_PROPERTY(bool showDebug READ showDebug NOTIFY changed)
 
+    /// 694：Anime4K 状态行（调试面板显示）与开关态（隐藏开关显示用）。
+    /// 由 Dart `_applyAnime4K` 算好后随状态推送（不同于 debugText 是
+    /// Qt 侧自读——本串是 Dart 管线产物，跨端一致）。
+    Q_PROPERTY(QString anime4kStatus READ anime4kStatus NOTIFY changed)
+    Q_PROPERTY(bool anime4kEnabled READ anime4kEnabled NOTIFY changed)
+
     /// 697：调试文本（左上角多行小字叠加）。
     ///
     /// 由 `main.cpp` 的定时器从 `MpvWindow::debugText()` 拉取后写入。
@@ -333,6 +339,9 @@ public:
     QString videoFormat() const { return videoFormat_; }
     bool showDebug() const { return showDebug_; }
 
+    QString anime4kStatus() const { return anime4kStatus_; }
+    bool anime4kEnabled() const { return anime4kEnabled_; }
+
     QString debugText() const { return debugText_; }
     void setDebugText(const QString& text);
 
@@ -501,6 +510,8 @@ private:
     QString hwdecCurrent_;
     QString videoFormat_;
     bool showDebug_ = false;
+    QString anime4kStatus_;
+    bool anime4kEnabled_ = false;
     QString debugText_;
 
     QList<Episode> episodes_;
