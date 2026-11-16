@@ -356,6 +356,13 @@ class QtPlayerAdapter implements PlayerAdapter {
   void _handleCommand(Map<String, Object?> cmd) {
     final type = cmd['type'] as String?;
     switch (type) {
+      case 'propertyValue':
+        // 694：getProperty round-trip 回包 → 解析待决 Future。
+        final rid = cmd['requestId'] as String?;
+        final val = cmd['value'] as String?;
+        final pending = rid != null ? _pendingReads.remove(rid) : null;
+        if (pending != null && !pending.isCompleted) pending.complete(val);
+        return;
       case 'togglePlay':
       case 'seekTo':
       case 'seekRelative':
@@ -629,6 +636,36 @@ class QtPlayerAdapter implements PlayerAdapter {
 
   @override
   String? getProperty(String name) => null;
+
+  /// 694：Windows 回读校验——round-trip 经 Qt 管道 `getProperty` 命令。
+  /// `setProperty` 只证明写入；回读才证明 mpv 接受并挂载 glsl-shaders。
+  final Map<String, Completer<String?>> _pendingReads =
+      <String, Completer<String?>>{};
+  int _readSeq = 0;
+
+  Future<String?> readProperty(String name) async {
+    if (_disposed) return null;
+    final rid = 'r${++_readSeq}';
+    final c = Completer<String?>();
+    _pendingReads[rid] = c;
+    _pipe.sendCommandRaw({
+      'type': 'getProperty',
+      'name': name,
+      'requestId': rid,
+    });
+    try {
+      return await c.future.timeout(const Duration(milliseconds: 500));
+    } on TimeoutException {
+      _pendingReads.remove(rid);
+      return null;
+    } catch (_) {
+      _pendingReads.remove(rid);
+      return null;
+    }
+  }
+
+  /// 最近 mpv 错误（Qt 侧暂未回传日志，留空；回读已足够判定挂载）。
+  List<String> recentMpvErrors() => const <String>[];
 
   @override
   void setHttpHeaders(Map<String, String> headers) {

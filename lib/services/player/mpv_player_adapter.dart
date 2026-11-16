@@ -2061,6 +2061,21 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   @override
   String? getProperty(String name) => _propertyCache[name];
 
+  /// live 回读（走 himi_mpv getProperty，非缓存）——Anime4K 回读校验用。
+  Future<String?> readProperty(String name) async {
+    if (_disposed) return null;
+    final p = _player;
+    if (p == null) return null;
+    try {
+      return await p.getProperty(name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 最近 mpv warn/error（Anime4K 编译失败抓取用）。
+  List<String> recentMpvErrors() => List<String>.from(_mpvErrors);
+
   @override
   void setHttpHeaders(Map<String, String> headers) {
     _headers = headers;

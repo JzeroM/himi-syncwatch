@@ -99,10 +99,24 @@ class Anime4KPipeline {
   /// 着色器链的 mpv 列表分隔符（unix `:` / windows `;`）。
   static String get listSeparator => Platform.isWindows ? ';' : ':';
 
-  /// 应用当前配置：守卫 → 解包 → 写属性；关/拦截时清空属性。
+  /// 判断一条 mpv 日志是否为着色器编译/加载失败。
+  static bool isShaderError(String e) {
+    final s = e.toLowerCase();
+    return s.contains('shader') ||
+        s.contains('glsl') ||
+        s.contains('compile') ||
+        s.contains('spir-v') ||
+        s.contains('spirv') ||
+        s.contains('glslang');
+  }
+
+  /// 应用当前配置：守卫 → 解包 → 写属性 → **回读校验**；关/拦截时清空属性。
   ///
   /// [setProperty] 由调用方注入（安卓/鸿蒙走 himi_mpv 会话，Windows 走
   /// Qt `setProperty` 管道命令）。
+  /// [readProperty] 实时回读 mpv 属性（区分「写入成功」vs「mpv 真接受并
+  /// 挂载」——否则着色器静默失败也报 ✓）。[recentErrors] 最近 mpv 错误日志
+  /// （抓着色器编译失败）。两者缺一时退回乐观 ✓。
   static Future<Anime4KApplyResult> apply({
     required bool enabled,
     required Anime4KMode mode,
@@ -113,6 +127,8 @@ class Anime4KPipeline {
     required int videoHeight,
     required bool isHdrContent,
     required Future<void> Function(String name, String value) setProperty,
+    Future<String?> Function(String name)? readProperty,
+    List<String> Function()? recentErrors,
     AssetBundle? bundle,
   }) async {
     final skip = Anime4KGuard.check(
@@ -136,8 +152,47 @@ class Anime4KPipeline {
         for (final f in chain) '$dir${Platform.pathSeparator}$f',
       ].join(listSeparator);
       await setProperty('glsl-shaders', value);
+      final base = '${mode.label} / ${quality.label}（${chain.length} 链）';
+
+      // ── 回读校验（区分「写入成功」vs「真挂载」vs「编译失败」）──
+      if (readProperty == null) {
+        // 无回读通路（未接）：退回乐观 ✓。
+        return Anime4KApplyResult(statusLabel: '✓ $base', applied: true);
+      }
+      String? mounted;
+      try {
+        mounted = await readProperty('glsl-shaders');
+      } catch (_) {
+        mounted = null;
+      }
+      if (mounted == null) {
+        // 无法回读（引擎不支持 / round-trip 超时）→ 乐观 ✓（已写入，未校验）。
+        return Anime4KApplyResult(statusLabel: '✓ $base（已写入）', applied: true);
+      }
+      if (mounted.trim().isEmpty) {
+        // 回读为空 = mpv 明确未接受 glsl-shaders → 写入未生效。
+        return Anime4KApplyResult(
+          statusLabel: '⚠ $base 写入未生效',
+          error: 'glsl-shaders 回读为空（mpv 未接受）',
+        );
+      }
+      // 着色器已挂载，但可能编译失败（挂了没编译过 → 不渲染）。
+      final errs = recentErrors?.call() ?? const <String>[];
+      String? shaderErr;
+      for (final e in errs.reversed) {
+        if (isShaderError(e)) {
+          shaderErr = e;
+          break;
+        }
+      }
+      if (shaderErr != null) {
+        return Anime4KApplyResult(
+          statusLabel: '⚠ $base 编译失败',
+          error: shaderErr,
+        );
+      }
       return Anime4KApplyResult(
-        statusLabel: '✓ ${mode.label} / ${quality.label}（${chain.length} 链）',
+        statusLabel: '✓ $base 已挂载渲染中',
         applied: true,
       );
     } catch (e) {

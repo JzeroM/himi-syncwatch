@@ -10870,6 +10870,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _player.setProperty(name, value);
   }
 
+  /// 694 回读校验：实时读 mpv 属性（区分「写入成功」vs「真挂载」）。
+  Future<String?> _readMpvProperty(String name) async {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        qt != null &&
+        qt.isAlive) {
+      return qt.readProperty(name);
+    }
+    final p = _player;
+    return p is MpvPlayerAdapter ? p.readProperty(name) : null;
+  }
+
+  /// 最近 mpv 错误日志（抓着色器编译失败）。
+  List<String> _recentMpvErrors() {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        qt != null &&
+        qt.isAlive) {
+      return qt.recentMpvErrors();
+    }
+    final p = _player;
+    return p is MpvPlayerAdapter ? p.recentMpvErrors() : const <String>[];
+  }
+
   /// 694 S2：应用 Anime4K（守卫 → 解包 → glsl-shaders；签名不变则跳过）。
   /// 调用时机：初始化 / 尺寸就绪 / 500ms 节拍签名检查 / 设置变更。
   Future<void> _applyAnime4K({bool force = false}) async {
@@ -10892,6 +10916,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       videoHeight: size?.height.toInt() ?? 0,
       isHdrContent: mpv is MpvPlayerAdapter ? mpv.isHdrContent : false,
       setProperty: _setMpvProperty,
+      readProperty: _readMpvProperty,
+      recentErrors: _recentMpvErrors,
     );
     if (_anime4kStatus != result.statusLabel) {
       _anime4kStatus = result.statusLabel;

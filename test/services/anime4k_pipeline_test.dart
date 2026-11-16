@@ -285,6 +285,76 @@ void main() {
   });
 
   // ────────────────────────────────────────────────────────────
+  // 4b. 回读校验（三级状态：已挂载 / 写入未生效 / 编译失败）
+  // ────────────────────────────────────────────────────────────
+  group('Anime4KPipeline.apply 回读校验（三级状态）', () {
+    late Directory tmp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('a4k_readback_test');
+      Anime4KAssets.debugDirOverride = () async => tmp.path;
+    });
+
+    tearDown(() {
+      Anime4KAssets.debugDirOverride = null;
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    Future<Anime4KApplyResult> run({
+      Future<String?> Function(String)? readProperty,
+      List<String> Function()? recentErrors,
+    }) {
+      return Anime4KPipeline.apply(
+        enabled: true,
+        mode: Anime4KMode.b,
+        quality: Anime4KQuality.balanced,
+        in4k: false,
+        onHdr: false,
+        videoWidth: 1920,
+        videoHeight: 1080,
+        isHdrContent: false,
+        setProperty: (n, v) async {},
+        readProperty: readProperty,
+        recentErrors: recentErrors,
+        bundle: _diskBundle(),
+      );
+    }
+
+    test('回读非空 → ✓ 已挂载渲染中', () async {
+      final r = await run(readProperty: (n) async => 'shaderA:shaderB');
+      expect(r.applied, isTrue);
+      expect(r.statusLabel, contains('已挂载渲染中'));
+    });
+
+    test('回读为空 → ⚠ 写入未生效', () async {
+      final r = await run(readProperty: (n) async => '');
+      expect(r.applied, isFalse);
+      expect(r.statusLabel, contains('写入未生效'));
+    });
+
+    test('回读 null（无法校验）→ 乐观 ✓（已写入）', () async {
+      final r = await run(readProperty: (n) async => null);
+      expect(r.applied, isTrue);
+      expect(r.statusLabel, contains('已写入'));
+    });
+
+    test('无 readProperty 回调 → 乐观 ✓', () async {
+      final r = await run();
+      expect(r.applied, isTrue);
+      expect(r.statusLabel, contains('✓'));
+    });
+
+    test('着色器编译错误 → ⚠ 编译失败（回读非空但没编译过）', () async {
+      final r = await run(
+        readProperty: (n) async => 'shader',
+        recentErrors: () => ['无关日志', 'Failed to compile shader xyz'],
+      );
+      expect(r.statusLabel, contains('编译失败'));
+      expect(r.error, contains('compile shader'));
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────
   // 5. AppSettings 五字段往返
   // ────────────────────────────────────────────────────────────
   group('AppSettings Anime4K 五字段', () {
@@ -354,6 +424,33 @@ void main() {
       // 状态赋值后必须紧跟推送调用。
       expect(applyBody, contains('_anime4kStatus = result.statusLabel'));
       expect(applyBody, contains('_syncNativePanelData()'));
+    });
+
+    test('回读校验接线：三端 live 读 + main.cpp round-trip', () {
+      // pipeline 有回读/错误注入参数
+      final mgr = read('lib/services/player/anime4k/anime4k_manager.dart');
+      expect(mgr, contains('readProperty'));
+      expect(mgr, contains('recentErrors'));
+      expect(mgr, contains('已挂载渲染中'));
+      expect(mgr, contains('写入未生效'));
+      expect(mgr, contains('编译失败'));
+      // MpvPlayerAdapter live 读（安卓/鸿蒙）
+      final mpv = read('lib/services/player/mpv_player_adapter.dart');
+      expect(mpv, contains('Future<String?> readProperty'));
+      expect(mpv, contains('recentMpvErrors'));
+      // QtPlayerAdapter round-trip（Windows）
+      final qt = read('lib/services/player/qt_player_adapter.dart');
+      expect(qt, contains("'getProperty'"));
+      expect(qt, contains("'propertyValue'"));
+      // main.cpp getProperty handler 回发 propertyValue
+      final cpp = read('native/windows_qt_player/src/main.cpp');
+      expect(cpp, contains('getProperty'));
+      expect(cpp, contains('readMpvString'));
+      expect(cpp, contains('propertyValue'));
+      // player_screen 类型分发注入
+      final scr = read('lib/screens/player/player_screen.dart');
+      expect(scr, contains('_readMpvProperty'));
+      expect(scr, contains('_recentMpvErrors'));
     });
 
     test('命令路由：toggleAnime4K → ToggleAnime4K', () {

@@ -611,6 +611,27 @@ int main(int argc, char* argv[]) {
                              if (!name.isEmpty()) {
                                  mpv.setProperty(name, value);
                              }
+                         } else if (type == QLatin1String("getProperty")) {
+                             // 694：回读校验（Anime4K glsl-shaders 是否真
+                             // 挂载）——setProperty 只证明写入，回读才证明
+                             // mpv 接受并挂载。用 sendCommand 回发 propertyValue。
+                             const QString name =
+                                 cmd.value(QLatin1String("name")).toString();
+                             const QString requestId =
+                                 cmd.value(QLatin1String("requestId"))
+                                     .toString();
+                             if (!name.isEmpty()) {
+                                 QJsonObject resp;
+                                 resp.insert(QStringLiteral("type"),
+                                             QStringLiteral("propertyValue"));
+                                 resp.insert(QStringLiteral("requestId"),
+                                             requestId);
+                                 resp.insert(QStringLiteral("name"), name);
+                                 resp.insert(QStringLiteral("value"),
+                                             mpv.readMpvString(
+ name.toUtf8().constData()));
+                                 pipe.sendCommand(resp);
+                             }
                          } else if (type == QLatin1String("setHdrMode")) {
                              // 669：HDR 晚绑定——进程提前拉起（起播直接
                              // 弹窗），媒体信息解析完先切 HDR 档再 load。
