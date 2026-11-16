@@ -219,6 +219,14 @@ if (w0 + w1 < 1e-4) {
 - 音画同步：alpha 必须基于 **mpv 的 audio clock**（`mpctx->playback_pts`），不能基于系统时钟，
   否则会累积漂移。参考实现的 `notifySourceFrameAvailable(pts)` + `onVsyncTick(t)` 就是这个模型。
 
+**帧 pacing / 抖动（judder）**：
+
+- 24fps→120fps 是 5x，但 **24fps 有 3:2 pulldown / 不规则 pts**，纯 audio-clock alpha 会抖。
+- **时刻表重排**：按目标帧率生成时刻表（`round(srcFps * n)`）后，对**不规则源 pts 重排到均匀时刻**再算 alpha，
+  避免把源的不规则间隔直接传给输出。
+- **非整数倍补偿**：24→60（2.5x）这类非整数倍用**交替帧时长**补偿（长-短-长-短），不让某一帧重复过久。
+- 验收补「24→120 横向 pan 无周期性抖动」（见 §9.2）。
+
 ### 4.4 场景切换检测
 
 - 分析分辨率下统计 `avg / avgMetric`（参考实现有 `ensureReductionResources`，就是干这个）。
@@ -272,16 +280,33 @@ if (w0 + w1 < 1e-4) {
 | 条件 | 原因码 |
 |---|---|
 | `hdrContent \|\| dvContent` | `bypass_hdr` |
+| SDR 片源 + HDR 输出（SDR-in-HDR） | `bypass_hdr`（合成色彩空间复杂，归入 HDR 旁路） |
 | 画中画 / 后台 | `bypass_pip` |
 | 播放速度 ≠ 1.0 | `bypass_speed` |
 | 源 fps ≥ 55 或 ≥ 目标帧率 | `bypass_high_fps` |
 | 分辨率长边 > 2560 | `bypass_resolution` |
+| 像素格式 ∉ {yuv420p, yuv420p10} 或尺寸不对齐 compute 块（§6.1） | `bypass_content` |
 | 热状态 ≥ `THERMAL_STATUS_SEVERE` | `bypass_overheating` |
 | 连续 3 秒合成耗时超预算 | `bypass_perf` |
-| 引擎初始化失败 | `unsupported` |
+| 引擎初始化失败 / 本次会话崩溃看门狗命中（§6.1） | `unsupported` |
+
+> **video-only（无音轨）**：audio clock 不可用时 alpha 兜底用**系统时钟**，
+> 且面板显式标注「无音画同步保证」（此时不承诺长播不漂移）。
 
 > `bypass_hdr` 是硬规则：DV/HDR 的观感完全不受影响，我们已完成的
 > `androidvk` + DOVI 重塑链路零风险。
+
+### 6.1 运行时崩溃守卫（Anime4K 教训直接适用，MEMC 风险更高）
+
+> Anime4K 真机教训：一个 compute shader 在 720x540 越界崩溃。MEMC 是**一整条
+> compute pass 链**（光流+warp+合成），踩「特定内容崩溃」的概率远高于单 shader。
+> 编译期 `-Dmemc=disabled` 与运行时 `memc=no` 只能手动关，**必须加运行时崩溃兜底**。
+
+| 守卫 | 语义 |
+|---|---|
+| **内容守卫** | 分辨率/像素格式非常规时保守旁路。类比 Anime4K「高%8≠0」判据——MEMC 中间缓冲尺寸必须对齐 compute 块，否则残块越界 `imageStore`。初判据（待 A1 实测定）：`长边≤2560 且 像素格式∈{yuv420p, yuv420p10}` 白名单外即旁路 `bypass_content` |
+| **崩溃看门狗** | 本次会话 MEMC 合成异常 / 连续超时 / 呈现失败 → 自动禁用 MEMC + 面板标「已禁用：原因」，**不崩 app**（对齐 `_maybeFallbackToSoftwareDecode` 的兜底语义） |
+| **降级到底仍超** | 走完 §5.3 降级链仍超预算 → `bypass_perf` 且**本会话不再自动重试**（避免反复崩/反复降） |
 
 ---
 
@@ -327,7 +352,7 @@ if (w0 + w1 < 1e-4) {
 
 | 阶段 | 内容 | 工期 | 验收标准 |
 |---|---|---|---|
-| **A0 技术验证（spike）** | 在 `vo_gpu_next` 里确认能做到「按 vsync 逐次呈现」、拿到双帧与 audio clock；打日志证明钩子位置正确 | 2~3 天 | 24fps 内容能稳定按显示刷新率提交（日志可证），无音画不同步 |
+| **A0 技术验证（spike）** | 在 `vo_gpu_next` 里确认能做到「按 vsync 逐次呈现」、拿到双帧与 audio clock；打日志证明钩子位置正确。**顺带跑性能快速证伪**：光流+warp 空跑计时，1080p 在开发机/一台真机测单帧合成耗时 | 2~3 天（含性能快速证伪） | 24fps 内容能稳定按显示刷新率提交（日志可证），无音画不同步；**单帧耗时明显 >7ms 则立即停下重估**（不等 A1 做完才发现预算不达标）。**鸿蒙侧顺带验证 MEMC compute 能被 glslang 编译**（§11.2） |
 | **A1 最小可用** | capture + coarse + warp + synthesis（先不做 evidence/遮挡），只支持 2x、SDR、≤1080p | 4~6 天 | 横向 pan 明显更顺；无卡顿；关闭开关后与现在完全一致 |
 | **A2 质量** | refinement + evidence（前后向一致性/遮挡）+ 中值滤波 + scene map | 4~6 天 | 快速运动不撕裂；场景切换不出现拖影；伪影档可调 |
 | **A3 动画优化** | 边缘保护 + 一拍二/一拍三节奏平滑 | 3~5 天 | 番剧观感接近参考实现 |
@@ -339,6 +364,10 @@ if (w0 + w1 < 1e-4) {
 | **B1 安卓** | bypass 规则、过热/性能降级、遥测、设置页、面板行 | A1 完成即可并行 | 3~4 天 | 三类内容（24fps 动漫 / 30fps 实拍 / 60fps 体育）行为正确；`androidvk` 下合成帧率达标 |
 | **B2 鸿蒙** | 本地构建（`build_ohos_local.sh`）+ `git apply` 补丁 + ArkTS 面板遥测 | A2 完成 | 3~4 天 | `ohosvk` 下合成帧率达标；HDR 走 `bypass_hdr`；无白屏/花屏 |
 | **B3 Windows** | `PATCH_COMMAND` 注入 + Qt `debugText()` 遥测 + **D3D11 compute 验证** | B2 完成 | 3~5 天 | 8-bit / 10-bit / HDR bypass 三组各达标；`d3d11` 下无掉帧 |
+
+> **Windows D3D11 compute 早验**：Windows 的最高风险是「libplacebo 的 D3D11 compute 路径用得少、可能有问题」。
+> 建议在 B2 并行**先跑一个小 spike**（验 libplacebo 的 D3D11 compute 能跑通一个空 compute），
+> 别等 B3 才发现——否则 Windows 整条线要重估。
 
 ### 8.3 排期与并行关系
 
@@ -378,6 +407,19 @@ B2 约 1 周、B3 约 1 周串在其后。
 | 安卓 | 观感（拖影/撕裂/伪影）；音画同步（长播 30 分钟）；温度与掉帧（4K 源、120Hz 屏） |
 | 鸿蒙 | 同安卓，另加：`ohosvk` 下不花屏/不白屏；本地构建产物与安卓行为一致 |
 | Windows | 8-bit SDR / 10-bit / HDR bypass 三组；`d3d11` 下 1440p~4K 掉帧情况；Qt 面板遥测字段齐全 |
+
+#### 9.2.1 场景化感知测试协议（替换笼统「不撕裂/不拖影」）
+
+每场景做「**参考实现 vs 我们**」A/B 截图/录屏对比，判定标准具体化：
+
+| 场景 | 判定标准 |
+|---|---|
+| 快速横向 pan（字幕平移/摇镜头） | 无撕裂、无明显拖影 |
+| 场景切换瞬间 | 无跨场景拖影（scene_map 命中即直出） |
+| 前后遮挡区（人物交错走动） | 遮挡区无拉伸/重影 |
+| 一拍二动画（典型番剧） | 节奏平滑、无跳帧感 |
+| 静止画面 | 无闪烁、无额外功耗（应近乎零合成） |
+| 24→120 横向 pan | 无周期性抖动（帧 pacing 验收，§4.3） |
 
 ### 9.3 回归保护
 - 关闭开关时，所有现有测试必须全绿；HDR/DV 用例在 `memc=on` 下也必须全绿（走 bypass）。
@@ -423,7 +465,7 @@ B2 约 1 周、B3 约 1 周串在其后。
 | mpv 自编译 | ✅ kernels CI | ✅ 本地脚本 | ✅ shinchiro 交叉构建 |
 | 能打 mpv 补丁 | ✅ | ✅ `patch.sh` | ✅ `PATCH_COMMAND`（已有先例） |
 | libplacebo compute | ✅ Vulkan | ✅ Vulkan | ✅ **D3D11** |
-| SPIR-V 编译器 | ✅ shaderc（697 已补） | ✅ `-Dshaderc=enabled` | ✅ 由 libplacebo 构建带入 |
+| SPIR-V 编译器 | ✅ shaderc（697 已补） | ⚠️ **glslang**（实测**无 shaderc**，`GlslangToSpv` 在、`shaderc_compile_into_spv`=0）——需 A0 验证 MEMC compute 能否用 glslang 编译；不成立则改鸿蒙构建补 shaderc | ✅ 由 libplacebo 构建带入 |
 | 现役 GPU 后端 | `androidvk` | `ohosvk` | `d3d11` |
 | HDR 直出 | ✅ | ✅ | ✅ |
 
