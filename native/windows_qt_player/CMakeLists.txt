@@ -74,6 +74,18 @@ endforeach()
 set_source_files_properties(src/qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(src/qml/Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+# 694：构建指纹（HIMI_GIT_SHORT → QML 上下文属性 buildTag，
+# 弹幕弹窗角标显示；真机截图即诊断装的是哪版）。
+execute_process(COMMAND git rev-parse --short HEAD
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                OUTPUT_VARIABLE HIMI_GIT_SHORT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET)
+if(NOT HIMI_GIT_SHORT)
+  set(HIMI_GIT_SHORT "dev")
+endif()
+target_compile_definitions(himi_qt_player PRIVATE HIMI_GIT_SHORT="${HIMI_GIT_SHORT}")
+
 qt_add_qml_module(himi_qt_player
     URI HimiPlayer
     VERSION 1.0

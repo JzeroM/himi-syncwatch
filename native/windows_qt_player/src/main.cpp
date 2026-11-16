@@ -220,6 +220,13 @@ int main(int argc, char* argv[]) {
     static DiskCacheNamFactory namFactory;
     engine.setNetworkAccessManagerFactory(&namFactory);
     engine.rootContext()->setContextProperty("playerState", &state);
+    // 694：构建指纹（弹窗角标，真机截图即诊断——终结「还是不行」的
+    // 版本歧义）。
+#ifndef HIMI_GIT_SHORT
+#define HIMI_GIT_SHORT "dev"
+#endif
+    engine.rootContext()->setContextProperty(
+        "buildTag", QStringLiteral(HIMI_GIT_SHORT));
     engine.rootContext()->setContextProperty("pipeServer", &pipe);
     // 664：QML 直驱本地 mpv（控件本地化 + 视频挖孔）。
     engine.rootContext()->setContextProperty("mpvWindow", &mpv);
@@ -454,9 +461,21 @@ int main(int argc, char* argv[]) {
         }
         if (!show) return;
         syncOverlayGeometry();
-        if (host->isActive()) overlay->raise();
+        // 694：**不再每 50ms 无条件 raise**——持续 z 序扰动会加剧 DWM
+        // 合成开销（DV P5 等 GPU 满载场景弹幕一卡一卡）。改为宿主激活
+        // 事件时兜底 raise（见下方 activeChanged 接线）。
     });
     syncTimer->start(50);
+
+    // 694：z 序兜底事件化——宿主激活（点回播放窗）时把控件层提到宿主
+    // 之上一次，替代旧「50ms 轮询无条件 raise」。
+    QObject::connect(host, &QWindow::activeChanged, &app,
+                     [host, overlay]() {
+                         if (host != nullptr && overlay != nullptr &&
+                             host->isActive()) {
+                             overlay->raise();
+                         }
+                     });
 
     // ── 677：Escape 统一拦截（两窗共用一份三层语义）──
     //

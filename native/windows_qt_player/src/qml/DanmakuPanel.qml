@@ -75,6 +75,12 @@ EUI.ECard {
                 font.weight: Theme.titleWeight
                 Layout.fillWidth: true
             }
+            // 构建角标（694：真机截图即诊断——装的哪版一目了然）
+            RowLabel {
+                text: "构建 " + (typeof buildTag !== "undefined" ? buildTag : "dev")
+                opacity: 0.35
+                font.pixelSize: Theme.captionSize
+            }
             RowLabel {
                 text: "关闭面板"
                 opacity: 0.55
@@ -270,6 +276,11 @@ EUI.ECard {
 
                 ColumnLayout {
                 id: resultsCol
+                // 694 二修：**显式列宽**。ScrollView 内 ColumnLayout 的
+                // 隐式宽为 0，隐式回退不生效的环境下整列塌缩 → 按钮被裁
+                // 出视口、文本靠自然宽度「看起来正常」（真机回归「还是
+                // 没绑定按钮」）。width 直绑 ScrollView 内容宽根治。
+                width: parent ? parent.width : 460
                 spacing: 4
 
                 Repeater {
@@ -277,62 +288,61 @@ EUI.ECard {
                     delegate: Rectangle {
                         Layout.fillWidth: true
                         // 行高：显式 Layout.preferredHeight（Layout 托管下
-                        // 直绑 height 会被布局覆盖，行内容/按钮被压没——
-                        // 真机回归「搜索结果没有绑定按钮」）。
-                        Layout.preferredHeight: hitCol.implicitHeight + 16
+                        // 直绑 height 会被布局覆盖）。
+                        Layout.preferredHeight: row.implicitHeight + 16
                         radius: 8
                         color: Qt.rgba(1, 1, 1, 0.06)
 
-                        Column {
-                            id: hitCol
-                            anchors.left: parent.left
-                            anchors.leftMargin: 10
-                            anchors.right: bindBtn.left
-                            anchors.rightMargin: 8
-                            anchors.verticalCenter: parent.verticalCenter
-                            Text {
-                                width: parent.width
-                                color: theme.textColor
-                                font.pixelSize: Theme.panelOptionSize
-                                text: modelData.animeTitle !== ""
-                                      ? modelData.animeTitle
-                                      : ("episodeId " + modelData.episodeId)
-                                wrapMode: Text.WordWrap
-                            }
-                            Text {
-                                width: parent.width
-                                color: theme.textColor
-                                opacity: 0.55
-                                // Repeater 内算出的字号：Math.round + int
-                                readonly property int subSize:
-                                    Math.round(Theme.captionSize)
-                                font.pixelSize: subSize
-                                text: modelData.episodeTitle
-                                wrapMode: Text.WordWrap
-                            }
-                        }
+                        // 行布局：RowLayout（文本列 + 绑定胶囊），彻底
+                        // 摆脱锚定组合的隐式尺寸依赖。
+                        RowLayout {
+                            id: row
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
 
-                        // 694：显性「绑定」胶囊按钮（此前纯文本按钮在布局
-                        // 博弈下不可见——真机回归「搜索结果没有绑定按钮」）。
-                        Rectangle {
-                            id: bindBtn
-                            anchors.right: parent.right
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 56
-                            height: 32
-                            radius: 16
-                            color: "#6366F1"
-                            Text {
-                                anchors.centerIn: parent
-                                color: "white"
-                                font.pixelSize: Theme.panelOptionSize
-                                text: "绑定"
+                            Column {
+                                id: hitCol
+                                Layout.fillWidth: true
+                                Text {
+                                    width: parent.width
+                                    color: theme.textColor
+                                    font.pixelSize: Theme.panelOptionSize
+                                    text: modelData.animeTitle !== ""
+                                          ? modelData.animeTitle
+                                          : ("episodeId " + modelData.episodeId)
+                                    wrapMode: Text.WordWrap
+                                }
+                                Text {
+                                    width: parent.width
+                                    color: theme.textColor
+                                    opacity: 0.55
+                                    // Repeater 内算出的字号：Math.round + int
+                                    readonly property int subSize:
+                                        Math.round(Theme.captionSize)
+                                    font.pixelSize: subSize
+                                    text: modelData.episodeTitle
+                                    wrapMode: Text.WordWrap
+                                }
                             }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked:
-                                    root.bindRequested(modelData.episodeId)
+
+                            // 显性「绑定」胶囊按钮
+                            Rectangle {
+                                Layout.preferredWidth: 56
+                                Layout.preferredHeight: 32
+                                radius: 16
+                                color: "#6366F1"
+                                Text {
+                                    anchors.centerIn: parent
+                                    color: "white"
+                                    font.pixelSize: Theme.panelOptionSize
+                                    text: "绑定"
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked:
+                                        root.bindRequested(modelData.episodeId)
+                                }
                             }
                         }
 

@@ -386,7 +386,7 @@ void main() {
         qtPanel,
         contains('Layout.preferredHeight: Math.min(resultsCol.implicitHeight, 320)'),
       );
-      expect(qtPanel, contains('preferredHeight: hitCol.implicitHeight + 16'));
+      expect(qtPanel, contains('preferredHeight: row.implicitHeight + 16'));
     });
 
     test('9.3 四壳加宽（Qt 460 / 安卓 480 / 鸿蒙 480·52%）', () {
@@ -462,10 +462,10 @@ void main() {
     });
 
     test('10.1 Win「绑定」胶囊按钮 + 显式行高（布局博弈修复）', () {
-      expect(qtPanel, contains('id: bindBtn'));
       expect(qtPanel, contains('radius: 16'));
-      expect(qtPanel, contains('Layout.preferredHeight: hitCol.implicitHeight + 16'));
-      expect(qtPanel, contains('anchors.right: bindBtn.left'));
+      expect(qtPanel, contains('text: "绑定"'));
+      // 二修：行高基准为 RowLayout（row.implicitHeight）
+      expect(qtPanel, contains('Layout.preferredHeight: row.implicitHeight + 16'));
     });
 
     test('10.2 Win 弹幕帧驱动 vsync 对齐（DV P5 卡顿）', () {
@@ -486,6 +486,55 @@ void main() {
         isNot(contains('alignContent: Alignment.Start')),
       );
       expect(ohosPanel, contains("offsetY: 0 }"));
+    });
+  });
+
+  group('11. 「还是不行」二修（694：列宽塌缩/DV卡顿/构建角标）', () {
+    late String qtPanel;
+    late String qtLayer;
+    late String mainCpp;
+    late String cmake;
+
+    setUpAll(() {
+      qtPanel = File('native/windows_qt_player/src/qml/DanmakuPanel.qml')
+          .readAsStringSync();
+      qtLayer = File('native/windows_qt_player/src/qml/DanmakuLayer.qml')
+          .readAsStringSync();
+      mainCpp = File('native/windows_qt_player/src/main.cpp').readAsStringSync();
+      cmake =
+          File('native/windows_qt_player/CMakeLists.txt').readAsStringSync();
+    });
+
+    test('11.1 结果列显式宽（ScrollView 内塌缩根治）+ RowLayout 行', () {
+      expect(qtPanel, contains('width: parent ? parent.width : 460'));
+      expect(qtPanel, contains('RowLayout {'));
+      expect(qtPanel, contains('anchors.fill: parent\n                            anchors.margins: 8'));
+    });
+
+    test('11.2 弹幕层排序/派道缓存（集合变化才重算）', () {
+      expect(qtLayer, contains('_state.sorted = _state.flying.slice().sort'));
+      expect(qtLayer, contains('_state.laneTravel !== travelMs'));
+      expect(qtLayer, contains('var all = _state.sorted'));
+    });
+
+    test('11.3 syncFlying 去重表化（O(n²) 字符串拼接 → O(n)）', () {
+      expect(qtLayer, contains("existing['#' + keyOf(list[j0])] = true"));
+      expect(qtLayer, isNot(contains('for (var j = 0; j < list.length; j++) {\n                if (keyOf(list[j]) === k)')));
+    });
+
+    test('11.4 raise 节流（事件化，不在 50ms 轮询）', () {
+      expect(mainCpp, contains('&QWindow::activeChanged'));
+      final timerBlock = mainCpp.substring(
+        mainCpp.indexOf('syncTimer->start(50)') - 400,
+        mainCpp.indexOf('syncTimer->start(50)'),
+      );
+      expect(timerBlock, isNot(contains('overlay->raise()')));
+    });
+
+    test('11.5 构建指纹（截图即诊断版本）', () {
+      expect(cmake, contains('HIMI_GIT_SHORT'));
+      expect(mainCpp, contains('setContextProperty(\n        "buildTag"'));
+      expect(qtPanel, contains('typeof buildTag !== "undefined"'));
     });
   });
 

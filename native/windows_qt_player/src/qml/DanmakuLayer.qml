@@ -175,7 +175,9 @@ Item {
     readonly property var _state: ({
         flying: [],     // 飞行缓存：已入屏的弹幕（跨帧保留到生命周期结束）
         laneOf: ({}),   // 行号绑定：timeMs:text → lane（-1 = 满槽丢弃）
-        laneSig: ""     // 当前轨道容量签名
+        laneSig: "",    // 当前轨道容量签名
+        sorted: [],     // 694：时间升序缓存（集合变化才重排）
+        laneTravel: -1  // 694：上次派道用的 travelMs（倍速变化才重派）
     })
     /// 当前帧要渲染的弹幕（含 lane 与 progress）。
     property var frameItems: []
@@ -236,14 +238,15 @@ Item {
     function syncFlying(pos, travelMs) {
         var list = _state.flying
         var changed = false
+        // 694：去重表化——旧双重循环 O(n²) 且 keyOf 每次字符串拼接，
+        // 每帧数百次分配（GC churn，DV P5 等帧预算紧的场景弹幕一卡一卡）。
+        var existing = ({})
+        for (var j0 = 0; j0 < list.length; j0++) existing['#' + keyOf(list[j0])] = true
         for (var i = 0; i < danmakuItems.length; i++) {
             var it = danmakuItems[i]
-            var k = keyOf(it)
-            var seen = false
-            for (var j = 0; j < list.length; j++) {
-                if (keyOf(list[j]) === k) { seen = true; break }
-            }
-            if (!seen) {
+            var k = '#' + keyOf(it)
+            if (!existing[k]) {
+                existing[k] = true
                 list = list.concat([it])
                 changed = true
             }
@@ -266,9 +269,10 @@ Item {
             }
             alive.push(f)
         }
+        if (alive.length !== list.length) changed = true
         _state.flying = alive
         if (lanesChanged) _state.laneOf = lanes
-        return changed || lanesChanged
+        return changed
     }
 
     /// 增量行分配（对应安卓 `assignLanes`）。
@@ -335,13 +339,20 @@ Item {
         var spd = Math.max(0.25, Math.min(4.0, speed))
         var travelMs = scrollBaseMs / spd
 
-        syncFlying(pos, travelMs)
-
-        // 按时间升序（冲突表必须按时间序推进，否则误丢/跳行）
-        var all = _state.flying.slice().sort(function (a, b) {
-            return a.timeMs - b.timeMs
-        })
-        assignLanes(all, travelMs)
+        // 694：排序/派道缓存——只有「飞行集变化」或 travelMs（倍速）
+        // 变化才重算；tick 每帧只算 x 进度。旧实现每帧 slice().sort +
+        // assignLanes 全量重跑，帧预算紧时弹幕一卡一卡。
+        var setChanged = syncFlying(pos, travelMs)
+        if (setChanged || _state.sorted.length !== _state.flying.length
+                || _state.laneTravel !== travelMs) {
+            _state.laneTravel = travelMs
+            // 按时间升序（冲突表必须按时间序推进，否则误丢/跳行）
+            _state.sorted = _state.flying.slice().sort(function (a, b) {
+                return a.timeMs - b.timeMs
+            })
+            assignLanes(_state.sorted, travelMs)
+        }
+        var all = _state.sorted
 
         var lanes = _state.laneOf
         var out = []
