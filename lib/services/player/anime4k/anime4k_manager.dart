@@ -52,9 +52,13 @@ class Anime4KGuard {
 class Anime4KResolve {
   Anime4KResolve._();
 
-  /// ArtCNN 在该片源高度下是否不安全（高 %8 ≠ 0）。
+  /// ArtCNN 在该片源高度下是否不安全（高 %8 ≠ 0，或尺寸未知）。
+  ///
+  /// 尺寸未知（≤0，初次应用/元数据未就绪）也判不安全 → 保守降 C+，
+  /// 绝不拿 ArtCNN 撞未知片源（694 真机：初次应用时尺寸 null → 误判安全
+  /// → ArtCNN 提前应用 → 720x540 一渲染就崩）。
   static bool isArtCnnUnsafe({required int videoHeight}) =>
-      videoHeight % 8 != 0;
+      videoHeight <= 0 || videoHeight % 8 != 0;
 
   /// 解析实际生效档：ArtCNN 命中不安全尺寸 → 临时降 C+（**设置不动**）。
   static Anime4KMode resolveEffectiveMode({

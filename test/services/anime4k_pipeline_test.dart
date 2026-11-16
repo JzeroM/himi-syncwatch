@@ -376,6 +376,15 @@ void main() {
       );
     });
 
+    test('尺寸未知（0）→ 保守降 C+（防初次应用撞未知片源）', () {
+      expect(Anime4KResolve.isArtCnnUnsafe(videoHeight: 0), isTrue);
+      expect(
+        Anime4KResolve.resolveEffectiveMode(
+            mode: Anime4KMode.artCnn, videoHeight: 0),
+        Anime4KMode.cPlus,
+      );
+    });
+
     test('1080p / DVD 720x480 → 保持 ArtCNN', () {
       for (final h in [1080, 480, 576, 720]) {
         expect(

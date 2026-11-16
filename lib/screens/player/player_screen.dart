@@ -10908,7 +10908,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _anime4kSig = sig;
     // 694 真机回归：ArtCNN 命中不安全尺寸（高%8≠0）→ 临时降 C+（设置不动）。
     final setMode = Anime4KMode.fromId(settings.anime4kMode);
-    final videoHeight = size?.height.toInt() ?? 0;
+    // 最佳已知尺寸：实测优先，回退 mediaInfo（prepare 后即可用，早于
+    // `_videoNativeSize`）。尺寸未知（≤0）时 isArtCnnUnsafe 判不安全 → 降 C+。
+    var videoWidth = size?.width.toInt() ?? 0;
+    var videoHeight = size?.height.toInt() ?? 0;
+    if (videoHeight <= 0) {
+      final mi = _readMediaInfoVideoSize();
+      videoWidth = mi?.width.toInt() ?? 0;
+      videoHeight = mi?.height.toInt() ?? 0;
+    }
     final effectiveMode = Anime4KResolve.resolveEffectiveMode(
       mode: setMode,
       videoHeight: videoHeight,
@@ -10919,7 +10927,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       quality: Anime4KQuality.fromId(settings.anime4kQuality),
       in4k: settings.anime4kIn4k,
       onHdr: settings.anime4kOnHdr,
-      videoWidth: size?.width.toInt() ?? 0,
+      videoWidth: videoWidth,
       videoHeight: videoHeight,
       isHdrContent: mpv is MpvPlayerAdapter ? mpv.isHdrContent : false,
       setProperty: _setMpvProperty,
