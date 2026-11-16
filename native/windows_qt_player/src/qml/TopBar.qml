@@ -25,8 +25,13 @@ Rectangle {
     property bool adjustOpen: false
     /// 当前画面比例（665：本地循环状态，图标随之切换）
     property string videoFitMode: "contain"
+    /// 解码胶囊标签（SW/HW/HW+，不中文）。
+    readonly property string decodeModeLabel:
+        playerState.decodeMode === "sw" ? "SW"
+        : (playerState.decodeMode === "hwplus" ? "HW+" : "HW")
 
     signal decodeClicked()
+    signal cycleDecode()
     signal subtitleStyleClicked()
     signal videoFitClicked()
 
@@ -116,6 +121,43 @@ Rectangle {
             font.pixelSize: Theme.captionSize
         }
 
+        // 解码胶囊（SW/HW/HW+）：放引擎（内核）左侧，点击循环切换。
+        Rectangle {
+            color: root.decodeOpen ? theme.focusColor : "#26FFFFFF"
+            radius: 10
+            implicitWidth: decodeLabel.implicitWidth + 18
+            implicitHeight: decodeLabel.implicitHeight + 12
+            Text {
+                id: decodeLabel
+                anchors.centerIn: parent
+                text: root.decodeModeLabel
+                color: theme.textColor
+                font.pixelSize: Theme.captionSize
+                font.weight: Font.Bold
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.cycleDecode()
+            }
+        }
+
+        // 引擎（内核）胶囊（纯文字，如 MPV）
+        Rectangle {
+            color: "#26FFFFFF"
+            radius: 10
+            implicitWidth: kernelLabel.implicitWidth + 18
+            implicitHeight: kernelLabel.implicitHeight + 12
+            Text {
+                id: kernelLabel
+                anchors.centerIn: parent
+                text: playerState.engineLabel
+                color: theme.textColor
+                font.pixelSize: Theme.captionSize
+                font.weight: Font.Bold
+            }
+        }
+
         // 显示调节（面板可见时高亮）
         ControlButton {
             icon: Icons.tune
@@ -124,16 +166,6 @@ Rectangle {
                        ? theme.focusColor : theme.textColor
             tooltip: "显示调节"
             onClicked: root.subtitleStyleClicked()
-        }
-
-        // 解码方式（面板可见时高亮）
-        ControlButton {
-            icon: Icons.memory
-            iconSize: 18
-            iconColor: root.decodeOpen
-                       ? theme.focusColor : theme.textColor
-            tooltip: "解码方式：" + playerState.decodeMode
-            onClicked: root.decodeClicked()
         }
 
         // 画面比例（图标随模式）

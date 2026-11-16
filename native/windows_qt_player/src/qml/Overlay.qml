@@ -256,6 +256,12 @@ ApplicationWindow {
         adjustOpen: adjustPanel.visible
         videoFitMode: root.fitModes[root.fitIndex]
         onDecodeClicked: root.openDecodePanel()
+        onCycleDecode: {
+            var modes = ["sw", "hw", "hwplus"]
+            var idx = modes.indexOf(playerState.decodeMode)
+            var next = modes[(idx < 0 ? 0 : idx + 1) % modes.length]
+            pipeServer.sendCommand({"type": "setDecodeMode", "mode": next})
+        }
         onSubtitleStyleClicked: root.openAdjustPanel()
         onVideoFitClicked: root.cycleVideoFitLocal()
     }

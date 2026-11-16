@@ -1312,14 +1312,13 @@ void main() {
       expect(adjustQml, contains('playerState.danmakuOpacity - 0.8'));
     });
 
-    test('引擎控件已删（Qt 恒 MPV）', () {
+    test('引擎控件已补上（Qt 显示 MPV 胶囊）', () {
       final code = topBar
           .split('\n')
           .where((l) => !l.trimLeft().startsWith('//'))
           .join('\n');
-      expect(code, isNot(contains('engineLabel')));
-      expect(code, isNot(contains('kernel')));
-      expect(mainQml, isNot(contains('openKernelPanel')));
+      expect(code, contains('engineLabel'));
+      expect(code, contains('kernelLabel'));
     });
 
     test('点击唤出不立马隐藏（按下瞬间快照判定）', () {

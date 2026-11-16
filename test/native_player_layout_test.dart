@@ -275,9 +275,9 @@ void main() {
       expect(kotlinScreen, isNot(contains('PANEL_DECODE -> buildDecodeContent()')));
     });
 
-    test('档位标签与 Flutter 播放页同值（auto=智能）', () {
-      expect(kotlinScreen, contains('"auto" -> "智能"'));
-      expect(ohosPanel, contains("mode === 'auto'"));
+    test('档位标签与 Flutter 播放页同值（SW/HW/HW+）', () {
+      expect(kotlinScreen, contains('"sw" -> "SW"'));
+      expect(ohosPanel, contains("mode === 'sw'"));
     });
   });
 
@@ -1985,10 +1985,11 @@ void main() {
       expect(kotlinScreen586, isNot(contains('isIndeterminate = true')));
     });
 
-    test('587 鸿蒙解码面板完全对齐 Flutter（智能/硬解/软解 + 说明）', () {
-      // 档位文案：auto = 智能（旧实现写「自动」）。
-      expect(ohosPanelFile, contains("return '智能';"));
+    test('587 鸿蒙解码面板标签 SW/HW/HW+（说明与安卓同值）', () {
+      // 档位文案：SW/HW/HW+（不中文）。
+      expect(ohosPanelFile, contains("return 'SW';"));
       expect(ohosPanelFile, isNot(contains("return '自动';")));
+      expect(ohosPanelFile, isNot(contains("return '智能';")));
       // 三句说明逐字对齐 Flutter / 安卓。
       expect(ohosPanelFile, contains("return '优先硬解，失败回退软解';"));
       expect(ohosPanelFile, contains("return '纯硬解，失败不回退';"));

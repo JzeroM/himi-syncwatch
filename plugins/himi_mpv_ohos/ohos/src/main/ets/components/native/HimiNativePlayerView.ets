@@ -1374,6 +1374,14 @@ export struct HimiNativePlayerView {
     return String.fromCodePoint(0xE3DB);
   }
 
+  /** 解码胶囊标签（SW/HW/HW+，不中文）。 */
+  private decodeModeLabel(): string {
+    const m: string = this.state().decodeMode;
+    if (m === 'sw') return 'SW';
+    if (m === 'hwplus') return 'HW+';
+    return 'HW';
+  }
+
   private videoFitGlyph(): string {
     const fit: string = this.videoFit;
     if (fit === 'cover') {
@@ -2747,6 +2755,12 @@ export struct HimiNativePlayerView {
               this.openPanel(NativePlayerPanelType.speed);
             }, 1);
         }
+        // 解码胶囊（SW/HW/HW+）：放引擎（内核）控件左侧，点击循环切换。
+        this.Chip('', this.decodeModeLabel(), 0, false,
+          false, 'decode', (): void => {
+            this.pokeAutoHide();
+            HimiMpvNativeHost.getInstance().cycleDecodeMode();
+          }, 1);
         this.Chip('', this.engineLabel, 0, false,
           this.activePanel === NativePlayerPanelType.kernel, 'kernel', (): void => {
             this.openPanel(NativePlayerPanelType.kernel);
@@ -2756,13 +2770,6 @@ export struct HimiNativePlayerView {
             this.activePanel === NativePlayerPanelType.display, 'topDisplay', (): void => {
               this.openPanel(NativePlayerPanelType.display);
             }, 1);
-          // 解码：Erika 无解码档位 → 隐藏（对齐 Flutter）。
-          if (this.engineLabel !== 'Erika') {
-            this.IconChip(this.decodeGlyph(), 18, 6, true,
-              this.activePanel === NativePlayerPanelType.decode, 'decode', (): void => {
-                this.openPanel(NativePlayerPanelType.decode);
-              }, 1);
-          }
           // 画面比例：Erika 缩放不可用、房间不显示（对齐 Flutter）。
           if (!this.state().isRoom && this.engineLabel !== 'Erika') {
             this.IconChip(this.videoFitGlyph(), 22, 6, false,

@@ -1314,6 +1314,14 @@ export class HimiMpvNativeHost {
     this.notify();
   }
 
+  /** 694：解码模式循环（鸿蒙 MPV 三档 SW→HW→HW+→SW）。 */
+  cycleDecodeMode(): void {
+    const modes: string[] = ['sw', 'hw', 'hwplus'];
+    const idx: number = modes.indexOf(this.state.decodeMode);
+    const next: string = modes[(idx < 0 ? 0 : idx + 1) % modes.length];
+    this.optimisticSetDecodeMode(next);
+  }
+
   /** 播放内核切换。 */
   optimisticSwitchEngine(engineId: string): void {
     const fields: Map<string, Object> = new Map<string, Object>();

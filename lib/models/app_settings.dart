@@ -1166,9 +1166,9 @@ class AppSettings {
   }
 
   static const decodeModeLabels = {
-    'sw': '软解',
-    'hw': '硬解',
-    'hwplus': '硬解+',
+    'sw': 'SW',
+    'hw': 'HW',
+    'hwplus': 'HW+',
   };
 
   static const audioRendererLabels = {

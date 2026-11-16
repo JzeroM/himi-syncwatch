@@ -1358,6 +1358,19 @@ class NativePlayerScreenView(
         )
         topTail.addView(speedChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(32), 8))
 
+        // 解码胶囊（SW/HW/HW+）：放引擎（内核）控件左侧，点击循环切换。
+        decodeChip.setTextColor(Color.WHITE)
+        decodeChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        decodeChip.gravity = Gravity.CENTER
+        decodeChip.includeFontPadding = false
+        decodeChip.setPadding(dp(9), dp(6), dp(9), dp(6))
+        decodeChip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        decodeChip.background = chipBackground(false)
+        decodeChip.isClickable = true
+        decodeChip.minimumHeight = dp(32)
+        decodeChip.setOnClickListener { cycleDecodeMode() }
+        topTail.addView(decodeChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+
         // 内核胶囊（显示短名，点击打开右侧内核面板）
         kernelChip.setTextColor(Color.WHITE)
         kernelChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
@@ -1376,11 +1389,6 @@ class NativePlayerScreenView(
         configureIconChip(subtitleStyleChip, NativePlayerIcons.ICON_TUNE)
         subtitleStyleChip.setOnClickListener { openPanel(PANEL_DISPLAY) }
         topTail.addView(subtitleStyleChip, llp(dp(30), dp(30), 8))
-
-        // 解码胶囊（memory 图标，点击打开右侧解码模式面板）
-        configureIconChip(decodeChip, NativePlayerIcons.ICON_MEMORY)
-        decodeChip.setOnClickListener { openPanel(PANEL_DECODE) }
-        topTail.addView(decodeChip, llp(dp(30), dp(30), 8))
 
         // 画面比例（循环切换）
         videoFitIcon.typeface = NativePlayerIcons.typeface(context)
@@ -3300,13 +3308,22 @@ class NativePlayerScreenView(
 
     /** 解码档位中文标签：与 Flutter 播放页 `DecodeModePanel` 同值。 */
     private fun decodeModeLabel(mode: String): String = when (mode) {
-        "auto" -> "智能"
-        "hw" -> "硬解"
-        "sw" -> "软解"
-        else -> mode
+        "sw" -> "SW"
+        "hwplus" -> "HW+"
+        else -> "HW"
     }
 
-    /** 解码档位说明（Flutter DecodeModePanel `descriptions`）。 */
+    /** 694：解码模式循环（MPV 三档 SW→HW→HW+；MDK/Erika 两档 SW→HW）。 */
+    private fun cycleDecodeMode() {
+        val modes =
+            if (lastState.engineLabel == "MPV") listOf("sw", "hw", "hwplus")
+            else listOf("sw", "hw")
+        val idx = modes.indexOf(lastState.decodeMode)
+        val next = modes[if (idx < 0) 0 else (idx + 1) % modes.size]
+        listener?.onSetDecodeMode(next)
+    }
+
+    /** 解码档位说明（与 ArkTS decodeModeDesc 同值）。 */
     private fun decodeModeDesc(mode: String): String = when (mode) {
         "auto" -> "优先硬解，失败回退软解"
         "hw" -> "纯硬解，失败不回退"
@@ -4199,6 +4216,7 @@ class NativePlayerScreenView(
         speedLabel.text = trimSpeed(state.speed)
         bottomSpeedLabel.text = trimSpeed(state.speed)
         kernelChip.text = state.engineLabel
+        decodeChip.text = decodeModeLabel(state.decodeMode)
         videoFitIcon.text = String(
             Character.toChars(
                 when (state.videoFit) {

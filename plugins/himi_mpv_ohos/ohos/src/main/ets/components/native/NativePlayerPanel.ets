@@ -52,18 +52,18 @@ function formatPlayerTime(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-/** 解码模式中文标签（与 Flutter `DecodeModePanel` / 安卓 `decodeModeLabel` 同值）。 */
+/** 解码模式标签（SW/HW/HW+，与 Flutter / 安卓 `decodeModeLabel` 同值）。 */
 function decodeModeLabel(mode: string): string {
-  if (mode === 'auto') {
-    return '智能';
+  if (mode === 'sw') {
+    return 'SW';
   }
   if (mode === 'hw') {
-    return '硬解';
+    return 'HW';
   }
-  if (mode === 'sw') {
-    return '软解';
+  if (mode === 'hwplus') {
+    return 'HW+';
   }
-  return mode;
+  return 'HW';
 }
 
 /**
