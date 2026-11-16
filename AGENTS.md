@@ -8,7 +8,7 @@
 4. 回答用户问题时，使用ask-question标签提问，不用plain text提问
 5. 不要把安全隐私类文件传github,比如的github Api不要泄露，因为项目是公开库
 6. 版本号各段（major/minor/patch）取值范围 0-99（如 1.2.0；不再出现 1.1.255 这类三位数补丁），构建号 `+N` 保持单调递增以保证 Android versionCode 可覆盖安装
-7. 发布基础设施：`deps-mirror` release（存改名副本 `mdk-sdk-windows-x64.7z`）是 Windows 构建依赖，**严禁删除**；清理旧版本时只删 `v*` 标签/Release，勿动 `deps-mirror`
+7. 发布基础设施：`deps-mirror` release（存改名副本 `mdk-sdk-windows-x64.7z`）是 Windows 构建依赖，**严禁删除**；清理旧版本时只删 `v*` 标签/Release，勿动 `deps-mirror`。**测试包只随 tag / 手动触发**：出 app 测试包（android-apk/windows-exe/windows-setup/ios）的 `release.yml`（Build & Release）**不随 push 自动跑**，push 后需手动 `gh workflow run release.yml --ref <branch>` 触发；push 自动跑的 `Windows Qt Player Build` 只是 Qt 播放器编译检查，**不出 app 测试包**。每次 push 后手动触发出测试包
 8. **发布说明写简短**：只列出**新增了哪些功能**；修复项一笔带过（统一写「修复一些已知问题」），不写根因分析和实现细节。**不按平台分章节**——相同功能/修复合并成一条，平台差异用括号注明（如「（安卓 TV）」）。`docs/release_notes_by_platform.md` 面向最终用户，不是技术报告
 
 ## 构建环境陷阱
