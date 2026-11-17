@@ -91,8 +91,23 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('A 日志同步 fsync 是主线程卡死源', () {
-    test('A1 不再有 writeAsStringSync（同步 open+write+fsync）', () {
-      expect(codeOnly(logService), isNot(contains('writeAsStringSync')));
+    test('A1 同步写只许在显式 flushSync（低频取证），且不带 fsync', () {
+      // 682 的核心不变量是「**热路径**绝不同步写盘 + 任何同步写不得 fsync」。
+      // 694 起允许一个显式低频例外 `flushSync()`（引擎切换步骤/崩溃钩子/
+      // 黑屏定性快照取证，单次毫秒级且无 fsync）——同步写必须**只**存在
+      // 于它体内，其余（log/_appendToRuntime/_scheduleRuntimeFlush）不得
+      // 出现 writeAsStringSync。
+      final code = codeOnly(logService);
+      final flushSyncBody = extract(logService, 'void flushSync()');
+      final syncCount = 'writeAsStringSync'.allMatches(code).length;
+      expect(syncCount, greaterThan(0), reason: '取证用 flushSync 应存在');
+      expect(
+        'writeAsStringSync'.allMatches(flushSyncBody).length,
+        syncCount,
+        reason: 'writeAsStringSync 只允许出现在 flushSync（显式低频取证）',
+      );
+      expect(codeOnly(flushSyncBody), isNot(contains('flush: true')),
+          reason: 'flushSync 不得 fsync（进程崩溃只需 write() 落内核缓存）');
     });
 
     test('A2 改为内存缓冲 + 单飞异步写', () {
@@ -207,8 +222,23 @@ void main() {
           File('native/windows_qt_player/src/main.cpp').readAsStringSync();
       expect(mainCpp, contains('sendWindowMoved'));
       expect(mainCpp, contains('用户移动/缩放'));
-      // 日志侧已改为异步批量
-      expect(codeOnly(logService), isNot(contains('writeAsStringSync')));
+      // 日志侧已改为异步批量；694 起同步写只许在显式 flushSync（低频
+      // 取证）且不带 fsync（见 A1）。
+      final code = codeOnly(logService);
+      final syncLines =
+          code.split('\n').where((l) => l.contains('writeAsStringSync'));
+      expect(syncLines, isNotEmpty, reason: 'flushSync 取证用同步写应存在');
+      for (final l in syncLines) {
+        expect(l, isNot(contains('flush: true')),
+            reason: '同步 fsync 是 643 卡死元凶');
+      }
+      expect(code, contains('void flushSync()'));
+      expect(
+        extract(logService, 'void _scheduleRuntimeFlush()')
+            .contains('writeAsStringSync'),
+        isFalse,
+        reason: '热路径（异步批量）不得同步写',
+      );
     });
   });
 }

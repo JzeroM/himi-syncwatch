@@ -129,11 +129,13 @@ void _installErrorHooks() {
   final prevPresent = FlutterError.onError;
   FlutterError.onError = (details) {
     LogService().log('FATAL',
-        'FlutterError: ${details.exceptionAsString()}\n${details.stack}');
+        'FlutterError: ${details.exceptionAsString()}\n${details.stack}',
+        sync: true);
     prevPresent?.call(details);
   };
   PlatformDispatcher.instance.onError = (error, stack) {
-    LogService().log('FATAL', 'Uncaught async error: $error\n$stack');
+    LogService().log('FATAL', 'Uncaught async error: $error\n$stack',
+        sync: true);
     return true;
   };
   // 645：把 debugPrint 也接入运行时日志。
@@ -334,7 +336,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _installErrorHooks();
   runZonedGuarded(_bootstrap, (error, stack) {
-    LogService().log('FATAL', 'Zone error: $error\n$stack');
+    LogService().log('FATAL', 'Zone error: $error\n$stack', sync: true);
   }, zoneSpecification: ZoneSpecification(
     // 694：全项目所有 print 也进 himi_logs（限流防刷盘，同 debugPrint）。
     print: (self, parent, zone, line) {

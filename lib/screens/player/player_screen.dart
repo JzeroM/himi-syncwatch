@@ -1504,6 +1504,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 释放落定，再执行 `Navigator.pop`。
   bool _videoLayerDetached = false;
 
+  /// 694：视频层几何签名（[video-layer] 诊断日志去重用）。
+  String _lastVideoLayerSig = '';
+
   /// 是否已成功起播过（首次获知非零时长置位）：`duration==0` 强制显
   /// 控件的加载兜底只在首次起播前生效，避免播放中重载的 duration 抖动
   /// 把控件反复强留屏上（见 [isLoadingMaskVisible]）。
@@ -3248,7 +3251,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final mode = _effectiveVideoOutput();
     final loggedMode =
         _currentEngine == PlayerEngine.mpv ? 'mpv:$_mpvActualVideoPath' : mode;
-    LogService().log('Player', '视频输出档位切换 → $loggedMode');
+    final rawOutput = ref.read(settingsProvider).videoOutput;
+    final tvMode = ref.read(settingsProvider).tvMode;
+    // 694 诊断：TV 模式会强制 videoOutput=surfaceView（_applyTvDefaults），
+    // 档位切换连带 _surfaceViewCreated 复位——黑屏排查需看清这条触发链。
+    LogService().log('Player',
+        '视频输出档位切换 → $loggedMode (raw=$rawOutput tvMode=$tvMode surfaceCreated 复位)',
+        sync: true);
     // 档位切换销毁/重建 platform view：绑定标志复位，下次起播重新等待
     _surfaceViewCreated = false;
     if (_usesSurfaceView) {
@@ -4806,7 +4815,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 原生 UI 桥先拆除：监听器随旧适配器销毁（在其 dispose 释放
     // ValueNotifier 之前 removeListener，避免对已释放对象操作）。
     _detachNativeUiBridge(old);
-    LogService().log('Player', '[dispose-old] 开始 type=${old.runtimeType}');
+    LogService().log('Player', '[dispose-old] 开始 type=${old.runtimeType}', sync: true);
     if (old is AsyncDisposablePlayer) {
       final disposable = old as AsyncDisposablePlayer;
       try {
@@ -4816,19 +4825,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         // 后台销毁 → 与新建的 gpu-next 渲染上下文抢同一 HWND/驱动资源。
         await disposable.disposeAsync().timeout(const Duration(seconds: 4));
       } catch (e) {
-        LogService().log('Player', '[dispose-old] disposeAsync 异常: $e');
+        LogService().log('Player', '[dispose-old] disposeAsync 异常: $e', sync: true);
       }
-      LogService().log('Player', '[dispose-old] disposeAsync 完成');
+      LogService().log('Player', '[dispose-old] disposeAsync 完成', sync: true);
       await Future<void>.delayed(const Duration(milliseconds: 150));
     } else {
       try {
         old.dispose();
       } catch (e) {
-        LogService().log('Player', '[dispose-old] dispose 异常: $e');
+        LogService().log('Player', '[dispose-old] dispose 异常: $e', sync: true);
       }
       await Future<void>.delayed(const Duration(milliseconds: 400));
     }
-    LogService().log('Player', '[dispose-old] 结束');
+    LogService().log('Player', '[dispose-old] 结束', sync: true);
     // 复位 per-player 去重态：确保新引擎一定重写 audio.avfilter/后端
     _lastAudioFilter = null;
     _lastAudioFilterCodec = '';
@@ -4842,12 +4851,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         '内容路由重建引擎: ${_currentEngine.label} → ${engine.label} (erikaMode=$outputMode)');
     // 645：分步日志。上次崩溃前只有「内容路由重建引擎」一行，无法判断
     // 崩在哪一步。这里每步都落盘（同步写），崩溃现场可精确到行。
-    LogService().log('Player', '[rebuild] 1/7 停旧引擎');
+    LogService().log('Player', '[rebuild] 1/7 停旧引擎', sync: true);
     // 先停旧引擎（原生视图还在渲染时摘掉会访问已分离 surface → 卡顿/崩溃）
     try {
       _player.state = AdapterPlaybackState.stopped;
     } catch (_) {}
-    LogService().log('Player', '[rebuild] 2/7 取消订阅');
+    LogService().log('Player', '[rebuild] 2/7 取消订阅', sync: true);
     _stateSub?.cancel();
     _statusSub?.cancel();
     _eventSub?.cancel();
@@ -4864,23 +4873,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipPromptTimer = null;
     _skipPromptSegment = null;
     // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
-    LogService().log('Player', '[rebuild] 3/7 隐藏视频层');
+    LogService().log('Player', '[rebuild] 3/7 隐藏视频层', sync: true);
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 4/7 释放旧引擎');
+    LogService().log('Player', '[rebuild] 4/7 释放旧引擎', sync: true);
     await _disposeOldEngine();
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 5/7 创建新引擎');
+    LogService().log('Player', '[rebuild] 5/7 创建新引擎', sync: true);
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _attachNativeUiBridge(_player);
     _switchingEngine = false;
-    LogService().log('Player', '[rebuild] 6/7 初始化属性');
+    LogService().log('Player', '[rebuild] 6/7 初始化属性', sync: true);
     await _initPlayerProperties();
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 7/7 完成');
+    LogService().log('Player', '[rebuild] 7/7 完成', sync: true);
     // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
     // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
     // 此处重写保证新引擎与起播一致）。
@@ -9771,6 +9780,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final aspectRatio = size != null && size.width > 0 && size.height > 0
         ? size.width / size.height
         : 16 / 9;
+    // 694 诊断：TV/手机黑屏对比取证——视频层几何/绑定状态签名**变化时**
+    // 记一条（build 高频，签名去重防刷屏）。同设备「手机正常、TV 黑屏」
+    // 的差异应直接体现在这份签名里。
+    final mpv = _player;
+    final mpvInfo = mpv is MpvPlayerAdapter
+        ? 'surfaceId=${mpv.mpvSurfaceId ?? "-"} '
+            'attached=${mpv.mpvSurfaceAttached} '
+            'err=${mpv.mpvSurfaceError ?? "-"}'
+        : 'surfaceId=-';
+    final sig = 'tvMode=${ref.read(settingsProvider).tvMode} '
+        'engine=$_currentEngine path=$_mpvActualVideoPath '
+        'size=${size ?? "-"} aspect=${aspectRatio.toStringAsFixed(3)} '
+        '$mpvInfo switching=$_isSwitchingMedia detached=$_videoLayerDetached';
+    if (sig != _lastVideoLayerSig) {
+      _lastVideoLayerSig = sig;
+      LogService().log('Player', '[video-layer] $sig', sync: true);
+    }
     return Center(
       child: AspectRatio(
         aspectRatio: aspectRatio,
@@ -10584,6 +10610,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
     }
 
+    LogService().log('Player',
+        '[switch-kernel] $previous -> $target 开始 pos=${positionMs}ms',
+        sync: true);
     setState(() {
       _switchingKernel = true;
       _showKernelMenu = false;
@@ -10615,7 +10644,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _syncPlayState();
     } catch (e) {
-      LogService().log('Player', '切换内核失败: $previous -> $target: $e');
+      LogService().log('Player', '切换内核失败: $previous -> $target: $e',
+          sync: true);
       if (mounted) {
         showAppToast(context, '切换内核失败，保留 ${previous.label}');
       }

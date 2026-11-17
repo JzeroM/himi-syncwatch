@@ -768,10 +768,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
               'actual=${player.usesNativeSurface ? MpvOutputPolicy.surface : MpvOutputPolicy.texture} '
               'hdrRequested=${decision.hdrOutput} '
               'hdrReported=${player.hdrOutputActive} displayHdr=$displayHdr '
-              'nativeUi=$_nativeUiEnabled');
+              'nativeUi=$_nativeUiEnabled',
+          sync: true);
       if (nativeSurface && !player.usesNativeSurface) {
         LogService().log('mpv',
-            '输出路径不一致: 请求 Surface，原生实际 Texture(textureId=${player.textureId})');
+            '输出路径不一致: 请求 Surface，原生实际 Texture(textureId=${player.textureId})',
+            sync: true);
       }
       // 原生 UI 启用：立即打开宿主窗口（幂等），Flutter 视频/控件层
       // 随 nativeUiActive 翻转隐藏（计划书 §7.3）。
@@ -826,7 +828,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     LogService().log(
         'mpv',
         'prepare: hwdec=$effectiveHwdec (requested=$_hwdec) '
-            'url=${(_uri ?? '').length}字符');
+            'url=${(_uri ?? '').length}字符',
+        sync: true);
 
     // 起播恒以暂停态打开：由上层 state setter 决定何时出声，
     // 避免页面未挂载/未就绪时先出声音（与 mdk 的 prepare 语义一致）。
@@ -931,6 +934,8 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
               'hwdec=${_hwdecActual ?? "-"} '
               'surface=${_surfaceAttached ? "att" : "no"} '
               'pos=${_positionMs}ms',
+          // 黑屏定性快照必须落盘：闪退/强杀时这是最后的呈现状态证据。
+          sync: true,
         );
       }
     }
@@ -2253,6 +2258,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
     // → `prepare()` 不调用 → `_nativeUiEnabled` 从未计算过。此时按设置
     // 预判（`prefersNativeRoomUi` 是纯计算、不建会话）补算一次。
     if (!_nativeUiEnabled) {
+      // 694 诊断：不打开原生 UI 的现场（黑屏排查「TV 原生 UI 为何没接管」）。
+      LogService().log(
+          'mpv',
+          '[native-ui] 补算分支: platform=${MpvSessionPlatform.nativeUiPlatformName} '
+          'settingEnabled=$_nativeUiSettingEnabled '
+          'prefersNativeRoomUi=$prefersNativeRoomUi',
+          sync: true);
       // 【614 真机回归：安卓画面拉伸 / 视频贴左上角】613 在这里补算并
       // **写回** `_nativeUiEnabled`，导致安卓非房间播放也打开原生窗口，
       // 而安卓 surface 尺寸与窗口尺寸不同步（`window.setLayout` 用
@@ -2294,11 +2306,13 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         initial: _buildNativePlayerState(),
         commandStream: MpvSessionPlatform.nativeUiCommandStream(),
       );
+      LogService().log('mpv', '[native-ui] 宿主已打开 platform=$platform',
+          sync: true);
       // 事件可能丢（宿主销毁不发回调 / 事件早于监听）：主动按
       // getCurrentSurface 轮询重同步，确保 mpv 绑在原生宿主的 surface 上。
       await _player?.refreshSurface();
     } catch (e) {
-      LogService().log('mpv', '原生 UI 打开失败: $e');
+      LogService().log('mpv', '原生 UI 打开失败: $e', sync: true);
       _nativeUiController = null;
       nativeUiActive.value = false;
       _player?.setNativeUiActive(false);

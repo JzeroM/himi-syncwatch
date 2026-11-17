@@ -41,7 +41,8 @@ void main() {
     test('614：补算只在鸿蒙生效、且不写回 _nativeUiEnabled', () {
       final idx = adapter.indexOf('Future<void> _openNativeUiIfNeeded({');
       expect(idx, greaterThan(0));
-      final body = adapter.substring(idx, idx + 900);
+      // 694：函数头部加入诊断日志（[native-ui] 补算分支），窗口放宽到 1400。
+      final body = adapter.substring(idx, idx + 1400);
       // 614 起安卓回退：补算有 isOhos 守卫。
       expect(body, contains('if (!MpvSessionPlatform.isOhos) return;'));
       // 不写回字段（避免跨会话残留）。

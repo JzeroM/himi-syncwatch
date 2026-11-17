@@ -189,7 +189,17 @@ void main() {
             return !t.startsWith('//') && !t.startsWith('*');
           })
           .join('\n');
-      expect(code, isNot(contains('writeAsStringSync')));
+      expect(code, isNot(contains('fsync')));
+      expect(code, contains('void flushSync()'));
+      // 694：同步写只许在显式 flushSync（低频取证）且不带 fsync——
+      // 进程崩溃只需 write() 落内核缓存，fsync 是 643 卡死元凶。
+      final syncLines =
+          code.split('\n').where((l) => l.contains('writeAsStringSync'));
+      expect(syncLines, isNotEmpty, reason: 'flushSync 取证用同步写应存在');
+      for (final l in syncLines) {
+        expect(l, isNot(contains('flush: true')),
+            reason: '同步 fsync 是 643 卡死元凶');
+      }
       expect(code, contains('_runtimeBuffer.add(entry)'));
       expect(code, contains('_runtimeFlushing'));
       expect(code, contains('Future<void>.delayed'));
