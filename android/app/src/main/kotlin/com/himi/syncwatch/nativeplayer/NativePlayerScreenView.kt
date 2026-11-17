@@ -392,7 +392,10 @@ class NativePlayerScreenView(
         // 跨界 hop 两端（Flutter hopRight/hopLeft）：左组尾 = 传输组末项
         //（nextButton，无下一集时是空占位仍可聚焦）；右组头 = trailing 首项。
         leftTailProvider = { nextButton },
-        rightHeadProvider = { danmakuButton },
+        // 694：trailing 头随跳过胶囊插队变化（TV 时跳过在 trailing 首位）。
+        rightHeadProvider = {
+            if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton
+        },
         controlsVisibleProvider = { controlsVisible },
         onSeekRelative = { deltaMs ->
             listener?.onSeekRelative(deltaMs)
@@ -1377,7 +1380,11 @@ class NativePlayerScreenView(
         decodeChip.isClickable = true
         decodeChip.minimumHeight = dp(32)
         decodeChip.setOnClickListener { cycleDecodeMode() }
-        topTail.addView(decodeChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+        // 694 布局对齐：TV 的解码/内核胶囊在**底栏**（Flutter TV 同款序：
+        // 弹幕 → 解码 → 内核 → 画质…），手机挂顶栏尾簇。
+        if (!lastState.tvMode) {
+            topTail.addView(decodeChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+        }
 
         // 内核胶囊（显示短名，点击打开右侧内核面板）
         kernelChip.setTextColor(Color.WHITE)
@@ -1391,7 +1398,9 @@ class NativePlayerScreenView(
         // 与图标胶囊同高（32dp）：内容不同的芯片各自成高 → 高低不齐。
         kernelChip.minimumHeight = dp(32)
         kernelChip.setOnClickListener { openPanel(PANEL_KERNEL) }
-        topTail.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+        if (!lastState.tvMode) {
+            topTail.addView(kernelChip, llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), 8))
+        }
 
         // 字幕样式胶囊（tune 图标，点击打开右侧显示调节面板）
         configureIconChip(subtitleStyleChip, NativePlayerIcons.ICON_TUNE)
@@ -1552,6 +1561,9 @@ class NativePlayerScreenView(
             speedChip, kernelChip, subtitleStyleChip, decodeChip,
             videoFitIcon, rotateIcon, prevButton, playPauseButton, nextButton,
             lockButton, bottomSpeedChip, panelToggleButton,
+            // 694：跳过片头/片尾胶囊必须可聚焦（Flutter 有 _skipPromptFocusNode，
+            // 此前漏掉 → TV 遥控选不中跳过，感知为「TV 没有片头片尾功能」）。
+            skipPromptChip,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
         focusables.forEach { makeFocusable(it) }
     }
@@ -1722,7 +1734,26 @@ class NativePlayerScreenView(
             // 不再直接 toggle；开关能力全在弹窗内。
             openPanel(PANEL_DANMAKU)
         }
+        // 694 布局对齐 Flutter TV：跳过胶囊是 trailing 首位（弹幕前）；
+        // 手机仍挂 leadingSlot（见下）。
+        if (lastState.tvMode) {
+            trailingGroup.addView(
+                skipPromptChip,
+                llp(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
         trailingGroup.addView(danmakuButton, llp(dp(32), dp(32)))
+        // 694 布局对齐 Flutter TV：解码 → 内核 跟在弹幕后（手机挂顶栏尾簇）。
+        if (lastState.tvMode) {
+            trailingGroup.addView(
+                decodeChip,
+                llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), NPTheme.CONTROL_GAP),
+            )
+            trailingGroup.addView(
+                kernelChip,
+                llp(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34), NPTheme.CONTROL_GAP),
+            )
+        }
         versionButton = badgeButton(
             NativePlayerIcons.ICON_HIGH_QUALITY,
             { badgeText(lastState.versions.size) },
@@ -1799,14 +1830,17 @@ class NativePlayerScreenView(
         leadingSlot.addView(leadingGroup)
         leadingGroup.layoutParams = LinearLayout.LayoutParams(dp(NPTheme.TIME_CELL), dp(44))
         // 跳过胶囊挂在锁钮列后（同鸿蒙 leading 槽顺序）。
-        leadingSlot.addView(
-            skipPromptChip,
-            llp(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                8,
-            ),
-        )
+        // 694：TV 改挂 trailingGroup 首位（对齐 Flutter TV 序），仅手机留此。
+        if (!lastState.tvMode) {
+            leadingSlot.addView(
+                skipPromptChip,
+                llp(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    8,
+                ),
+            )
+        }
         leadingSlot.layoutParams = LinearLayout.LayoutParams(
             0,
             dp(NPTheme.TRANSPORT_PLAY),
@@ -1833,9 +1867,25 @@ class NativePlayerScreenView(
             1f,
         )
 
-        buttonRow.addView(leadingSlot)
-        buttonRow.addView(transportGroup)
-        buttonRow.addView(trailingBox)
+        // 694 布局对齐 Flutter PlayerBottomRow：TV(centered=false) = 传输组
+        // 置左 + trailing 贴右、中间留白；手机(centered=true) = 锁列权重槽 |
+        // 传输组居中 | trailing 权重槽（等宽 → 传输组精确居中）。
+        if (lastState.tvMode) {
+            trailingBox.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(NPTheme.TRANSPORT_PLAY),
+            )
+            buttonRow.addView(transportGroup)
+            buttonRow.addView(
+                View(context),
+                LinearLayout.LayoutParams(0, 1, 1f),
+            )
+            buttonRow.addView(trailingBox)
+        } else {
+            buttonRow.addView(leadingSlot)
+            buttonRow.addView(transportGroup)
+            buttonRow.addView(trailingBox)
+        }
         // 控件行与进度条行间距 8（Flutter SizedBox(height: 8)）。
         bottomBar.addView(
             buttonRow,
@@ -2288,10 +2338,19 @@ class NativePlayerScreenView(
 
     /** 打开面板（同类型再点为切换关闭）。 */
     private fun openPanel(panel: String) {
-        activePanel = if (activePanel == panel) null else panel
+        val closing = activePanel == panel
+        activePanel = if (closing) null else panel
         listener?.onOpenPanel(panel)
         renderOverlays()
         scheduleAutoHide()
+        // 694 遥控对齐（Flutter：OK 开面板 → 焦点给面板首项；关闭 →
+        // 焦点归还给打开面板的控件）。切换面板时保留最初焦点源。
+        if (closing) {
+            restoreFocusAfterPanel()
+        } else {
+            focusBeforePanel = focusBeforePanel ?: findFocus()
+            panelContainer.post { firstFocusableIn(panelContainer)?.requestFocus() }
+        }
     }
 
     /** 关闭面板。 */
@@ -2303,6 +2362,31 @@ class NativePlayerScreenView(
         NativeLogoLoader.cancelPending()
         listener?.onClosePanel()
         renderOverlays()
+        restoreFocusAfterPanel()
+    }
+
+    /** 694：面板打开前的焦点源（关闭后归还，对齐 Flutter _closeSelectorPanel）。 */
+    private var focusBeforePanel: View? = null
+
+    private fun restoreFocusAfterPanel() {
+        val target = focusBeforePanel
+        focusBeforePanel = null
+        if (target != null && target.isAttachedToWindow && target.visibility == VISIBLE) {
+            target.requestFocus()
+        }
+    }
+
+    /** 面板容器内首个可聚焦子视图（深度优先）。 */
+    private fun firstFocusableIn(root: android.view.ViewGroup): View? {
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            if (child.visibility != VISIBLE) continue
+            if (child.isFocusable) return child
+            if (child is android.view.ViewGroup) {
+                firstFocusableIn(child)?.let { return it }
+            }
+        }
+        return null
     }
 
     /**
@@ -2488,6 +2572,8 @@ class NativePlayerScreenView(
             setPadding(dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V), dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V))
             isClickable = true
             setOnClickListener { onTap() }
+            // 694 遥控对齐：面板行可聚焦（D-pad 可达、OK 触发，同 Flutter）。
+            makeFocusable(this)
             addView(
                 TextView(context).apply {
                     text = label
@@ -2850,6 +2936,8 @@ class NativePlayerScreenView(
             setPadding(dp(NPTheme.PANEL_PAD_H), dp(8), dp(NPTheme.PANEL_PAD_H), dp(8))
             isClickable = true
             setOnClickListener { listener?.onBindDanmaku(hit.episodeId) }
+            // 694 遥控对齐：搜索结果行可聚焦（D-pad 可达、OK 绑定）。
+            makeFocusable(this)
             addView(
                 TextView(context).apply {
                     text = if (hit.animeTitle.isEmpty()) {
@@ -3100,6 +3188,29 @@ class NativePlayerScreenView(
             valueText,
             LinearLayout.LayoutParams(dp(NPTheme.ADJUST_VALUE_WIDTH), LinearLayout.LayoutParams.WRAP_CONTENT),
         )
+        // 694 遥控对齐：滑杆行可聚焦，左右键步进（对齐 Flutter Slider 聚焦
+        // 后方向键调节；OK 不拦截）。
+        makeFocusable(row)
+        row.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_UP) {
+                return@setOnKeyListener keyCode == KeyEvent.KEYCODE_DPAD_LEFT ||
+                    keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+            }
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            val direction = when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> -1.0
+                KeyEvent.KEYCODE_DPAD_RIGHT -> 1.0
+                else -> return@setOnKeyListener false
+            }
+            val next = (bar.value + direction * step)
+                .coerceIn(rangeMin, rangeMax)
+                .toFloat()
+            bar.value = next
+            valueText.text = format(next.toDouble())
+            onChange(next.toDouble())
+            scheduleAutoHide()
+            true
+        }
         return row
     }
 
@@ -3202,6 +3313,8 @@ class NativePlayerScreenView(
             setPadding(dp(12), dp(10), dp(12), dp(10))
             isClickable = true
             setOnClickListener { onTap() }
+            // 694 遥控对齐：面板行可聚焦（D-pad 可达、OK 触发，同 Flutter）。
+            makeFocusable(this)
             if (selected) setBackgroundColor(NPTheme.SEL_BG)
             // 每行底边通栏分隔线：用行容器的前景 drawable 画，不额外插 View
             //（插 View 会让行高多 1px，与 Flutter 的 border 内描边不同）。
@@ -3433,6 +3546,8 @@ class NativePlayerScreenView(
             setPadding(dp(12), dp(6), dp(12), dp(6))
             isClickable = true
             setOnClickListener { onTap() }
+            // 694 遥控对齐：面板行可聚焦（D-pad 可达、OK 触发，同 Flutter）。
+            makeFocusable(this)
         }
 
     private fun segmentRow(codePoint: Int, title: String, hint: String, onTap: () -> Unit): LinearLayout =
@@ -3442,6 +3557,8 @@ class NativePlayerScreenView(
             setPadding(dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V), dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V))
             isClickable = true
             setOnClickListener { onTap() }
+            // 694 遥控对齐：面板行可聚焦（D-pad 可达、OK 触发，同 Flutter）。
+            makeFocusable(this)
             addView(
                 TextView(context).apply {
                     text = String(Character.toChars(codePoint))
@@ -4425,8 +4542,12 @@ class NativePlayerScreenView(
         // 顶栏可见项
         speedChip.visibility = if (!tv && !state.isRoom) VISIBLE else GONE
         subtitleStyleChip.visibility = if (!tv) VISIBLE else GONE
-        // 解码：Erika 无解码档位 → 隐藏（对齐 Flutter showDecodeButton && !erika）。
-        decodeChip.visibility = if (!tv && state.engineLabel != "Erika") VISIBLE else GONE
+        // 解码：694 布局对齐——TV 恒显（底栏，Erika 也走 SW/HW 两档循环，
+        // 对齐 Flutter TV `if (tvMode)`）；手机维持顶栏「非 Erika 才显」。
+        decodeChip.visibility = if (tv || state.engineLabel != "Erika") VISIBLE else GONE
+        // 内核：694 对齐 Flutter isSingleEngine 隐藏（单引擎平台不显示，
+        // 安卓 TV 三引擎恒显）；文案随 engineLabel 联动（见 applyState 上文）。
+        kernelChip.visibility = if (state.engineOptions.size > 1) VISIBLE else GONE
         // 画面比例：Erika 缩放不可用、房间不显示（对齐 Flutter 判定）。
         videoFitIcon.visibility =
             if (!tv && !state.isRoom && state.engineLabel != "Erika") VISIBLE else GONE

@@ -621,9 +621,31 @@ class NipaMdkAdapter extends AbstractPlayer
     await _statusCtrl.close();
     await _eventCtrl.close();
     await _mediaStatusSubscription?.cancel();
-    LogService().log('Player', 'mdk teardown: begin');
-    await Future<void>.sync(_mdkPlayer.dispose);
-    LogService().log('Player', 'mdk teardown: complete');
+    LogService().log('Player', 'mdk teardown: begin', sync: true);
+    // 694 真机回归（MDK 释放必闪退，3/3 现场钉死在 disposeAsync 完成后）：
+    // fvp 的 dispose() 是 fire-and-forget 的 mdkPlayerAPI_delete（另一线程、
+    // 无完成信号），裸删撞上仍在收尾的原生资源（纹理/AudioTrack/渲染线程）
+    // → 必 SIGSEGV。照搬 MdkPlayerAdapter._disposeImpl 的确定性顺序
+    //（该实现只被静态引用、从未跑过）：显式 stop → 确定性释放纹理 →
+    // delete → settle。每步落盘：仍崩可直接分辨崩在哪一步。
+    try {
+      _mdkPlayer.state = mdk.PlaybackState.stopped;
+    } catch (_) {}
+    LogService().log('Player', 'mdk teardown: stop', sync: true);
+    try {
+      await _mdkPlayer
+          .updateTexture(width: -1)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    LogService().log('Player', 'mdk teardown: texture released', sync: true);
+    try {
+      await Future<void>.sync(_mdkPlayer.dispose);
+    } catch (_) {}
+    LogService().log('Player', 'mdk teardown: complete', sync: true);
+    // mdkPlayerAPI_delete 无 Future 可等：settle 等原生资源落定后再允许
+    // 新引擎创建/视图卸载（否则仍会撞上删除进行中的收尾）。
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    LogService().log('Player', 'mdk teardown: settled', sync: true);
   }
 
   @override

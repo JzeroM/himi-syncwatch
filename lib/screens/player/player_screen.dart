@@ -12295,14 +12295,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   // _closeSelectorPanel 把焦点还给本按钮。
                   // 681：TV 保留三引擎才显示；单引擎平台（鸿蒙/Windows/iOS）
                   // 即使在 TV 模式下也不显示。
+                  // 694：引擎胶囊改**纯文字**（MDK/Erika/MPV），样式同解码
+                  // 胶囊；点击打开引擎面板选择（不循环）。切换引擎后文案
+                  // 随 _currentEngine 联动更新。
                   if (tvMode &&
                       !_switchingKernel &&
                       !PlayerEngineFactory.isSingleEngine(tvMode: true)) ...[
-                    _buildControlButton(
-                      icon: Icons.memory,
+                    TvFocusable(
+                      key: const ValueKey('playerKernelTextChip'),
+                      radius: 10,
                       focusNode: _kernelButtonFocusNode,
                       onTap: _toggleKernelMenu,
-                      badge: _currentEngine.shortLabel,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _showKernelMenu
+                              ? Colors.white.withValues(alpha: 0.30)
+                              : Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _currentEngine.shortLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 20),
                   ],

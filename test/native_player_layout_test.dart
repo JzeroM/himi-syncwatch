@@ -157,8 +157,9 @@ void main() {
     test('解码按钮：非 TV 顶栏 / TV 底栏（694 移到播放器胶囊）', () {
       expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
       expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
-      // 双端原生都按 `!tv` 实现。
-      expect(kotlinScreen, contains('decodeChip.visibility = if (!tv'));
+      // 694：TV 胶囊恒显（底栏，Erika 两档循环）；手机顶栏非 Erika 才显。
+      expect(kotlinScreen,
+          contains('decodeChip.visibility = if (tv || state.engineLabel != "Erika")'));
       expect(ohosView, contains('if (!this.state().tvMode)'));
     });
 
@@ -1489,7 +1490,11 @@ void main() {
       expect(kotlinRouter, contains('rightHeadProvider'));
       expect(kotlinRouter, contains('requestFocus()'));
       expect(kotlinScreen, contains('leftTailProvider = { nextButton }'));
-      expect(kotlinScreen, contains('rightHeadProvider = { danmakuButton }'));
+      // 694：trailing 头随跳过胶囊插队变化（TV 时跳过在 trailing 首位）。
+      expect(
+          kotlinScreen,
+          contains(
+              'if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton'));
     });
 
     test('横拖松手提交 seek（累加器路径，防慢速拖动不生效）', () {
@@ -2301,6 +2306,118 @@ void main() {
           extractFun(kotlinScreen694, 'private fun configureBottomBar()');
       expect(body, contains('clearBarContainers()'),
           reason: '底栏重排同走幂等清理（防同款二次挂载）');
+    });
+  });
+
+  group('真机回归 694（TV 布局/遥控对齐 Flutter TV）', () {
+    final kotlin694 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+
+    String extractFun(String src, String signature) {
+      final start = src.indexOf(signature);
+      expect(start, greaterThanOrEqualTo(0), reason: '未找到 $signature');
+      var i = src.indexOf('(', start);
+      var paren = 0;
+      for (; i < src.length; i++) {
+        if (src[i] == '(') paren++;
+        if (src[i] == ')') {
+          paren--;
+          if (paren == 0) break;
+        }
+      }
+      var depth = 0;
+      var started = false;
+      for (; i < src.length; i++) {
+        if (src[i] == '{') {
+          depth++;
+          started = true;
+        } else if (src[i] == '}') {
+          depth--;
+          if (started && depth == 0) {
+            return src
+                .substring(start, i + 1)
+                .split('\n')
+                .where((l) => !l.trimLeft().startsWith('//'))
+                .join('\n');
+          }
+        }
+      }
+      return src.substring(start);
+    }
+
+    test('底栏 trailing 顺序：跳过 → 弹幕 → 解码 → 内核 → 画质（TV）', () {
+      final body = extractFun(kotlin694, 'private fun configureBottomBar()');
+      final skipIdx = body.indexOf('skipPromptChip,');
+      final danmakuIdx = body.indexOf('trailingGroup.addView(danmakuButton');
+      final decodeIdx = body.indexOf('decodeChip,');
+      final kernelIdx = body.indexOf('kernelChip,');
+      final versionIdx = body.indexOf('trailingGroup.addView(versionButton');
+      final seq = [skipIdx, danmakuIdx, decodeIdx, kernelIdx, versionIdx];
+      for (final i in seq) {
+        expect(i, greaterThanOrEqualTo(0), reason: 'trailingGroup 必须含跳过/弹幕/解码/内核/画质');
+      }
+      // 顺序：跳过 < 弹幕 < 解码 < 内核 < 画质（对齐 Flutter TV trailing 序）。
+      for (var k = 0; k + 1 < seq.length; k++) {
+        expect(seq[k], lessThan(seq[k + 1]),
+            reason: 'trailingGroup 顺序须为 跳过→弹幕→解码→内核→画质');
+      }
+    });
+
+    test('TV 行结构：传输组置左 + trailing 贴右（centered:false 语义）', () {
+      final body = extractFun(kotlin694, 'private fun configureBottomBar()');
+      expect(body, contains('if (lastState.tvMode)'),
+          reason: 'TV/手机行结构必须分支');
+      expect(body, contains('LinearLayout.LayoutParams(0, 1, 1f)'),
+          reason: 'TV 中间 Spacer 权重槽（传输组置左）');
+    });
+
+    test('顶栏不再挂 TV 的解码/内核胶囊（手机才进 topTail）', () {
+      final body = extractFun(kotlin694, 'private fun configureTopBar()');
+      for (final chip in ['decodeChip', 'kernelChip']) {
+        final addIdx = body.indexOf('topTail.addView($chip');
+        expect(addIdx, greaterThanOrEqualTo(0), reason: '手机仍挂 topTail');
+        // 最近的前置条件必须是 !tvMode 门控。
+        final before = body.substring(0, addIdx);
+        expect(before, contains('if (!lastState.tvMode)'),
+            reason: '$chip 的 topTail 挂载必须有 !tvMode 门控');
+      }
+    });
+
+    test('可见性对齐：解码 TV 恒显 / 内核 engineOptions 单引擎隐', () {
+      expect(kotlin694, contains('if (tv || state.engineLabel != "Erika") VISIBLE else GONE'));
+      expect(kotlin694, contains('kernelChip.visibility = if (state.engineOptions.size > 1) VISIBLE else GONE'));
+    });
+
+    test('遥控可达：skipPromptChip 入焦点链 + 面板行可聚焦', () {
+      final focusBody = extractFun(kotlin694, 'private fun applyFocusability()');
+      expect(focusBody, contains('skipPromptChip'),
+          reason: '跳过胶囊必须 D-pad 可达（Flutter _skipPromptFocusNode 对齐）');
+      // 面板行（optionRow/decodeOptionRow/segmentRow/danmakuResultRow）可聚焦。
+      final makeFocusableCount = 'makeFocusable(this)'.allMatches(kotlin694).length;
+      expect(makeFocusableCount, greaterThanOrEqualTo(5),
+          reason: '面板可选行 + 滑杆行都要 makeFocusable');
+    });
+
+    test('面板焦点交接：开面板焦点入首项、关闭归还原控件', () {
+      final open = extractFun(kotlin694, 'private fun openPanel(panel: String)');
+      expect(open, contains('firstFocusableIn'));
+      final close = extractFun(kotlin694, 'fun closePanel()');
+      expect(close, contains('restoreFocusAfterPanel()'));
+      expect(kotlin694, contains('private var focusBeforePanel: View?'));
+    });
+
+    test('解码/内核胶囊文案：SW/HW/HW+ 纯字母 + engineLabel 联动', () {
+      expect(kotlin694, contains('"sw" -> "SW"'));
+      expect(kotlin694, contains('"hwplus" -> "HW+"'));
+      expect(kotlin694, contains('kernelChip.text = state.engineLabel'),
+          reason: '切引擎后面板推送联动文案');
+    });
+
+    test('跨界 hop 目标随跳过胶囊插队更新', () {
+      expect(kotlin694,
+          contains('if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton'));
     });
   });
 }

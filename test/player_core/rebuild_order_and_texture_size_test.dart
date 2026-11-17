@@ -110,4 +110,35 @@ void main() {
       expect(body, contains("getProperty('height')"));
     });
   });
+
+  group('④ MDK 释放确定性 teardown（3/3 必闪退根因）', () {
+    final mdkAdapter = File('lib/player_core/adapters/nipa_mdk_adapter.dart')
+        .readAsStringSync();
+
+    test('teardown 步序：stop → 释放纹理 → delete → settle', () {
+      final stopIdx = mdkAdapter.indexOf('mdk teardown: stop');
+      final textureIdx = mdkAdapter.indexOf('mdk teardown: texture released');
+      final completeIdx = mdkAdapter.indexOf('mdk teardown: complete');
+      final settledIdx = mdkAdapter.indexOf('mdk teardown: settled');
+      expect(stopIdx, greaterThanOrEqualTo(0));
+      expect(textureIdx, greaterThan(stopIdx), reason: '先 stop 再释放纹理');
+      expect(completeIdx, greaterThan(textureIdx), reason: '释放纹理后才 delete');
+      expect(settledIdx, greaterThan(completeIdx), reason: 'delete 后 settle');
+    });
+
+    test('delete 前必须确定性释放纹理（updateTexture(-1)）', () {
+      expect(mdkAdapter, contains('updateTexture(width: -1)'),
+          reason:
+              'fvp dispose 是 fire-and-forget 的 mdkPlayerAPI_delete，裸删必崩；'
+              '必须先 await 释放纹理（MdkPlayerAdapter._disposeImpl 范式）');
+    });
+
+    test('Flutter TV 引擎胶囊为纯文字且切换联动', () {
+      expect(screen, contains("ValueKey('playerKernelTextChip')"));
+      expect(screen, contains('_currentEngine.shortLabel'),
+          reason: '切引擎后文案随 _currentEngine 联动');
+      expect(screen, isNot(contains('Icons.memory')),
+          reason: 'TV 引擎胶囊已改纯文字（MDK/Erika/MPV）');
+    });
+  });
 }
