@@ -9632,8 +9632,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
               : _playPauseFocusNode,
         ),
         child: Scaffold(
-          backgroundColor:
-              _usesMpvNativeSurface ? Colors.transparent : Colors.black,
+          // 694：不透明黑底。旧 transparent（Windows 649「详情页透出」语义）
+          // 在安卓原生接管瞬间/视频边距处透出下层详情页——「进播放器→跳
+          // 详情页→跳回播放器」闪烁与 TV 右侧透详情页的共同根因。Windows
+          // 走整页 SizedBox.shrink（背景无关），不受影响。
+          backgroundColor: Colors.black,
           // 视频手势（点屏/双击/拖动 seek/音量亮度）在 _buildVideoArea
           // 内只包视频层：若放 body 层做浮层/控制条的祖先，拖动起点在
           // 字幕/音轨/倍速面板内时祖先 drag recognizer 先进手势竞技场

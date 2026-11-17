@@ -1491,12 +1491,11 @@ void main() {
       expect(kotlinRouter, contains('leftTailProvider'));
       expect(kotlinRouter, contains('rightHeadProvider'));
       expect(kotlinRouter, contains('requestFocus()'));
-      expect(kotlinScreen, contains('leftTailProvider = { nextButton }'));
-      // 694：trailing 头随跳过胶囊插队变化（TV 时跳过在 trailing 首位）。
-      expect(
-          kotlinScreen,
-          contains(
-              'if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton'));
+      // 694：跳过片头/片尾归位到播放组右侧（Flutter leading 表语义）→
+      // 左组尾 = 跳过（可见时），右组头 = 弹幕。
+      expect(kotlinScreen, contains('leftTailProvider = {'));
+      expect(kotlinScreen, contains('else nextButton'));
+      expect(kotlinScreen, contains('rightHeadProvider = { danmakuButton }'));
     });
 
     test('横拖松手提交 seek（累加器路径，防慢速拖动不生效）', () {
@@ -2349,22 +2348,25 @@ void main() {
       return src.substring(start);
     }
 
-    test('底栏 trailing 顺序：跳过 → 弹幕 → 解码 → 内核 → 画质（TV）', () {
+    test('底栏 TV 行序：跳过紧挨播放组、trailing 弹幕→解码→内核→画质', () {
       final body = extractFun(kotlin694, 'private fun configureBottomBar()');
-      final skipIdx = body.indexOf('skipPromptChip,');
-      final danmakuIdx = body.indexOf('trailingGroup.addView(danmakuButton');
-      final decodeIdx = body.indexOf('decodeChip,');
-      final kernelIdx = body.indexOf('kernelChip,');
-      final versionIdx = body.indexOf('trailingGroup.addView(versionButton');
-      final seq = [skipIdx, danmakuIdx, decodeIdx, kernelIdx, versionIdx];
-      for (final i in seq) {
-        expect(i, greaterThanOrEqualTo(0), reason: 'trailingGroup 必须含跳过/弹幕/解码/内核/画质');
-      }
-      // 顺序：跳过 < 弹幕 < 解码 < 内核 < 画质（对齐 Flutter TV trailing 序）。
-      for (var k = 0; k + 1 < seq.length; k++) {
-        expect(seq[k], lessThan(seq[k + 1]),
-            reason: 'trailingGroup 顺序须为 跳过→弹幕→解码→内核→画质');
-      }
+      // TV 行组装序：传输组 → 跳过 → Spacer → trailingBox（有界距离=相邻，
+      // 对齐 Flutter leading 表语义：[transport][leading]…[trailing]）。
+      final tvRow = RegExp(
+        r'buttonRow\.addView\(transportGroup\)[\s\S]{0,600}?skipPromptChip,'
+        r'[\s\S]{0,600}?LinearLayout\.LayoutParams\(0, 1, 1f\)'
+        r'[\s\S]{0,300}?buttonRow\.addView\(trailingBox\)',
+      );
+      expect(tvRow.hasMatch(body), isTrue,
+          reason: 'TV 行组装序须为 传输组→跳过→Spacer→trailingBox');
+      // trailingGroup 构建序：弹幕 → 解码 → 内核 → 画质。
+      final trailing = RegExp(
+        r'trailingGroup\.addView\(danmakuButton[\s\S]{0,600}?decodeChip,'
+        r'[\s\S]{0,600}?kernelChip,'
+        r'[\s\S]{0,900}?trailingGroup\.addView\(versionButton',
+      );
+      expect(trailing.hasMatch(body), isTrue,
+          reason: 'trailing 构建序须为 弹幕→解码→内核→画质');
     });
 
     test('TV 行结构：传输组置左 + trailing 贴右（centered:false 语义）', () {
@@ -2403,11 +2405,19 @@ void main() {
     });
 
     test('面板焦点交接：开面板焦点入首项、关闭归还原控件', () {
-      final open = extractFun(kotlin694, 'private fun openPanel(panel: String)');
-      expect(open, contains('firstFocusableIn'));
-      final close = extractFun(kotlin694, 'fun closePanel()');
-      expect(close, contains('restoreFocusAfterPanel()'));
       expect(kotlin694, contains('private var focusBeforePanel: View?'));
+      // 694「打开面板有时有焦点有时没有」根因：renderOverlays 每次
+      // removeAllViews 重建拆掉刚聚焦的行；旧 post 异步聚焦与重建竞态。
+      // 现改为：重建前 rememberPanelFocus 记行索引，尾部 restorePanelFocus
+      // 同步恢复（索引优先、首项兜底）。
+      expect(kotlin694, contains('private fun restorePanelFocus()'));
+      expect(kotlin694, contains('private fun rememberPanelFocus('));
+      expect(kotlin694, contains('panelFocusRowIndex = 0'));
+      final render = extractFun(kotlin694, 'private fun renderOverlays()');
+      expect(render, contains('rememberPanelFocus(panelContainer)'));
+      expect(render, contains('restorePanelFocus()'));
+      final open = extractFun(kotlin694, 'private fun openPanel(panel: String)');
+      expect(open, contains('panelFocusRowIndex = 0'));
       // 694 真机回归（遥控看不到任何焦点）：焦点种子三处接线——
       // 控件重新显示 / 面板归还失败 / 窗口重新获焦（遥控唤醒）。
       // 窗口 show 早于首推，框架初始焦点在任何控件可聚焦前就已错过。
@@ -2452,9 +2462,39 @@ void main() {
           reason: '切引擎后面板推送联动文案');
     });
 
-    test('跨界 hop 目标随跳过胶囊插队更新', () {
-      expect(kotlin694,
-          contains('if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton'));
+    test('跨界 hop 两端：左组尾=跳过（可见时）、右组头=弹幕', () {
+      // 694：跳过片头/片尾归位到播放组右侧（Flutter leading 表语义）→
+      // 左组尾随之变为跳过；右组头回到弹幕。
+      expect(
+          kotlin694,
+          contains(
+              'if (lastState.tvMode && skipPromptChip.visibility == VISIBLE) skipPromptChip'));
+      expect(kotlin694, contains('rightHeadProvider = { danmakuButton }'));
+    });
+
+    test('显式焦点链 wireFocusChain：seekBar 入链 + 环无类型门槛', () {
+      // 694：几何搜索在 ScaleDownBox/权重空槽间不可靠（字幕/音轨/选集/倍速
+      // 到不了根因）→ 显式 nextFocus 链（对齐 Flutter hopLeft/hopRight）。
+      expect(kotlin694, contains('private fun wireFocusChain()'));
+      final applyState = extractFun(kotlin694, 'private fun applyState()');
+      expect(applyState, contains('wireFocusChain()'),
+          reason: '可见性更新后重接链（GONE 动态跳过）');
+      final focus = extractFun(kotlin694, 'private fun applyFocusability()');
+      expect(focus, contains('seekBar'),
+          reason: '进度条必须可聚焦（此前完全不在链上）');
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      expect(mk, isNot(contains('view is TextView || view is LinearLayout')),
+          reason: '环的类型门槛让 GlassSeekBarView 入链也不画环');
+    });
+
+    test('播放页背景不透明黑（进→详情→回 闪烁根因）', () {
+      // 694：旧 transparent（Windows 649 语义）在安卓原生接管瞬间/边距处
+      // 透出下层详情页。Windows 走整页 shrink，背景无关。
+      final screenSrc = File('lib/screens/player/player_screen.dart')
+          .readAsStringSync();
+      expect(screenSrc, contains('backgroundColor: Colors.black'));
+      expect(screenSrc,
+          isNot(contains('_usesMpvNativeSurface ? Colors.transparent')));
     });
   });
 }

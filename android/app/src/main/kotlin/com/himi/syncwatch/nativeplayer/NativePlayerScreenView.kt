@@ -393,11 +393,13 @@ class NativePlayerScreenView(
         playPauseProvider = { playPauseButton },
         // 跨界 hop 两端（Flutter hopRight/hopLeft）：左组尾 = 传输组末项
         //（nextButton，无下一集时是空占位仍可聚焦）；右组头 = trailing 首项。
-        leftTailProvider = { nextButton },
-        // 694：trailing 头随跳过胶囊插队变化（TV 时跳过在 trailing 首位）。
-        rightHeadProvider = {
-            if (skipPromptChip.visibility == VISIBLE) skipPromptChip else danmakuButton
+        // 694：左组尾 = 跳过片头/片尾（TV 时紧挨播放组，对齐 Flutter leading）；
+        // 右组头 = 弹幕。跨界 hop 两端（Flutter hopRight/hopLeft）。
+        leftTailProvider = {
+            if (lastState.tvMode && skipPromptChip.visibility == VISIBLE) skipPromptChip
+            else nextButton
         },
+        rightHeadProvider = { danmakuButton },
         controlsVisibleProvider = { controlsVisible },
         onSeekRelative = { deltaMs ->
             listener?.onSeekRelative(deltaMs)
@@ -1577,9 +1579,12 @@ class NativePlayerScreenView(
             speedChip, kernelChip, subtitleStyleChip, decodeChip,
             videoFitIcon, rotateIcon, prevButton, playPauseButton, nextButton,
             lockButton, bottomSpeedChip, panelToggleButton,
-            // 694：跳过片头/片尾胶囊必须可聚焦（Flutter 有 _skipPromptFocusNode，
-            // 此前漏掉 → TV 遥控选不中跳过，感知为「TV 没有片头片尾功能」）。
+            // 694：跳过片头/片尾胶囊必须可聚焦（Flutter _skipPromptFocusNode
+            // 对齐；此前漏掉 → TV 遥控选不中跳过）。
             skipPromptChip,
+            // 694：进度条必须可聚焦（此前完全不在链上 → 遥控到不了进度条）。
+            // 左右键快进退由 TvKeyRouter 特例接管（对齐 Flutter SeekBar 语义）。
+            seekBar,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
         focusables.forEach { makeFocusable(it) }
         // 694：可聚焦性就绪后**强制**聚焦播放/暂停键（Flutter hopLeft/hopRight
@@ -1603,6 +1608,33 @@ class NativePlayerScreenView(
         logSink("[focus] seed → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
     }
 
+    /**
+     * 694：显式焦点链（对齐 Flutter TV 导航模型——Flutter 用 hopLeft/hopRight
+     * + focusNode 显式管跳转；几何搜索在 ScaleDownBox/权重空槽间不可靠，是
+     * 「字幕/音轨/选集/倍速到不了」的根因）。按 Flutter 底栏序逐接
+     * nextFocusRight/Left（动态跳过 GONE），纵向行内 ↑ ↔ 进度条 ↓ ↔ 播放键。
+     * applyState 可见性更新后重接。
+     */
+    private fun wireFocusChain() {
+        if (!lastState.tvMode) return
+        val row = listOfNotNull(
+            prevButton, playPauseButton, nextButton,
+            skipPromptChip, danmakuButton, decodeChip, kernelChip,
+            versionButton, displayAdjustButton, subtitleButton, audioButton,
+            episodeButton, bottomSpeedChip, panelToggleButton,
+        ).filter { it.visibility == VISIBLE }
+        row.forEach { if (it.id == View.NO_ID) it.id = View.generateViewId() }
+        if (seekBar.id == View.NO_ID) seekBar.id = View.generateViewId()
+        for (i in row.indices) {
+            val cur = row[i]
+            cur.nextFocusLeftId = if (i > 0) row[i - 1].id else View.NO_ID
+            cur.nextFocusRightId = if (i < row.size - 1) row[i + 1].id else View.NO_ID
+            cur.nextFocusUpId = seekBar.id
+            if (cur !== playPauseButton) cur.nextFocusDownId = playPauseButton.id
+        }
+        seekBar.nextFocusDownId = playPauseButton.id
+    }
+
     /** 694：重建 bars 后强制聚焦播放键（无条件；带取证）。 */
     private fun forcePlayPauseFocus() {
         if (!lastState.tvMode || !controlsVisible) return
@@ -1623,25 +1655,24 @@ class NativePlayerScreenView(
     private fun makeFocusable(view: View) {
         view.isFocusable = true
         view.isFocusableInTouchMode = false
-        if (view is TextView || view is LinearLayout) {
-            val base = view.background
-            val baseForeground = view.foreground
-            fun ring(): GradientDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
-            }
-            view.setOnFocusChangeListener { v, hasFocus ->
-                // 694：环同时挂 background + foreground（真机「看不到任何
-                // 焦点」保险：个别控件的背景层会盖住 background 环；
-                // foreground 恒画在内容之上）。基线各自保存/恢复。
-                v.background = if (hasFocus) ring() else base
-                v.foreground = if (hasFocus) ring() else baseForeground
-                logSink("[focus] ${v.javaClass.simpleName}@${Integer.toHexString(v.hashCode())} → $hasFocus")
-                // 【不改几何】焦点只画环（照抄鸿蒙 BORDER_FOCUS）：旧实现
-                // scaleX/Y 1.1 会连带放大命中区 → 焦点态相邻控件误触。
-            }
+        // 694：环对任意 View 绘制（旧类型门槛让 GlassSeekBarView 入链也
+        // 不画环）。基线各自保存/恢复。
+        val base = view.background
+        val baseForeground = view.foreground
+        fun ring(): GradientDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
+        }
+        view.setOnFocusChangeListener { v, hasFocus ->
+            // 环同时挂 background + foreground（真机「看不到任何焦点」保险：
+            // 个别控件的背景层会盖住 background 环；foreground 恒在内容之上）。
+            v.background = if (hasFocus) ring() else base
+            v.foreground = if (hasFocus) ring() else baseForeground
+            logSink("[focus] ${v.javaClass.simpleName}@${Integer.toHexString(v.hashCode())} → $hasFocus")
+            // 【不改几何】焦点只画环（照抄鸿蒙 BORDER_FOCUS）：旧实现
+            // scaleX/Y 1.1 会连带放大命中区 → 焦点态相邻控件误触。
         }
     }
 
@@ -1788,14 +1819,6 @@ class NativePlayerScreenView(
             // 不再直接 toggle；开关能力全在弹窗内。
             openPanel(PANEL_DANMAKU)
         }
-        // 694 布局对齐 Flutter TV：跳过胶囊是 trailing 首位（弹幕前）；
-        // 手机仍挂 leadingSlot（见下）。
-        if (lastState.tvMode) {
-            trailingGroup.addView(
-                skipPromptChip,
-                llp(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
-        }
         trailingGroup.addView(danmakuButton, llp(dp(32), dp(32)))
         // 694 布局对齐 Flutter TV：解码 → 内核 跟在弹幕后（手机挂顶栏尾簇）。
         if (lastState.tvMode) {
@@ -1930,6 +1953,16 @@ class NativePlayerScreenView(
                 dp(NPTheme.TRANSPORT_PLAY),
             )
             buttonRow.addView(transportGroup)
+            // 694：跳过片头/片尾紧挨播放组右侧、留白之前（对齐 Flutter
+            // PlayerBottomRow 的 leading 表语义：[transport][leading]…[trailing]）。
+            buttonRow.addView(
+                skipPromptChip,
+                llp(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    8,
+                ),
+            )
             buttonRow.addView(
                 View(context),
                 LinearLayout.LayoutParams(0, 1, 1f),
@@ -2393,17 +2426,21 @@ class NativePlayerScreenView(
     /** 打开面板（同类型再点为切换关闭）。 */
     private fun openPanel(panel: String) {
         val closing = activePanel == panel
+        if (!closing) {
+            // 焦点源先捕获（renderOverlays 尾部会把焦点移进面板）。
+            focusBeforePanel = focusBeforePanel ?: findFocus()
+            panelFocusRowIndex = 0
+        }
         activePanel = if (closing) null else panel
         listener?.onOpenPanel(panel)
         renderOverlays()
         scheduleAutoHide()
         // 694 遥控对齐（Flutter：OK 开面板 → 焦点给面板首项；关闭 →
-        // 焦点归还给打开面板的控件）。切换面板时保留最初焦点源。
+        // 焦点归还给打开面板的控件）。开面板的聚焦由 renderOverlays 尾部
+        // restorePanelFocus **同步**完成（旧 post 异步与面板重建竞态 →
+        // 「打开面板有时有焦点有时没有」根因）。
         if (closing) {
             restoreFocusAfterPanel()
-        } else {
-            focusBeforePanel = focusBeforePanel ?: findFocus()
-            panelContainer.post { firstFocusableIn(panelContainer)?.requestFocus() }
         }
     }
 
@@ -2433,17 +2470,48 @@ class NativePlayerScreenView(
         seedTvFocusIfEmpty()
     }
 
-    /** 面板容器内首个可聚焦子视图（深度优先）。 */
-    private fun firstFocusableIn(root: android.view.ViewGroup): View? {
-        for (i in 0 until root.childCount) {
-            val child = root.getChildAt(i)
-            if (child.visibility != VISIBLE) continue
-            if (child.isFocusable) return child
-            if (child is android.view.ViewGroup) {
-                firstFocusableIn(child)?.let { return it }
+    /** 694：面板重建保焦——记录当前焦点行索引（重建后按序号恢复）。 */
+    private var panelFocusRowIndex = 0
+
+    /** 面板内可聚焦行（深度优先，跳过不可见）。 */
+    private fun focusableRowsOf(root: android.view.ViewGroup): List<View> {
+        val out = mutableListOf<View>()
+        fun walk(v: View) {
+            if (v.visibility != VISIBLE) return
+            if (v.isFocusable) {
+                out.add(v)
+                return
+            }
+            if (v is android.view.ViewGroup) {
+                for (i in 0 until v.childCount) walk(v.getChildAt(i))
             }
         }
-        return null
+        for (i in 0 until root.childCount) walk(root.getChildAt(i))
+        return out
+    }
+
+    private fun rememberPanelFocus(root: android.view.ViewGroup) {
+        val focusedInView = root.findFocus() ?: return
+        val idx = focusableRowsOf(root).indexOf(focusedInView)
+        if (idx >= 0) panelFocusRowIndex = idx
+    }
+
+    /**
+     * 694 面板焦点稳定（「打开面板有时有焦点有时没有」根因：renderOverlays
+     * 每次 removeAllViews 重建会拆掉刚聚焦的行）：重建/开面板后把焦点放回
+     * 记录的行索引（首项兜底）。同步调用，无 post 竞态。
+     */
+    private fun restorePanelFocus() {
+        val root = when {
+            activePanel != null -> panelContainer
+            segmentCardOpen -> segmentCard
+            else -> return
+        }
+        val rows = focusableRowsOf(root)
+        if (rows.isEmpty()) return
+        val target = rows.getOrElse(panelFocusRowIndex) { rows.first() }
+        val ok = target.requestFocus()
+        logSink("[focus] panel-restore idx=$panelFocusRowIndex/${rows.size} ok=$ok")
     }
 
     /**
@@ -2498,6 +2566,8 @@ class NativePlayerScreenView(
             } else {
                 panelScrim.visibility = VISIBLE
                 panelContainer.visibility = VISIBLE
+                // 694 面板重建保焦：重建前记录焦点行索引（重建后恢复）。
+                rememberPanelFocus(panelContainer)
                 panelContainer.removeAllViews()
                 // 选集面板全高贴边（Flutter fullBleed：top/bottom/right 0、右圆角放平）；
                 // 常规面板上下避让（top safe+48 / bottom 116+safe），**拉伸全高**
@@ -2569,11 +2639,14 @@ class NativePlayerScreenView(
         }
         // 片头片尾卡
         if (segmentCardOpen) {
+            rememberPanelFocus(segmentCard)
             renderSegmentCard()
         } else {
             segmentCard.visibility = GONE
             segmentScrim.visibility = GONE
         }
+        // 694：重建/开面板后焦点稳定落位（索引优先、首项兜底，同步调用）。
+        restorePanelFocus()
     }
 
     private fun panelTitle(panel: String): String = when (panel) {
@@ -4589,6 +4662,8 @@ class NativePlayerScreenView(
                 renderOverlays()
             }
         }
+        // 694：可见性更新后重接显式焦点链（GONE 项动态跳过）。
+        wireFocusChain()
     }
 
     /** 面板内容签名（见 applyState：仅签名变化才重建面板）。 */
