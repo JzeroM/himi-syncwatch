@@ -10692,6 +10692,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         setState(() => _switchingKernel = false);
         _syncPlayState();
         _syncNativePanelData();
+        // 694：TV 遥控——切完内核焦点回内核按钮（对齐「面板关了焦点归还
+        // 本按钮」语义；切换期间内核按钮隐藏会把焦点丢掉，真机
+        // 「MPV→MDK 后焦点消失」根因）。
+        if (ref.read(settingsProvider).tvMode) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _kernelButtonFocusNode.requestFocus();
+          });
+        }
         // 【613】切内核后重新判定房间 UI 层：原生内核 → 打开原生窗口；
         // 非原生内核 → 关闭原生窗口、交回 Flutter 层。
         // 旧实现只在 `prepare()` 里打开，切到非原生内核时不会关闭，

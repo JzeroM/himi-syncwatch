@@ -2487,6 +2487,47 @@ void main() {
           reason: '环的类型门槛让 GlassSeekBarView 入链也不画环');
     });
 
+    test('焦点自愈：isShown 门 + applyState 全路径恢复', () {
+      final seed = extractFun(kotlin694, 'private fun seedTvFocusIfEmpty()');
+      expect(seed, contains('cur.isShown'),
+          reason: '不可见残留焦点不得当「已持焦」（隐藏→再现不回来的根因）');
+      expect(kotlin694, contains('private fun healTvFocus()'));
+      final applyState = extractFun(kotlin694, 'private fun applyState()');
+      expect(applyState, contains('healTvFocus()'),
+          reason: '每个状态推送自愈（点跳过/设标记/隐藏再现/切引擎全覆盖）');
+    });
+
+    test('badgeButton host 点击转发（字幕/音轨/选集 OK 点不开面板根因）', () {
+      final badge = extractFun(kotlin694, 'private fun badgeButton(');
+      expect(badge, contains('setOnClickListener { onClick() }'),
+          reason: 'host 必须热——D-pad OK 落在可聚焦 host 上');
+    });
+
+    test('返回键双保险：Dialog 禁默认取消 + 视图层吞 BACK/ESC', () {
+      final hostSrc = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerHost.kt',
+      ).readAsStringSync();
+      expect(hostSrc, contains('ctrlDlg.setCancelable(false)'),
+          reason: '默认取消会 dismiss→close 整个原生 UI（黑屏根因）');
+      final dispatch = extractFun(kotlin694, 'override fun dispatchKeyEvent(event: KeyEvent)');
+      expect(dispatch, contains('KEYCODE_BACK'));
+      expect(dispatch, contains('handleBack()'),
+          reason: 'UP 走三层语义：关面板→隐控件→退出');
+    });
+
+    test('面板模态焦点约束（对齐 Flutter FocusScope）', () {
+      final dispatch = extractFun(kotlin694, 'override fun dispatchKeyEvent(event: KeyEvent)');
+      expect(dispatch, contains('focusableRowsOf(modalRoot)'),
+          reason: '面板开着方向键只在面板内遍历，不外逃');
+    });
+
+    test('Flutter 切内核后焦点回内核按钮（TV）', () {
+      final screenSrc = File('lib/screens/player/player_screen.dart')
+          .readAsStringSync();
+      expect(screenSrc, contains('_kernelButtonFocusNode.requestFocus()'));
+    });
+
     test('播放页背景不透明黑（进→详情→回 闪烁根因）', () {
       // 694：旧 transparent（Windows 649 语义）在安卓原生接管瞬间/边距处
       // 透出下层详情页。Windows 走整页 shrink，背景无关。

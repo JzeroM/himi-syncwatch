@@ -407,7 +407,10 @@ class AndroidNativePlayerHost(
         ctrlDlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
         ctrlDlg.setContentView(controls)
         ctrlDlg.setCanceledOnTouchOutside(false)
-        ctrlDlg.setCancelable(true)
+        // 694：禁止 BACK 默认取消（dismiss→close 会把整个原生 UI 关掉露出
+        // 黑底播放页，真机「面板开着按返回跳黑屏」根因）。返回语义统一走
+        // 视图层 handleBack 三层（关面板 → 隐控件 → 退出）。
+        ctrlDlg.setCancelable(false)
         ctrlDlg.setOnDismissListener { close() }
         ctrlDlg.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {

@@ -429,6 +429,46 @@ class NativePlayerScreenView(
         if (event.action == KeyEvent.ACTION_DOWN) {
             logSink("[key] code=${event.keyCode} repeat=${event.repeatCount} focus=${findFocus()?.javaClass?.simpleName}")
         }
+        // 694：返回键双保险——DOWN/UP 都吞掉，UP 走 handleBack 三层语义
+        //（关面板/片尾卡 → 隐控件 → 退出）。防 Dialog 默认取消路径
+        //（旧 setCancelable(true) + dismiss→close 把整个原生 UI 关掉露出
+        // 黑底，真机「面板开着按返回跳黑屏」根因）。
+        if (event.keyCode == KeyEvent.KEYCODE_BACK ||
+            event.keyCode == KeyEvent.KEYCODE_ESCAPE
+        ) {
+            if (event.action == KeyEvent.ACTION_UP) handleBack()
+            return true
+        }
+        // 694：面板模态焦点约束（对齐 Flutter FocusScope）——面板/标记卡
+        // 开着时方向键只在面板内遍历，不外逃到底栏/进度条。
+        val modalRoot: android.view.ViewGroup? = when {
+            segmentCardOpen -> segmentCard
+            activePanel != null -> panelContainer
+            else -> null
+        }
+        if (modalRoot != null && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    val rows = focusableRowsOf(modalRoot)
+                    val cur = rows.indexOfFirst { it.hasFocus() }
+                    if (cur >= 0) {
+                        val step = if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
+                        rows.getOrNull(cur + step)?.requestFocus()
+                    }
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    // 先给焦点行自己处理（滑杆步进），否则消化防外逃。
+                    val focused = modalRoot.findFocus()
+                    if (focused != null && focused !== modalRoot &&
+                        focused.dispatchKeyEvent(event)
+                    ) {
+                        return true
+                    }
+                    return true
+                }
+            }
+        }
         if (lastState.tvMode && tvKeyRouter.handleKey(event.keyCode, event)) {
             return true
         }
@@ -1600,12 +1640,33 @@ class NativePlayerScreenView(
     private fun seedTvFocusIfEmpty() {
         if (!lastState.tvMode || !controlsVisible) return
         val cur = findFocus()
-        if (cur != null && cur !== this) {
+        // 694：「已持焦」必须是**可见**焦点——栏隐藏后 findFocus() 可能返回
+        // GONE 视图/容器的残留焦点（隐藏→再现后焦点永不回来的根因）。
+        if (cur != null && cur !== this && cur.isShown) {
             logSink("[focus] seed-skip 持焦=${cur.javaClass.simpleName}")
             return
         }
         val ok = playPauseButton.requestFocus()
         logSink("[focus] seed → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
+    }
+
+    /**
+     * 694 焦点自愈（每个状态推送 ~200ms 一次）：面板开着 → 焦点回面板行
+     * （保焦）；否则无可见焦点 → 种到播放键。覆盖一切丢焦路径——点跳过后
+     * 跳过胶囊 GONE、设置片头片尾后标记卡关闭、引擎切换重建、控件自动隐藏
+     * 再现等（真机逐场景反馈）。
+     */
+    private fun healTvFocus() {
+        if (!lastState.tvMode || !controlsVisible) return
+        if (activePanel != null || segmentCardOpen) {
+            restorePanelFocus()
+            return
+        }
+        val cur = findFocus()
+        if (cur == null || cur === this || !cur.isShown) {
+            val ok = playPauseButton.requestFocus()
+            logSink("[focus] heal → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
+        }
     }
 
     /**
@@ -2031,6 +2092,11 @@ class NativePlayerScreenView(
         val host = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
+            // 694：host 也热——OK/点击落在 host（角标区）时转发给 onClick
+            //（真机「字幕/音轨/选集 OK 点不开面板」根因：listener 只挂在
+            // 内层 icon，而 D-pad OK 作用在可聚焦的 host 上）。
+            isClickable = true
+            setOnClickListener { onClick() }
         }
         host.addView(iconButton(codePoint, onClick), lp(dp(28), dp(28), Gravity.CENTER))
         val badge = TextView(context).apply {
@@ -4662,8 +4728,10 @@ class NativePlayerScreenView(
                 renderOverlays()
             }
         }
-        // 694：可见性更新后重接显式焦点链（GONE 项动态跳过）。
+        // 694：可见性更新后重接显式焦点链（GONE 项动态跳过）；
+        // 并做焦点自愈（一切丢焦路径 200ms 内恢复）。
         wireFocusChain()
+        healTvFocus()
     }
 
     /** 面板内容签名（见 applyState：仅签名变化才重建面板）。 */
