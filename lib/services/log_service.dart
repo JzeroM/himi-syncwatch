@@ -35,8 +35,9 @@ class LogService {
     final entry = '[$time][$tag] $message';
     _logs.add(entry);
     if (_logs.length > _maxLogs) _logs.removeAt(0);
-    // ignore: avoid_print
-    print(entry);
+    // 用 stdout 而非 print：print 会被 _installErrorHooks 的兜底覆写回
+    // LogService.log → 死循环；stdout.writeln 直写控制台不回环。
+    stdout.writeln(entry);
     _appendToRuntime(entry);
   }
 

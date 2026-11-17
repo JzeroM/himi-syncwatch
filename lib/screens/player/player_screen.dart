@@ -7306,10 +7306,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// - 观众：[_playFromUrl]（重载后心跳纠偏回房主进度）
   /// - 有剧集：[_loadEpisodeStream]（带 startMs，不复位退避预算）
   /// - 单集：[_loadStream]（带 startMs，不复位退避预算）
-  Future<void> _reloadSameLine() async {
+  Future<void> _reloadSameLine({int? resumeMs}) async {
     if (!mounted || !_streamReload.beginFlight()) return;
     _cancelStallWatchdog();
-    final posMs = _player.position;
+    // resumeMs：调用方已捕获的进度（切解码档前），优先用它——切档前先改
+    // videoDecoders 可能已重置 position，内部捕获会丢进度。
+    final posMs = resumeMs ?? _player.position;
     final wasPlaying = _player.state == AdapterPlaybackState.playing;
     LogService().log('Player', '同线路自动重载 pos=${posMs}ms playing=$wasPlaying');
     try {
@@ -10006,11 +10008,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             child: videoContent,
           ),
 
-          // 黑边遮罩（视频层之上、控件之下）：SurfaceView 档接管视频层后，
-          // 视频矩形之外的区域引擎不再重绘，会裸露"进入播放器那一刻"含
-          // 控件的死帧（隐藏后残留）；整屏铺满 + 视频矩形透明把死帧盖死
-          // （见 LetterboxBarsCover）。仅 SurfaceView 档需要。
-          if ((_usesSurfaceView || _usesMpvNativeSurface) &&
+          // 黑边遮罩（视频层之上、控件之下）：**仅 MDK SurfaceView 档**需要。
+          // MPV 不需要（无 SurfaceView 死帧问题），误套会按错误矩形把画面
+          // 填黑（694 真机：安卓 TV/手机 MPV「黑幕遮挡」根因）。
+          if (_usesSurfaceView &&
               !_surfaceDetached &&
               _videoNativeSize != null &&
               _videoNativeSize!.width > 0 &&
@@ -10858,6 +10859,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 694 回读校验：实时读 mpv 属性（区分「写入成功」vs「真挂载」）。
   Future<String?> _readMpvProperty(String name) async {
+    // 防御：引擎切换期跳过回读——半初始化引擎 getProperty 可能 native 崩
+    // （MDK→其它引擎闪退嫌疑点）；跳过则退回乐观校验。
+    if (_switchingKernel || _switchingEngine) return null;
     final qt = MpvSessionPlatform.activeQtAdapter;
     if (defaultTargetPlatform == TargetPlatform.windows &&
         qt != null &&
@@ -10870,6 +10874,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 最近 mpv 错误日志（抓着色器编译失败）。
   List<String> _recentMpvErrors() {
+    if (_switchingKernel || _switchingEngine) return const <String>[];
     final qt = MpvSessionPlatform.activeQtAdapter;
     if (defaultTargetPlatform == TargetPlatform.windows &&
         qt != null &&
@@ -10886,6 +10891,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final settings = ref.read(settingsProvider);
     final mpv = _player;
     final size = _videoNativeSize;
+    final sig = '${settings.anime4kEnabled}|${settings.decodeMode}|'
+        '${settings.anime4kMode}|'
+        '${settings.anime4kQuality}|${settings.anime4kIn4k}|'
+        '${settings.anime4kOnHdr}|${size?.width ?? 0}x${size?.height ?? 0}|'
+        '${mpv is MpvPlayerAdapter ? mpv.isHdrContent : false}';
+    // 签名先于门控更新：否则门控早退不更新签名 → 切档后签名陈旧漏重放。
+    if (!force && sig == _anime4kSig) return;
+    _anime4kSig = sig;
     // 694：Anime4K 仅 HW（copy-back）档生效——HW+（Direct Surface）帧锁在
     // Surface 跑不了着色器，SW 按规则也禁用。非 HW 档时清空 + 标注原因。
     if (settings.anime4kEnabled && settings.decodeMode != 'hw') {
@@ -10897,13 +10910,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       return;
     }
-    final sig = '${settings.anime4kEnabled}|${settings.decodeMode}|'
-        '${settings.anime4kMode}|'
-        '${settings.anime4kQuality}|${settings.anime4kIn4k}|'
-        '${settings.anime4kOnHdr}|${size?.width ?? 0}x${size?.height ?? 0}|'
-        '${mpv is MpvPlayerAdapter ? mpv.isHdrContent : false}';
-    if (!force && sig == _anime4kSig) return;
-    _anime4kSig = sig;
     // 694 真机回归：ArtCNN 命中不安全尺寸（高%8≠0）→ 临时降 C+（设置不动）。
     final setMode = Anime4KMode.fromId(settings.anime4kMode);
     // 最佳已知尺寸：实测优先，回退 mediaInfo（prepare 后即可用，早于
@@ -11653,8 +11659,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _isSwitchingDecode = true;
 
     try {
-      final wasPlaying = _player.state == AdapterPlaybackState.playing;
-
       // 获取当前位置
       final currentPos = _player.position;
 
@@ -11662,40 +11666,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _player.videoDecoders = DecodeModeService.resolveDecoders(mode);
         await ref.read(settingsProvider.notifier).update(decodeMode: mode);
         setState(() => _showDecodeModeMenu = false);
-        await _reloadSameLine();
+        // 694：切解码档立即重放 Anime4K（仅 HW 档生效；force 跳过签名，
+        // 否则要等下次重播才生效——真机回归）。
+        unawaited(_applyAnime4K(force: true));
+        // 进度一致：传入切换前捕获的 currentPos（切档前改 videoDecoders
+        // 可能已重置 position，内部捕获会丢进度）。
+        await _reloadSameLine(resumeMs: currentPos);
         return;
       }
 
-      // Step1: 暂停（防止切换期间解码器输出帧导致撕裂）
-      if (wasPlaying) {
-        _player.state = AdapterPlaybackState.paused;
-        _syncPlayState();
-      }
-
-      // Step2: 切换解码器
+      // 非 MPV（Erika/MDK）：切解码器 + **重载**（与 MPV 同款，进度一致）。
+      // 热切（换解码器+seek 刷帧）不算真重载——统一走 _reloadSameLine。
       final decoders = DecodeModeService.resolveDecoders(mode);
       _player.videoDecoders = decoders;
       final audioDecoders = DecodeModeService.resolveAudioDecoders(mode);
       _player.audioDecoders = audioDecoders;
       LogService().log(
           'Player', '切换解码配置: $mode → video=$decoders audio=$audioDecoders');
-
-      // Step3: seek 触发帧刷新（强制新解码器解码当前帧）
-      if (currentPos > 0) {
-        try {
-          await _player.seek(positionMs: currentPos);
-        } catch (_) {}
-      }
-
-      // Step4: 恢复播放
-      if (wasPlaying) {
-        _player.state = AdapterPlaybackState.playing;
-        _syncPlayState();
-      }
-
-      // Step5: 持久化设置
       await ref.read(settingsProvider.notifier).update(decodeMode: mode);
       setState(() => _showDecodeModeMenu = false);
+      await _reloadSameLine(resumeMs: currentPos);
     } finally {
       _isSwitchingDecode = false;
     }

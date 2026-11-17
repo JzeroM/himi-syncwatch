@@ -39,9 +39,8 @@ Future<int> _runRtmSmoke() async {
   var stepNo = 0;
   void step(String msg) {
     stepNo++;
+    // 走 LogService → himi_runtime.log（落盘）+ 控制台（stdout）。
     LogService().log('SMOKE', '[$stepNo] $msg');
-    // ignore: avoid_print
-    stdout.writeln('[SMOKE][$stepNo] $msg');
   }
 
   try {
@@ -336,7 +335,12 @@ void main() async {
   _installErrorHooks();
   runZonedGuarded(_bootstrap, (error, stack) {
     LogService().log('FATAL', 'Zone error: $error\n$stack');
-  });
+  }, zoneSpecification: ZoneSpecification(
+    // 694：全项目所有 print 也进 himi_logs（限流防刷盘，同 debugPrint）。
+    print: (self, parent, zone, line) {
+      LogService().log('print', line);
+    },
+  ));
 }
 
 /// 676：主窗口关闭事件 → 收掉 Qt 播放器进程（幂等）。
