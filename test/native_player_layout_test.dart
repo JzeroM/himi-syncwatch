@@ -431,7 +431,9 @@ void main() {
       expect(kotlinRouter, contains('class TvKeyRouter'));
       expect(kotlinRouter, contains('KEYCODE_VOLUME_UP'));
       expect(kotlinRouter, contains('KEYCODE_MEDIA_PLAY_PAUSE'));
-      expect(kotlinScreen, contains('override fun onKeyDown'));
+      // 694：按键入口是 dispatchKeyEvent（onKeyDown 只在根自身持焦时被调，
+      // 子控件持焦时路由器不运行——见下方「按键入口」守卫）。
+      expect(kotlinScreen, contains('override fun dispatchKeyEvent'));
       expect(kotlinScreen, contains('tvKeyRouter.handleKey'));
     });
 
@@ -2407,16 +2409,40 @@ void main() {
       expect(close, contains('restoreFocusAfterPanel()'));
       expect(kotlin694, contains('private var focusBeforePanel: View?'));
       // 694 真机回归（遥控看不到任何焦点）：焦点种子三处接线——
-      // 可聚焦性就绪 / 控件重新显示 / 面板归还失败。窗口 show 早于首推，
-      // 框架初始焦点在任何控件可聚焦前就已错过 → 必须补种。
+      // 控件重新显示 / 面板归还失败 / 窗口重新获焦（遥控唤醒）。
+      // 窗口 show 早于首推，框架初始焦点在任何控件可聚焦前就已错过。
       expect(kotlin694, contains('private fun seedTvFocusIfEmpty()'));
       final focus = extractFun(kotlin694, 'private fun applyFocusability()');
-      expect(focus, contains('seedTvFocusIfEmpty()'));
+      expect(focus, contains('forcePlayPauseFocus()'),
+          reason: '重建 bars 后强制聚焦播放键');
       final show =
           extractFun(kotlin694, 'private fun setControlsVisible(visible: Boolean)');
       expect(show, contains('seedTvFocusIfEmpty()'));
       final restore = extractFun(kotlin694, 'private fun restoreFocusAfterPanel()');
       expect(restore, contains('seedTvFocusIfEmpty()'));
+    });
+
+    test('按键入口：dispatchKeyEvent 而非 onKeyDown + 取证日志桥', () {
+      // 694：onKeyDown 只在「根自身持焦」时被调——子控件持焦时按键直达
+      // 子视图链、tvKeyRouter 根本不运行（遥控按了没反应的结构根因）。
+      expect(kotlin694, contains('override fun dispatchKeyEvent(event: KeyEvent)'),
+          reason: '必须在 dispatchKeyEvent 拦按键');
+      expect(kotlin694, isNot(contains('override fun onKeyDown')),
+          reason: 'onKeyDown 覆写在 ViewGroup 分发模型下不生效');
+      expect(kotlin694, contains('override fun onWindowFocusChanged'),
+          reason: '遥控唤醒窗口时补种焦点');
+      // 取证桥：Kotlin logSink → command 'log' → Dart LogService → himi_logs。
+      expect(kotlin694, contains('logSink'));
+      final host = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerHost.kt',
+      ).readAsStringSync();
+      expect(host, contains('"log"'));
+      final commands =
+          File('lib/services/player/native/native_player_command.dart')
+              .readAsStringSync();
+      expect(commands, contains("case 'log':"));
+      expect(commands, contains('class LogLine'));
     });
 
     test('解码/内核胶囊文案：SW/HW/HW+ 纯字母 + engineLabel 联动', () {

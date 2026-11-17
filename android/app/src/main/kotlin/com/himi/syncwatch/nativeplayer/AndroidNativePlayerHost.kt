@@ -119,6 +119,8 @@ class AndroidNativePlayerHost(
             activity,
             surfaceSizeProvider,
             surfaceViewProvider = { surfaceView },
+            // 694：诊断日志（焦点/按键/种子）→ commandSink → Dart → himi_logs。
+            logSink = { msg -> commandSink.send(mapOf("type" to "log", "message" to msg)) },
         )
         controls.setListener(object : NativePlayerScreenView.Listener {
             override fun onBack() {

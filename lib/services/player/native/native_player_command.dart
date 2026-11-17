@@ -130,6 +130,9 @@ sealed class NativePlayerCommand {
         return const RequestBack();
       case 'requestExit':
         return const RequestExit();
+      case 'log':
+        // 694：原生 UI 诊断日志（焦点/按键取证），进 himi_logs。
+        return LogLine(map['message'] as String? ?? '');
       default:
         return null;
     }
@@ -138,7 +141,6 @@ sealed class NativePlayerCommand {
 
 class TogglePlay extends NativePlayerCommand {
   const TogglePlay();
-
   @override
   bool get requiresImmediatePush => true;
 
@@ -546,6 +548,17 @@ class SetSegmentMark extends NativePlayerCommand {
         'kind': kind,
         'positionMs': positionMs,
       };
+}
+
+/// 694：原生 UI 诊断日志行（焦点/按键取证），Dart 侧转发进 himi_logs。
+class LogLine extends NativePlayerCommand {
+  const LogLine(this.message);
+
+  final String message;
+
+  @override
+  Map<String, Object?> toMap() =>
+      <String, Object?>{'type': 'log', 'message': message};
 }
 
 class RequestBack extends NativePlayerCommand {

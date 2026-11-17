@@ -50,6 +50,8 @@ class NativePlayerScreenView(
     private val surfaceSizeProvider: () -> Pair<Int, Int> = { 0 to 0 },
     /** surface 视频层提供者（液态玻璃 PixelCopy 采样源；null = 降级 tint）。 */
     private val surfaceViewProvider: () -> android.view.SurfaceView? = { null },
+    /** 694：诊断日志出口（宿主接到 commandSink → Dart LogService → himi_logs）。 */
+    private val logSink: (String) -> Unit = {},
 ) : FrameLayout(ctx) {
 
     /** 视图 → 宿主 → Dart 的交互回调。 */
@@ -413,12 +415,22 @@ class NativePlayerScreenView(
         onExtendAutoHide = { scheduleAutoHide() },
     )
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // TV 模式才接管遥控器语义；手机（触摸）不拦按键。
-        if (lastState.tvMode && tvKeyRouter.handleKey(keyCode, event)) {
+    /**
+     * 694 真机回归（遥控按了没反应/看不到焦点）：改覆写 **dispatchKeyEvent**
+     * 而非 `onKeyDown`——ViewGroup 分发模型里 `onKeyDown` 只在「根自身持焦」
+     * 时才被调用；子控件持焦（正常状态）时按键直达子视图链、路由器根本不
+     * 运行（旧注释「onKeyDown 在事件进入子视图链之前调用」的前提不成立）。
+     * `dispatchKeyEvent` 任何焦点状态都会被调：先走 tvKeyRouter，未消费的
+     * fallthrough 给 super（焦点导航/控件点击）。
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            logSink("[key] code=${event.keyCode} repeat=${event.repeatCount} focus=${findFocus()?.javaClass?.simpleName}")
+        }
+        if (lastState.tvMode && tvKeyRouter.handleKey(event.keyCode, event)) {
             return true
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
 
     // ── 视图 ──────────────────────────────────────────────────────
@@ -1267,6 +1279,10 @@ class NativePlayerScreenView(
         // 路径必须自己接一次，rebuildBars() 里的调用保留供 TV 重排后重绑。
         configureSeekListeners()
         configureTransportListeners()
+        // 694：与上两条同款坑——applyFocusability 此前也只在 rebuildBars()
+        // 里调（仅 tvMode 翻转触发）；初始化路径自己建一次焦点链 + 种焦，
+        // 防「遥控看不到任何焦点」。
+        applyFocusability()
     }
 
     /**
@@ -1566,20 +1582,41 @@ class NativePlayerScreenView(
             skipPromptChip,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
         focusables.forEach { makeFocusable(it) }
-        // 694：可聚焦性就绪后补种焦点（窗口 show 早于首推，框架初始焦点
-        // 在任何控件可聚焦前就已错过 → 「遥控看不到任何焦点」）。
-        post { seedTvFocusIfEmpty() }
+        // 694：可聚焦性就绪后**强制**聚焦播放/暂停键（Flutter hopLeft/hopRight
+        // 中枢）——刚重建完 bars 焦点本就重置，无条件抢占安全。
+        post { forcePlayPauseFocus() }
     }
 
     /**
-     * 694 TV 焦点种子：控件可见且无人持焦时补种到播放/暂停键（Flutter
-     * hopLeft/hopRight 的中枢）。三个触发点：可聚焦性就绪 / 控件重新显示
-     *（自动隐藏后焦点被清）/ 面板关闭归还失败。
+     * 694 TV 焦点种子：控件可见且无人持焦时补种到播放/暂停键。触发点：
+     * 控件重新显示（自动隐藏后焦点被清）/ 面板关闭归还失败 / 窗口重新
+     * 获得输入焦点（遥控唤醒）。
      */
     private fun seedTvFocusIfEmpty() {
         if (!lastState.tvMode || !controlsVisible) return
-        if (findFocus() != null) return
-        if (playPauseButton.isShown) playPauseButton.requestFocus()
+        val cur = findFocus()
+        if (cur != null && cur !== this) {
+            logSink("[focus] seed-skip 持焦=${cur.javaClass.simpleName}")
+            return
+        }
+        val ok = playPauseButton.requestFocus()
+        logSink("[focus] seed → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
+    }
+
+    /** 694：重建 bars 后强制聚焦播放键（无条件；带取证）。 */
+    private fun forcePlayPauseFocus() {
+        if (!lastState.tvMode || !controlsVisible) return
+        val ok = playPauseButton.requestFocus()
+        logSink("[focus] rebuild → playPause 强聚焦 ok=$ok")
+    }
+
+    /** 694：遥控唤醒窗口（真实输入焦点时序）→ 兜底补种。 */
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) {
+            logSink("[focus] windowFocus gain cur=${findFocus()?.javaClass?.simpleName}")
+            post { seedTvFocusIfEmpty() }
+        }
     }
 
     /** 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 3px #C1C2FE 环。 */
@@ -1588,17 +1625,20 @@ class NativePlayerScreenView(
         view.isFocusableInTouchMode = false
         if (view is TextView || view is LinearLayout) {
             val base = view.background
+            val baseForeground = view.foreground
+            fun ring(): GradientDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
+            }
             view.setOnFocusChangeListener { v, hasFocus ->
-                v.background = if (hasFocus) {
-                    GradientDrawable().apply {
-                        shape = GradientDrawable.RECTANGLE
-                        cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
-                        setColor(Color.TRANSPARENT)
-                        setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
-                    }
-                } else {
-                    base
-                }
+                // 694：环同时挂 background + foreground（真机「看不到任何
+                // 焦点」保险：个别控件的背景层会盖住 background 环；
+                // foreground 恒画在内容之上）。基线各自保存/恢复。
+                v.background = if (hasFocus) ring() else base
+                v.foreground = if (hasFocus) ring() else baseForeground
+                logSink("[focus] ${v.javaClass.simpleName}@${Integer.toHexString(v.hashCode())} → $hasFocus")
                 // 【不改几何】焦点只画环（照抄鸿蒙 BORDER_FOCUS）：旧实现
                 // scaleX/Y 1.1 会连带放大命中区 → 焦点态相邻控件误触。
             }

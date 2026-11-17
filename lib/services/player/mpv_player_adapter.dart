@@ -2757,6 +2757,9 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         } else {
           unawaited(_closeNativeUi());
         }
+      case LogLine(:final message):
+        // 694：原生 UI 取证日志（焦点/按键/种子）进 himi_logs。
+        LogService().log('mpv/ui', message);
       default:
         // Phase 2 通用出口：其余命令（选集/版本/音轨/字幕/…）转发给
         // PlayerScreen 路由到现成 handler（见 docs/native_player_command_routing.md）。
