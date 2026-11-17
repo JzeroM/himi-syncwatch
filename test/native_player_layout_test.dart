@@ -2487,14 +2487,33 @@ void main() {
           reason: '环的类型门槛让 GlassSeekBarView 入链也不画环');
     });
 
-    test('焦点自愈：isShown 门 + applyState 全路径恢复', () {
+    test('焦点自愈：焦点标记判据 + 兜底链 + applyState 全路径恢复', () {
+      // 694 真机实证（himi_logs focus=View）：焦点被无标记裸 View 持走 →
+      // 旧判据误判「已持焦」永不补种。有效焦点 = 带 focusMarker + 可见。
+      expect(kotlin694, contains('private val focusMarker = Any()'));
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      expect(mk, contains('view.tag = focusMarker'));
+      expect(kotlin694, contains('private fun hasValidControlFocus()'));
       final seed = extractFun(kotlin694, 'private fun seedTvFocusIfEmpty()');
-      expect(seed, contains('cur.isShown'),
-          reason: '不可见残留焦点不得当「已持焦」（隐藏→再现不回来的根因）');
-      expect(kotlin694, contains('private fun healTvFocus()'));
+      expect(seed, contains('hasValidControlFocus()'));
+      expect(kotlin694, contains('private fun requestFocusAny('),
+          reason: 'playPause 失败逐级兜底（真机 ok=false 连环根因）');
+      final heal = extractFun(kotlin694, 'private fun healTvFocus()');
+      expect(heal, contains('rootIsAncestor(cur, root)'),
+          reason: '面板内正常移动不干预（只在丢焦/出面板时恢复）');
       final applyState = extractFun(kotlin694, 'private fun applyState()');
       expect(applyState, contains('healTvFocus()'),
           reason: '每个状态推送自愈（点跳过/设标记/隐藏再现/切引擎全覆盖）');
+    });
+
+    test('面板方向键无焦时落到首行 + 裸 View 防御不可聚焦', () {
+      final dispatch = extractFun(kotlin694, 'override fun dispatchKeyEvent(event: KeyEvent)');
+      expect(dispatch, contains('rows.firstOrNull()'),
+          reason: '焦点被裸 View 持走时方向键落到首行（上下移不动另一半）');
+      expect(kotlin694, contains('isFocusable = false'),
+          reason: '手势层/遮罩/留白槽显式不可聚焦，根治裸 View 抢焦');
+      final tap = extractFun(kotlin694, 'private val tapLayer = View(context).apply');
+      expect(tap, contains('isFocusable = false'));
     });
 
     test('badgeButton host 点击转发（字幕/音轨/选集 OK 点不开面板根因）', () {

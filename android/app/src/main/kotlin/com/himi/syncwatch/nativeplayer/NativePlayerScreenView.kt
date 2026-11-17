@@ -451,10 +451,11 @@ class NativePlayerScreenView(
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
                     val rows = focusableRowsOf(modalRoot)
                     val cur = rows.indexOfFirst { it.hasFocus() }
-                    if (cur >= 0) {
-                        val step = if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
-                        rows.getOrNull(cur + step)?.requestFocus()
-                    }
+                    val step = if (event.keyCode == KeyEvent.KEYCODE_DPAD_UP) -1 else 1
+                    // 694：焦点被裸 View 持走时（cur<0）落到首行，不再静默不动。
+                    val target =
+                        if (cur < 0) rows.firstOrNull() else rows.getOrNull(cur + step)
+                    target?.requestFocus()
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -490,6 +491,10 @@ class NativePlayerScreenView(
      * 锁定态只保留单击（Flutter：`_lockController.locked ? null : ...`）。
      */
     private val tapLayer = View(context).apply {
+        // 694：手势层显式不可聚焦——裸 View 抢走 DPAD 焦点（不画环）会让
+        // 自愈误判「已持焦」，真机「焦点再也不出现」根因（himi_logs focus=View）。
+        isFocusable = false
+        isFocusableInTouchMode = false
         isClickable = true
         setBackgroundColor(Color.TRANSPARENT)
         setOnClickListener {
@@ -1130,6 +1135,9 @@ class NativePlayerScreenView(
     // GONE → 控件全消失（真机回归「只有画面没控件」）。
     private val panelScrim = View(context).apply {
         // 深色面板用中等遮罩区分层次（587：黑 45%）。
+        // 694：遮罩显式不可聚焦（防裸 View 抢 DPAD 焦点）。
+        isFocusable = false
+        isFocusableInTouchMode = false
         setBackgroundColor(NPTheme.SCRIM_DIM)
         visibility = GONE
         setOnClickListener { closePanel() }
@@ -1154,6 +1162,9 @@ class NativePlayerScreenView(
     private val decodePopover = LinearLayout(context)
     private val segmentCard = LinearLayout(context)
     private val segmentScrim = View(context).apply {
+        // 694：遮罩显式不可聚焦（防裸 View 抢 DPAD 焦点）。
+        isFocusable = false
+        isFocusableInTouchMode = false
         setBackgroundColor(NPTheme.SCRIM_DIM)
         visibility = GONE
         setOnClickListener {
@@ -1639,34 +1650,66 @@ class NativePlayerScreenView(
      */
     private fun seedTvFocusIfEmpty() {
         if (!lastState.tvMode || !controlsVisible) return
-        val cur = findFocus()
-        // 694：「已持焦」必须是**可见**焦点——栏隐藏后 findFocus() 可能返回
-        // GONE 视图/容器的残留焦点（隐藏→再现后焦点永不回来的根因）。
-        if (cur != null && cur !== this && cur.isShown) {
-            logSink("[focus] seed-skip 持焦=${cur.javaClass.simpleName}")
+        if (hasValidControlFocus()) {
+            logSink("[focus] seed-skip 持焦=${findFocus()?.javaClass?.simpleName}")
             return
         }
-        val ok = playPauseButton.requestFocus()
-        logSink("[focus] seed → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
+        requestFocusAny("seed")
     }
 
     /**
-     * 694 焦点自愈（每个状态推送 ~200ms 一次）：面板开着 → 焦点回面板行
-     * （保焦）；否则无可见焦点 → 种到播放键。覆盖一切丢焦路径——点跳过后
-     * 跳过胶囊 GONE、设置片头片尾后标记卡关闭、引擎切换重建、控件自动隐藏
-     * 再现等（真机逐场景反馈）。
+     * 694 焦点自愈（每个状态推送 ~200ms 一次）：面板开着且焦点丢了/跑出面板
+     * → 焦点回面板行（面板内正常移动**不干预**——真机「面板内上下移不动」
+     * 根因是旧版每次推送都无条件 restore 拉回记录行）；否则无有效焦点 →
+     * 补种。覆盖一切丢焦路径（点跳过/设标记/隐藏再现/切引擎）。
      */
     private fun healTvFocus() {
         if (!lastState.tvMode || !controlsVisible) return
         if (activePanel != null || segmentCardOpen) {
-            restorePanelFocus()
+            val root: android.view.ViewGroup =
+                if (segmentCardOpen) segmentCard else panelContainer
+            val cur = findFocus()
+            val inside =
+                cur != null && cur !== this && cur.isShown && rootIsAncestor(cur, root)
+            if (!inside) restorePanelFocus()
             return
         }
-        val cur = findFocus()
-        if (cur == null || cur === this || !cur.isShown) {
-            val ok = playPauseButton.requestFocus()
-            logSink("[focus] heal → playPause ok=$ok (prev=${cur?.javaClass?.simpleName})")
+        if (!hasValidControlFocus()) requestFocusAny("heal")
+    }
+
+    /**
+     * 694：「有效持焦」判据 = 焦点在**带焦点标记的控件**上（makeFocusable
+     * 打标）且可见。真机根因（himi_logs 实证 focus=View）：焦点会被无标记的
+     * 裸 View（手势层/遮罩等）持走——不画环看不见，旧判据又当「已持焦」
+     * 跳过补种 → 「控件再现后焦点再也不出现」。
+     */
+    private fun hasValidControlFocus(): Boolean {
+        val cur = findFocus() ?: return false
+        return cur !== this && cur.isShown && cur.tag === focusMarker
+    }
+
+    /** 694：逐级兜底聚焦（playPause 失败不再静默放弃）。 */
+    private fun requestFocusAny(reason: String) {
+        for (v in listOf<View>(playPauseButton, prevButton, nextButton, seekBar)) {
+            if (v.isShown && v.requestFocus()) {
+                logSink("[focus] $reason → ${v.javaClass.simpleName} ok=true")
+                return
+            }
         }
+        val rows = (0 until trailingGroup.childCount)
+            .map { trailingGroup.getChildAt(it) }
+            .filter { it.isShown && it.tag === focusMarker }
+        val ok = rows.firstOrNull()?.requestFocus() == true
+        logSink("[focus] $reason → fallback ok=$ok rows=${rows.size}")
+    }
+
+    private fun rootIsAncestor(view: View, root: android.view.ViewGroup): Boolean {
+        var p: android.view.ViewParent? = view.parent
+        while (p != null) {
+            if (p === root) return true
+            p = p.parent
+        }
+        return false
     }
 
     /**
@@ -1696,11 +1739,10 @@ class NativePlayerScreenView(
         seekBar.nextFocusDownId = playPauseButton.id
     }
 
-    /** 694：重建 bars 后强制聚焦播放键（无条件；带取证）。 */
+    /** 694：重建 bars 后强制聚焦播放键（带兜底链与取证）。 */
     private fun forcePlayPauseFocus() {
         if (!lastState.tvMode || !controlsVisible) return
-        val ok = playPauseButton.requestFocus()
-        logSink("[focus] rebuild → playPause 强聚焦 ok=$ok")
+        requestFocusAny("rebuild")
     }
 
     /** 694：遥控唤醒窗口（真实输入焦点时序）→ 兜底补种。 */
@@ -1712,10 +1754,14 @@ class NativePlayerScreenView(
         }
     }
 
+    /** 694：焦点标记——makeFocusable 的控件打标；有效持焦判据用它过滤裸 View。 */
+    private val focusMarker = Any()
+
     /** 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 3px #C1C2FE 环。 */
     private fun makeFocusable(view: View) {
         view.isFocusable = true
         view.isFocusableInTouchMode = false
+        view.tag = focusMarker
         // 694：环对任意 View 绘制（旧类型门槛让 GlassSeekBarView 入链也
         // 不画环）。基线各自保存/恢复。
         val base = view.background
@@ -2025,7 +2071,11 @@ class NativePlayerScreenView(
                 ),
             )
             buttonRow.addView(
-                View(context),
+                View(context).apply {
+                    // 694：留白槽显式不可聚焦（防裸 View 抢焦点）。
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                },
                 LinearLayout.LayoutParams(0, 1, 1f),
             )
             buttonRow.addView(trailingBox)
