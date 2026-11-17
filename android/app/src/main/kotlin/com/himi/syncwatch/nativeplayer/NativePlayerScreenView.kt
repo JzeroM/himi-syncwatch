@@ -2692,6 +2692,8 @@ class NativePlayerScreenView(
                     listener?.onSelectEpisode(ep.index)
                     closePanel()
                 }
+                // 694 遥控对齐：选集卡可聚焦（D-pad 选择、OK 切集）。
+                makeFocusable(this)
             }
             // 封面：选中主色描边框（2dp）+ 内裁圆角 8（外框 10）。
             val cover = ImageView(context).apply {
@@ -2795,6 +2797,8 @@ class NativePlayerScreenView(
                 setPadding(dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V), dp(NPTheme.PANEL_PAD_H), dp(NPTheme.PANEL_PAD_V))
                 isClickable = true
                 setOnClickListener { listener?.onToggleDanmaku() }
+                // 694 遥控对齐：弹幕开关行可聚焦。
+                makeFocusable(this)
                 addView(
                     TextView(context).apply {
                         text = "弹幕"
@@ -2863,6 +2867,8 @@ class NativePlayerScreenView(
                         setOnClickListener {
                             listener?.onSearchDanmaku(keywordInput.text.toString())
                         }
+                        // 694 遥控对齐：搜索按钮可聚焦。
+                        makeFocusable(this)
                     },
                 )
             },
@@ -2989,6 +2995,8 @@ class NativePlayerScreenView(
                     listener?.onSwitchEngine(opt.id)
                     closePanel()
                 }
+                // 694 遥控对齐：引擎选项行可聚焦（D-pad 选择、OK 切换）。
+                makeFocusable(this)
             }
             // 单行「短名 · 简介」（对齐 Flutter PlayerKernelPanel 的
             // `label: '${shortLabel} · ${descriptionOf(engine)}'`；旧实现
