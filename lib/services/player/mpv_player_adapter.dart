@@ -1219,6 +1219,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
           video.first.height.toDouble(),
         );
       }
+      // 694 鸿蒙卡顿修复：`video-params` 是 NODE 属性，鸿蒙 MpvLib 读不到
+      //（返回空串）→ `_parseVideoParams` 永不触发 → 上面的 mediaInfo 恒空
+      // → 下面的 1.2s 短等**每次重载都吃满**（切解码模式卡顿比安卓/Windows
+      // 久的根因；安卓/Windows 参数一到即早退，实测 150ms）。
+      // `width`/`height` 标量属性鸿蒙可读（626 已验证，pollState 喂
+      // `_lastVideoW/H`）——用它兜底，拿到即早退。
+      if (_lastVideoW > 0 && _lastVideoH > 0) {
+        return Size(_lastVideoW.toDouble(), _lastVideoH.toDouble());
+      }
       return null;
     }
 
@@ -1245,6 +1254,15 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
         if (params != null) {
           final size = _sizeFromVideoParams(params);
           if (size != null) return size;
+        }
+      } catch (_) {}
+      // 694 鸿蒙：`video-params` NODE 读不到时改问标量属性（width/height，
+      // getPropertyString 可读），一次往返即可拿到，不必等满 1.2s。
+      try {
+        final w = int.tryParse(await player.getProperty('width') ?? '');
+        final h = int.tryParse(await player.getProperty('height') ?? '');
+        if (w != null && h != null && w > 0 && h > 0) {
+          return Size(w.toDouble(), h.toDouble());
         }
       } catch (_) {}
     }
@@ -2316,6 +2334,12 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       _nativeUiController = null;
       nativeUiActive.value = false;
       _player?.setNativeUiActive(false);
+      // 694：回退后主动重同步 surface——成功路径有 refreshSurface()，失败
+      // 路径此前漏掉，Flutter 平台视图重挂后的绑定全靠事件碰运气（TV 真机
+      // 黑屏的次生因素）。失败也不要让回退链再抛。
+      try {
+        await _player?.refreshSurface();
+      } catch (_) {}
     }
   }
 

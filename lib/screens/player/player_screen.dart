@@ -4872,13 +4872,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipPromptTimer?.cancel();
     _skipPromptTimer = null;
     _skipPromptSegment = null;
-    // 停后再卸载旧视频视图（避免旧 widget 访问已释放播放器）
-    LogService().log('Player', '[rebuild] 3/7 隐藏视频层', sync: true);
+    // 694 真机回归（MDK→其它引擎闪退根因）：旧序「先卸视频视图（endOfFrame
+    // 真拆 SurfaceView/纹理）→ 再释放引擎」会与 fvp 的 mdkPlayerAPI_delete
+    // 对撞——fvp 的删除在**另一 isolate 异步**执行（无完成信号，"mdk teardown:
+    // complete" 只代表 Dart 包装返回），view/surface 销毁撞上删除进行中 →
+    // native SIGSEGV（日志现场：[dispose-old] disposeAsync 完成 后连
+    // 「dispose 异常/结束」都没留下就重启）。
+    // 新序：**先释放旧引擎（视图仍挂载、surface 还活着，fvp dispose 自己会
+    // 先 unregister 再 delete）→ settle → 再卸视图**。旧 widget 在释放窗口
+    // 内访问已释放播放器由各适配器 disposed 守卫兜底（NipaMdkAdapter 的
+    // 「called after teardown began」应答为 stopped）。
+    LogService().log('Player', '[rebuild] 3/7 释放旧引擎', sync: true);
+    await _disposeOldEngine();
+    if (!mounted || _disposed) return;
+    LogService().log('Player', '[rebuild] 4/7 隐藏视频层', sync: true);
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 4/7 释放旧引擎', sync: true);
-    await _disposeOldEngine();
     if (!mounted || _disposed) return;
     LogService().log('Player', '[rebuild] 5/7 创建新引擎', sync: true);
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。

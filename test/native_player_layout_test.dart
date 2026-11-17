@@ -2236,4 +2236,71 @@ void main() {
       expect(settings, contains('片尾开始点不能低于总时长的 70%'));
     });
   });
+
+  group('真机回归 694（TV 黑屏根因：configureTopBar 二次挂载）', () {
+    final kotlinScreen694 = File(
+      'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+      'NativePlayerScreenView.kt',
+    ).readAsStringSync();
+
+    String extractFun(String src, String signature) {
+      final start = src.indexOf(signature);
+      expect(start, greaterThanOrEqualTo(0), reason: '未找到 $signature');
+      // 跳过参数表（签名可能以 `({` 结尾，参数表 `{}` 会被误当函数体）。
+      var i = src.indexOf('(', start);
+      var paren = 0;
+      for (; i < src.length; i++) {
+        if (src[i] == '(') paren++;
+        if (src[i] == ')') {
+          paren--;
+          if (paren == 0) break;
+        }
+      }
+      var depth = 0;
+      var started = false;
+      for (; i < src.length; i++) {
+        if (src[i] == '{') {
+          depth++;
+          started = true;
+        } else if (src[i] == '}') {
+          depth--;
+          if (started && depth == 0) {
+            // 剥整行注释：注释里会引用 addView/removeAllViews 等字样（说明
+            // 为什么改），直接 indexOf 会误中注释。
+            return src
+                .substring(start, i + 1)
+                .split('\n')
+                .where((l) => !l.trimLeft().startsWith('//'))
+                .join('\n');
+          }
+        }
+      }
+      return src.substring(start);
+    }
+
+    test('configureTopBar 幂等：topTail/speedChip 二次进入前必须清空', () {
+      // 崩溃链：lastTvMode 初值 false + 构造期已跑过一次 configureTopBar →
+      // TV 首次 applyState 触发 rebuildBars 二次进入 → topTail.addView(
+      // networkText)（原 1338 行）抛 "The specified child already has a
+      // parent" → 原生 UI 打开失败回退 Flutter → TV 有声无画。
+      final body = extractFun(kotlinScreen694, 'private fun configureTopBar()');
+      for (final container in ['topTail', 'speedChip']) {
+        final clearIdx = body.indexOf('$container.removeAllViews()');
+        final addIdx = body.indexOf('$container.addView(');
+        expect(clearIdx, greaterThanOrEqualTo(0),
+            reason: '$container 必须先 removeAllViews（否则二次进入 addView 崩）');
+        if (addIdx >= 0) {
+          expect(clearIdx, lessThan(addIdx),
+              reason: '$container 的清理必须在 addView 之前');
+        }
+      }
+    });
+
+    test('configureBottomBar 幂等：仍走 clearBarContainers 全清', () {
+      final body =
+          extractFun(kotlinScreen694, 'private fun configureBottomBar()');
+      expect(body, contains('clearBarContainers()'),
+          reason: '底栏重排同走幂等清理（防同款二次挂载）');
+    });
+  });
 }

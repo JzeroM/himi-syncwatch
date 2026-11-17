@@ -1279,6 +1279,14 @@ class NativePlayerScreenView(
         // 否则对已有 parent 的子视图重复 addView 会抛 IllegalStateException。
         topBar.removeAllViews()
         clockWrap.removeAllViews()
+        // 694 真机回归（TV 黑屏根因）：TV 首次 applyState 触发 rebuildBars
+        // 二次进入本函数时，topTail 未清空 → topTail.addView(networkText) 抛
+        // "The specified child already has a parent" → 原生 UI 打开失败回退
+        // Flutter 表面路径 → 有声无画（手机 tvMode=false 不触发 rebuild 所以
+        // 一直正常）。topTail 与 chip 自身子项一并清空（speedChip 每次重建
+        // iconView/label，不清会叠加子 View）。
+        topTail.removeAllViews()
+        speedChip.removeAllViews()
         topBar.orientation = LinearLayout.HORIZONTAL
         topBar.gravity = Gravity.CENTER_VERTICAL
         applyBarInsets()
