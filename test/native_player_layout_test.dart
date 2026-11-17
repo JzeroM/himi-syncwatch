@@ -2406,6 +2406,17 @@ void main() {
       final close = extractFun(kotlin694, 'fun closePanel()');
       expect(close, contains('restoreFocusAfterPanel()'));
       expect(kotlin694, contains('private var focusBeforePanel: View?'));
+      // 694 真机回归（遥控看不到任何焦点）：焦点种子三处接线——
+      // 可聚焦性就绪 / 控件重新显示 / 面板归还失败。窗口 show 早于首推，
+      // 框架初始焦点在任何控件可聚焦前就已错过 → 必须补种。
+      expect(kotlin694, contains('private fun seedTvFocusIfEmpty()'));
+      final focus = extractFun(kotlin694, 'private fun applyFocusability()');
+      expect(focus, contains('seedTvFocusIfEmpty()'));
+      final show =
+          extractFun(kotlin694, 'private fun setControlsVisible(visible: Boolean)');
+      expect(show, contains('seedTvFocusIfEmpty()'));
+      final restore = extractFun(kotlin694, 'private fun restoreFocusAfterPanel()');
+      expect(restore, contains('seedTvFocusIfEmpty()'));
     });
 
     test('解码/内核胶囊文案：SW/HW/HW+ 纯字母 + engineLabel 联动', () {

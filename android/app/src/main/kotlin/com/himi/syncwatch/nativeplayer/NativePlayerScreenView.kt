@@ -1566,6 +1566,20 @@ class NativePlayerScreenView(
             skipPromptChip,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
         focusables.forEach { makeFocusable(it) }
+        // 694：可聚焦性就绪后补种焦点（窗口 show 早于首推，框架初始焦点
+        // 在任何控件可聚焦前就已错过 → 「遥控看不到任何焦点」）。
+        post { seedTvFocusIfEmpty() }
+    }
+
+    /**
+     * 694 TV 焦点种子：控件可见且无人持焦时补种到播放/暂停键（Flutter
+     * hopLeft/hopRight 的中枢）。三个触发点：可聚焦性就绪 / 控件重新显示
+     *（自动隐藏后焦点被清）/ 面板关闭归还失败。
+     */
+    private fun seedTvFocusIfEmpty() {
+        if (!lastState.tvMode || !controlsVisible) return
+        if (findFocus() != null) return
+        if (playPauseButton.isShown) playPauseButton.requestFocus()
     }
 
     /** 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 3px #C1C2FE 环。 */
@@ -2373,7 +2387,10 @@ class NativePlayerScreenView(
         focusBeforePanel = null
         if (target != null && target.isAttachedToWindow && target.visibility == VISIBLE) {
             target.requestFocus()
+            return
         }
+        // 694：原焦点不可归还（已卸载/隐藏）→ 兜底补种，防遥控失焦。
+        seedTvFocusIfEmpty()
     }
 
     /** 面板容器内首个可聚焦子视图（深度优先）。 */
@@ -4752,7 +4769,11 @@ class NativePlayerScreenView(
         }
         topBar.visibility = if (visible) VISIBLE else GONE
         bottomBar.visibility = if (visible) VISIBLE else GONE
-        if (visible) scheduleAutoHide()
+        if (visible) {
+            scheduleAutoHide()
+            // 694：自动隐藏会清掉焦点（持焦控件随栏隐藏）→ 重现时补种。
+            post { seedTvFocusIfEmpty() }
+        }
     }
 
     private fun scheduleAutoHide() {
