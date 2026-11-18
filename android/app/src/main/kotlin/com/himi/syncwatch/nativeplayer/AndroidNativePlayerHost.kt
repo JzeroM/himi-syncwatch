@@ -412,15 +412,12 @@ class AndroidNativePlayerHost(
         // 视图层 handleBack 三层（关面板 → 隐控件 → 退出）。
         ctrlDlg.setCancelable(false)
         ctrlDlg.setOnDismissListener { close() }
-        ctrlDlg.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                // 三层返回语义（关面板 → 隐控件 → 退出），对齐 Flutter；
-                // 旧实现直接 requestBack（按返回就退出播放页）。
-                controls.handleBack()
-                true
-            } else {
-                false
-            }
+        ctrlDlg.setOnKeyListener { _, _, event ->
+            // 694：把**所有按键**转发进视图 dispatchKeyEvent（含 BACK——由
+            // 视图层 handleBack 三层语义单路径处理：关面板 → 隐控件 → 退出）。
+            // 根因：焦点为 null 时 ViewGroup 分发不经过视图（真机「控件隐藏后
+            // 遥控方向/确认唤不出」——01:37 后 [key] 日志断流）。
+            controls.dispatchKeyEvent(event)
         }
         applyFullscreen(ctrlDlg)
         // 控件窗背景透明（顶/底栏自带半透明黑，中间区域透出 surface 窗）。

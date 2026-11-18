@@ -1477,7 +1477,11 @@ void main() {
 
     test('返回键三层语义（关面板 → 隐控件 → 退出，禁直发 requestBack）', () {
       expect(kotlinScreen, contains('fun handleBack(): Boolean'));
-      expect(kotlinHost, contains('controls.handleBack()'));
+      // 694：Host 不再直调 handleBack——所有按键转发进视图 dispatchKeyEvent
+      //（焦点为 null 时 ViewGroup 分发不经过视图），BACK 由视图层三层语义
+      // 单路径处理，避免双触发。
+      expect(kotlinHost, contains('controls.dispatchKeyEvent(event)'));
+      expect(kotlinScreen, contains('handleBack()'));
       // 三层顺序：先面板/片尾卡、再控件、最后退出。
       final fn = RegExp(r'fun handleBack\(\): Boolean \{[\s\S]*?\n    \}')
           .firstMatch(kotlinScreen);
@@ -2514,6 +2518,26 @@ void main() {
           reason: '手势层/遮罩/留白槽显式不可聚焦，根治裸 View 抢焦');
       final tap = extractFun(kotlin694, 'private val tapLayer = View(context).apply');
       expect(tap, contains('isFocusable = false'));
+    });
+
+    test('touch-mode 闸门 + Dialog 按键转发 + 行按标记收集', () {
+      // 694 真机实证（fallback ok=false rows=7）：触摸后 touch mode 下
+      // focusableInTouchMode=false 的视图 requestFocus 一律 false。
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      expect(mk, contains('isFocusableInTouchMode = true'),
+          reason: '解除 touch-mode 聚焦闸门（Flutter TvFocusable 点击聚焦同语义）');
+      // 焦点为 null 时 ViewGroup 分发不经过视图 → Dialog 层转发所有按键。
+      final hostSrc = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'AndroidNativePlayerHost.kt',
+      ).readAsStringSync();
+      expect(hostSrc, contains('controls.dispatchKeyEvent(event)'),
+          reason: 'Dialog 监听转发全部按键（隐藏态唤出控件根因）');
+      // 行收集按焦点标记（ScrollView 不再冒充行）。
+      final rows = extractFun(kotlin694, 'private fun focusableRowsOf(');
+      expect(rows, contains('v.tag === focusMarker'));
+      expect(kotlin694, contains('isFocusableInTouchMode = false\n            isFillViewport'),
+          reason: '面板滚动容器显式不可聚焦');
     });
 
     test('badgeButton host 点击转发（字幕/音轨/选集 OK 点不开面板根因）', () {

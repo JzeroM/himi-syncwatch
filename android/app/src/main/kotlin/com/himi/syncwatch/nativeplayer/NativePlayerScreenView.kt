@@ -1760,7 +1760,11 @@ class NativePlayerScreenView(
     /** 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 3px #C1C2FE 环。 */
     private fun makeFocusable(view: View) {
         view.isFocusable = true
-        view.isFocusableInTouchMode = false
+        // 694：必须允许 touch mode 聚焦——真机（手机 TV 模式）触摸后进入
+        // touch mode，focusableInTouchMode=false 的视图 requestFocus() 一律
+        // 返回 false（「fallback ok=false rows=7」连环根因）。与 Flutter
+        // TvFocusable 点击可聚焦语义一致。
+        view.isFocusableInTouchMode = true
         view.tag = focusMarker
         // 694：环对任意 View 绘制（旧类型门槛让 GlassSeekBarView 入链也
         // 不画环）。基线各自保存/恢复。
@@ -2589,12 +2593,16 @@ class NativePlayerScreenView(
     /** 694：面板重建保焦——记录当前焦点行索引（重建后按序号恢复）。 */
     private var panelFocusRowIndex = 0
 
-    /** 面板内可聚焦行（深度优先，跳过不可见）。 */
+    /**
+     * 面板内可聚焦行（深度优先，跳过不可见）。
+     * 694：按**焦点标记**收集而非 isFocusable——面板 ScrollView 自身可聚焦，
+     * 旧判据把它当「行」（focus=ScrollView、上下移不动、面板无焦点根因）。
+     */
     private fun focusableRowsOf(root: android.view.ViewGroup): List<View> {
         val out = mutableListOf<View>()
         fun walk(v: View) {
             if (v.visibility != VISIBLE) return
-            if (v.isFocusable) {
+            if (v.tag === focusMarker) {
                 out.add(v)
                 return
             }
@@ -2795,6 +2803,10 @@ class NativePlayerScreenView(
     /** 面板内容滚动包裹（weight 1 撑满拉伸面板，超长滚动）。 */
     private fun scrollWrap(content: View): ScrollView =
         ScrollView(context).apply {
+            // 694：滚动容器显式不可聚焦——它自身可聚焦会被当「行」
+            //（focus=ScrollView、面板上下移不动根因）。
+            isFocusable = false
+            isFocusableInTouchMode = false
             isFillViewport = true
             addView(content)
             layoutParams = LinearLayout.LayoutParams(
@@ -3093,6 +3105,8 @@ class NativePlayerScreenView(
                 }
             })
         }
+        // 694：搜索框入焦点行（带标记，面板方向键可达）。
+        makeFocusable(keywordInput)
         list.addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
