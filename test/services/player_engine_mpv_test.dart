@@ -26,18 +26,17 @@ void main() {
     PlayerEngineFactory.debugIsOhosOverride = false;
 
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    // 681：安卓手机收敛为仅 MPV（TV 才保留三引擎）
+    // 681：安卓手机收敛为仅 MPV（TV 才保留多引擎；694 移除 Erika）
     expect(
       PlayerEngineFactory.supportedEngines(),
       <PlayerEngine>[PlayerEngine.mpv],
     );
     expect(PlayerEngineFactory.defaultEngine(), PlayerEngine.mpv);
-    // TV 保留三引擎
+    // TV 双引擎（694 移除 Erika）
     expect(
       PlayerEngineFactory.supportedEngines(tvMode: true),
       containsAll(<PlayerEngine>[
         PlayerEngine.mdk,
-        PlayerEngine.erika,
         PlayerEngine.mpv,
       ]),
     );

@@ -2486,7 +2486,7 @@ void main() {
       final focus = extractFun(kotlin694, 'private fun applyFocusability()');
       expect(focus, contains('seekBar'),
           reason: '进度条必须可聚焦（此前完全不在链上）');
-      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View, radiusDp: Int = 8)');
       expect(mk, isNot(contains('view is TextView || view is LinearLayout')),
           reason: '环的类型门槛让 GlassSeekBarView 入链也不画环');
     });
@@ -2495,7 +2495,7 @@ void main() {
       // 694 真机实证（himi_logs focus=View）：焦点被无标记裸 View 持走 →
       // 旧判据误判「已持焦」永不补种。有效焦点 = 带 focusMarker + 可见。
       expect(kotlin694, contains('private val focusMarker = Any()'));
-      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View, radiusDp: Int = 8)');
       expect(mk, contains('view.tag = focusMarker'));
       expect(kotlin694, contains('private fun hasValidControlFocus()'));
       final seed = extractFun(kotlin694, 'private fun seedTvFocusIfEmpty()');
@@ -2523,7 +2523,7 @@ void main() {
     test('touch-mode 闸门 + Dialog 按键转发 + 行按标记收集', () {
       // 694 真机实证（fallback ok=false rows=7）：触摸后 touch mode 下
       // focusableInTouchMode=false 的视图 requestFocus 一律 false。
-      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View)');
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View, radiusDp: Int = 8)');
       expect(mk, contains('isFocusableInTouchMode = true'),
           reason: '解除 touch-mode 聚焦闸门（Flutter TvFocusable 点击聚焦同语义）');
       // 焦点为 null 时 ViewGroup 分发不经过视图 → Dialog 层转发所有按键。
@@ -2579,6 +2579,27 @@ void main() {
       expect(screenSrc, contains('backgroundColor: Colors.black'));
       expect(screenSrc,
           isNot(contains('_usesMpvNativeSurface ? Colors.transparent')));
+    });
+    test('选集面板焦点=当前集 + 焦点环全对齐 Flutter', () {
+      final open = extractFun(kotlin694, 'private fun openPanel(panel: String)');
+      expect(open, contains('currentEpisodeIndex'),
+          reason: '打开选集面板焦点自动锁定当前集（对齐 Flutter autofocus）');
+      expect(open, contains('panelFocusRowIndex = cur'));
+      final mk = extractFun(
+          kotlin694, 'private fun makeFocusable(view: View, radiusDp: Int = 8)');
+      expect(mk, contains('1.06f'),
+          reason: '聚焦缩放对齐 Flutter PressableScale');
+      expect(mk, contains('NPTheme.FOCUS_GLOW'),
+          reason: '55% 主色发光（Flutter BoxShadow 同款）');
+      expect(mk, contains('radiusDp'),
+          reason: '环圆角 Flutter 规范（胶囊 10/常规 8）');
+      final theme = File(
+        'android/app/src/main/kotlin/com/himi/syncwatch/nativeplayer/'
+        'NativePlayerUi.kt',
+      ).readAsStringSync();
+      expect(theme, contains('FOCUS_RING = 0xFFC0C1FF'),
+          reason: 'primary 实测值（ColorScheme.fromSeed(dark,#6366F1)）');
+      expect(theme, contains('FOCUS_GLOW = 0x8CC0C1FF'));
     });
   });
 }

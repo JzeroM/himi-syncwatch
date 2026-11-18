@@ -10,19 +10,18 @@ void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
 
   group('PlayerEngineFactory.supportedEngines（平台矩阵）', () {
-    test('681：Android 手机仅 MPV，TV 三引擎', () {
+    test('681：Android 手机仅 MPV，TV 双引擎（694 移除 Erika）', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       // 手机：仅 MPV
       expect(
         PlayerEngineFactory.supportedEngines(),
         <PlayerEngine>[PlayerEngine.mpv],
       );
-      // TV：MDK + Erika + MPV
+      // TV：MDK + MPV
       expect(
         PlayerEngineFactory.supportedEngines(tvMode: true),
         <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.erika,
           PlayerEngine.mpv,
         ],
       );
@@ -121,13 +120,13 @@ void main() {
           reason: 'media_kit 引擎已整体移除');
       expect(PlayerEngineFactory.isSupported(PlayerEngine.erika), isFalse);
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);
-      // TV：三引擎
+      // TV：双引擎（694 移除 Erika，用户拍板）
       expect(
           PlayerEngineFactory.isSupported(PlayerEngine.mdk, tvMode: true),
           isTrue);
       expect(
           PlayerEngineFactory.isSupported(PlayerEngine.erika, tvMode: true),
-          isTrue);
+          isFalse);
       // iOS：仅 Erika
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       expect(PlayerEngineFactory.isSupported(PlayerEngine.mdk), isFalse);

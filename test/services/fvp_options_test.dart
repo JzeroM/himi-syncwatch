@@ -14,7 +14,9 @@ void main() {
       expect(global['avsync.audio.adaptive'], 0);
       expect(global.containsKey('avsync.video.decoder_drop'), isFalse);
       expect(global['videoout.hdr'], 0);
-      expect(global.length, 2);
+      // 694：磁盘缓存恒开（mdk DiskCache）。
+      expect(global['cache.disk.io'], 1);
+      expect(global.length, 3);
     });
 
     test('avsync 开关开启：avsync.audio.adaptive=1（实验开关，默认关）', () {
@@ -60,7 +62,7 @@ void main() {
       expect(global.containsKey('audio.xa2.persistent'), isFalse);
     });
 
-    test('全开关同时开启：选项齐全互不覆盖（共 5 项，videoout.hdr 仍 0）', () {
+    test('全开关同时开启：选项齐全互不覆盖（共 6 项，videoout.hdr 仍 0）', () {
       final global = buildFvpOptions(
         xa2Persistent: true,
         renderCompatMode: true,
@@ -72,7 +74,9 @@ void main() {
       expect(global['avsync.audio.adaptive'], 1);
       expect(global.containsKey('avsync.video.decoder_drop'), isFalse);
       expect(global['videoout.hdr'], 0);
-      expect(global.length, 5);
+      // 694：磁盘缓存（mdk DiskCache）。
+      expect(global['cache.disk.io'], 1);
+      expect(global.length, 6);
     });
   });
 }

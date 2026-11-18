@@ -61,12 +61,11 @@ void main() {
       expect(PlayerEngineFactory.isSingleEngine(tvMode: false), isTrue);
     });
 
-    test('R2 安卓 TV 保留三引擎', () {
+    test('R2 安卓 TV 双引擎（694 移除 Erika）', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(PlayerEngineFactory.supportedEngines(tvMode: true), <PlayerEngine>[
         PlayerEngine.mdk,
-        PlayerEngine.erika,
         PlayerEngine.mpv,
       ]);
       expect(PlayerEngineFactory.isSingleEngine(tvMode: true), isFalse);

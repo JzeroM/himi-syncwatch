@@ -172,8 +172,15 @@ class Player {
     Libfvp.registerType(nativeHandle, 0, false);
   }
 
-  /// Release resources
-  void dispose() async {
+  /// Release resources.
+  void dispose() => unawaited(disposeAsync());
+
+  /// Release resources and wait for native teardown to finish.
+  ///
+  /// 【694：上游 fvp 0.40.0 "make player disposal awaitable" 移植】旧
+  /// `void dispose() async` 只能 fire-and-forget——调用方的 Future.sync
+  /// 只同步到第一个 await，「返回」≠删除完成（真机 MDK→MPV 切换闪退根因）。
+  Future<void> disposeAsync() async {
     if (_pp == nullptr) {
       textureId.dispose();
       return;
@@ -210,6 +217,12 @@ class Player {
     if ((textureId.value ?? -1) >= 0) {
       await FvpPlatform.instance.releaseTexture(nativeHandle, textureId.value!);
       textureId.value = null;
+    }
+    // Releasing a texture must not wait for media/video size. That future may
+    // never complete when an in-flight load is cancelled by disposal.
+    // 【694：上游 fvp 0.40.0 移植——无媒体时 updateTexture(-1) 会永久挂等】
+    if ((width != null && width <= 0) || (height != null && height <= 0)) {
+      return -1;
     }
     final size = await _videoSize.future;
     if (size == null) {

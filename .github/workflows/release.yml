@@ -52,12 +52,14 @@ jobs:
     # 镜像预装内容与可用空间随之变化，会引入无法复现的构建抖动。
     runs-on: ubuntu-24.04
     env:
-      # mdk-sdk v0.39.0 版本锁定（GitHub Release，SHA 校验防资产替换）。
-      # v0.39.0 含 "Fix EGL platform apis attribute type in EGL 1.4~1.5"
-      # 修复，是盒子 eglChooseConfig 3004 黑屏实验（E0）的目标版本；
+      # mdk-sdk v0.40.1 版本锁定（GitHub Release，SHA 校验防资产替换）。
+      # v0.40.1（694 升级，原 v0.39.0）：AMediaCodec 异步输出消费重构
+      # （HDR 丢帧「帧到渲染器被丢」线）、GL yuv sampler 修 AMediaCodec
+      # AV1 帧渲染不出、息屏恢复冻屏、fvp#410 死循环、HLG 峰值适配、
+      # AAudio 恢复失败、暂停降载、subtitle.delay 属性、DiskCache 修复。
       # 不用 SF nightly 是因 522 故障史（commit ab70fb6）且内容不可控。
-      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.39.0
-      FVP_DEPS_SHA256: cd196c9f6fb1872c4f35184848522ca3ab9c91196da47ca9761d8fb50e3e9cf3
+      FVP_DEPS_URL: https://github.com/wang-bin/mdk-sdk/releases/download/v0.40.1
+      FVP_DEPS_SHA256: 80079993f308bcd0afb5b34421e9f4034dcefb6d901d0f31e23b8508d694630f
     steps:
       - uses: actions/checkout@v4
 

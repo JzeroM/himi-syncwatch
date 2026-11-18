@@ -42,7 +42,11 @@ internal object NPTheme {
     const val DECODE_PANEL = 0xFF1E1E2E.toInt()
     /** 解码当前值文字（587 深色弹层上仍用主色，白字由 PANEL_TEXT 承担）。 */
     const val DECODE_CURRENT_TEXT = 0xFF6366F1.toInt()
-    const val FOCUS_RING = 0xFFC1C2FE.toInt()
+    /// 694：焦点环主色 = Flutter `ColorScheme.fromSeed(dark, #6366F1).primary`
+    /// 实测值（#FFC0C1FF），完全对齐 Flutter TvFocusable。
+    const val FOCUS_RING = 0xFFC0C1FF.toInt()
+    /// 焦点环发光层（Flutter BoxShadow(primary, alpha 0.55, blur 14)）。
+    const val FOCUS_GLOW = 0x8CC0C1FF.toInt()
     const val SHADOW = 0x4A000000
 
     /** 顶/底栏渐变（Flutter 侧 `0xCC000000` → transparent）。 */

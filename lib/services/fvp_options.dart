@@ -52,6 +52,10 @@ Map<String, Object> buildFvpOptions({
     // videoout.hdr 恒 0（见 doc 头）：逐内容 HDR 输出改由
     // Player.set(ColorSpace) 控制，此全局项须为 0 以免覆盖之。
     'videoout.hdr': 0,
+    // 694：磁盘缓存（mdk DiskCache；0.40.x 修了 IO 选项/超时传递与
+    // 打开前保留）：http(s) 边下边存、断网/拖动/重连更稳。
+    // 缓存目录默认 app cache，LRU 自管理。
+    'cache.disk.io': 1,
   };
   return {'global': global};
 }

@@ -91,7 +91,7 @@ void main() {
   });
 
   group('646.1 其他平台不受影响', () {
-    test('681：Android 手机仅 MPV，TV 保留三引擎', () {
+    test('681：Android 手机仅 MPV，TV 双引擎（694 移除 Erika）', () {
       PlayerEngineFactory.debugIsOhosOverride = false;
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
@@ -101,10 +101,9 @@ void main() {
         PlayerEngine.mpv,
       ]);
       expect(PlayerEngineFactory.isSingleEngine(tvMode: false), isTrue);
-      // TV：三引擎保留
+      // TV：双引擎（694 移除 Erika）
       expect(PlayerEngineFactory.supportedEngines(tvMode: true), <PlayerEngine>[
         PlayerEngine.mdk,
-        PlayerEngine.erika,
         PlayerEngine.mpv,
       ]);
       expect(PlayerEngineFactory.isSingleEngine(tvMode: true), isFalse);

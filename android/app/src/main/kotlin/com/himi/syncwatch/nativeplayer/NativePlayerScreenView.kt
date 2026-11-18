@@ -1637,7 +1637,17 @@ class NativePlayerScreenView(
             // 左右键快进退由 TvKeyRouter 特例接管（对齐 Flutter SeekBar 语义）。
             seekBar,
         ) + (0 until trailingGroup.childCount).map { trailingGroup.getChildAt(it) }
-        focusables.forEach { makeFocusable(it) }
+        // 694：环圆角对齐 Flutter（胶囊 10 / 常规 8）。
+        val capsules = setOf<View>(
+            speedChip, kernelChip, subtitleStyleChip, decodeChip,
+            bottomSpeedChip, skipPromptChip,
+        )
+        focusables.forEach {
+            makeFocusable(
+                it,
+                radiusDp = if (capsules.contains(it)) NPTheme.RADIUS_CHIP else 8,
+            )
+        }
         // 694：可聚焦性就绪后**强制**聚焦播放/暂停键（Flutter hopLeft/hopRight
         // 中枢）——刚重建完 bars 焦点本就重置，无条件抢占安全。
         post { forcePlayPauseFocus() }
@@ -1757,8 +1767,13 @@ class NativePlayerScreenView(
     /** 694：焦点标记——makeFocusable 的控件打标；有效持焦判据用它过滤裸 View。 */
     private val focusMarker = Any()
 
-    /** 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 3px #C1C2FE 环。 */
-    private fun makeFocusable(view: View) {
+    /**
+     * 把一个控件变成 D-pad 可达：可聚焦 + 聚焦时画 Flutter TvFocusable
+     * 同款焦点环（3px 主色描边 + 55% 主色发光 + 1.06 缩放动画）。
+     *
+     * [radiusDp]：Flutter 规范——胶囊 10、常规控件 8。
+     */
+    private fun makeFocusable(view: View, radiusDp: Int = 8) {
         view.isFocusable = true
         // 694：必须允许 touch mode 聚焦——真机（手机 TV 模式）触摸后进入
         // touch mode，focusableInTouchMode=false 的视图 requestFocus() 一律
@@ -1770,20 +1785,37 @@ class NativePlayerScreenView(
         // 不画环）。基线各自保存/恢复。
         val base = view.background
         val baseForeground = view.foreground
-        fun ring(): GradientDrawable = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(NPTheme.RADIUS_CHIP).toFloat()
-            setColor(Color.TRANSPARENT)
-            setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
+        fun ring(): android.graphics.drawable.Drawable {
+            // 完全对齐 Flutter TvFocusable：Border.all(primary, 3px) +
+            // BoxShadow(primary 55%, blur 14)。发光用粗半透明描边层模拟。
+            val glow = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(radiusDp).toFloat()
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(6), NPTheme.FOCUS_GLOW)
+            }
+            val core = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(radiusDp).toFloat()
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(NPTheme.SEEK_FOCUS_RING), NPTheme.FOCUS_RING)
+            }
+            return android.graphics.drawable.LayerDrawable(arrayOf(glow, core))
         }
         view.setOnFocusChangeListener { v, hasFocus ->
             // 环同时挂 background + foreground（真机「看不到任何焦点」保险：
             // 个别控件的背景层会盖住 background 环；foreground 恒在内容之上）。
             v.background = if (hasFocus) ring() else base
             v.foreground = if (hasFocus) ring() else baseForeground
+            // 694：聚焦缩放 1.06（90ms 减速，对齐 Flutter PressableScale）。
+            // 与 Flutter AnimatedScale 同语义：命中区随视觉缩放。
+            v.animate()
+                .setDuration(90)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .scaleX(if (hasFocus) 1.06f else 1.0f)
+                .scaleY(if (hasFocus) 1.06f else 1.0f)
+                .start()
             logSink("[focus] ${v.javaClass.simpleName}@${Integer.toHexString(v.hashCode())} → $hasFocus")
-            // 【不改几何】焦点只画环（照抄鸿蒙 BORDER_FOCUS）：旧实现
-            // scaleX/Y 1.1 会连带放大命中区 → 焦点态相邻控件误触。
         }
     }
 
@@ -2550,6 +2582,13 @@ class NativePlayerScreenView(
             // 焦点源先捕获（renderOverlays 尾部会把焦点移进面板）。
             focusBeforePanel = focusBeforePanel ?: findFocus()
             panelFocusRowIndex = 0
+            if (panel == PANEL_EPISODE) {
+                // 694：选集面板打开焦点自动锁定**当前集**（对齐 Flutter
+                // autofocus=当前集），requestFocus 自动滚动到可见。
+                val cur = lastState.episodes
+                    .indexOfFirst { it.index == lastState.currentEpisodeIndex }
+                if (cur >= 0) panelFocusRowIndex = cur
+            }
         }
         activePanel = if (closing) null else panel
         listener?.onOpenPanel(panel)

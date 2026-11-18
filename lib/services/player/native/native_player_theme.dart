@@ -64,7 +64,10 @@ abstract final class NativePlayerTheme {
   static const Color decodeCurrentText = Color(0xFF6366F1);
 
   /// TV 进度条焦点环（`#C1C2FE`）。
-  static const Color focusRing = Color(0xFFC1C2FE);
+  /// 694：= Flutter `ColorScheme.fromSeed(dark, #6366F1).primary` 实测值。
+  static const Color focusRing = Color(0xFFC0C1FF);
+  /// 焦点环发光层（Flutter BoxShadow(primary, alpha 0.55)）。
+  static const Color focusGlow = Color(0x8CC0C1FF);
 
   /// 片头片尾居中玻璃卡投影。
   static const Color shadow = Color(0x4A000000);

@@ -106,16 +106,15 @@ void main() {
       expect(fn, isNot(contains('isSupported(target))')));
     });
 
-    test('2.2 安卓 TV 支持三引擎，安卓手机只 MPV', () {
+    test('2.2 安卓 TV 支持双引擎（694 移除 Erika），安卓手机只 MPV', () {
       // 直接验证工厂契约（isSupported 的默认值陷阱来源）
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       try {
         final tv = PlayerEngineFactory.supportedEngines(tvMode: true);
-        expect(tv, containsAll(<PlayerEngine>[
+        expect(tv, <PlayerEngine>[
           PlayerEngine.mdk,
-          PlayerEngine.erika,
           PlayerEngine.mpv,
-        ]));
+        ]);
 
         final phone = PlayerEngineFactory.supportedEngines(tvMode: false);
         expect(phone, [PlayerEngine.mpv]);
@@ -194,12 +193,13 @@ void main() {
       expect(find.byKey(const ValueKey('engineBoardList')), findsOneWidget);
       for (final e in [
         PlayerEngine.mdk,
-        PlayerEngine.erika,
         PlayerEngine.mpv,
       ]) {
         expect(find.byKey(ValueKey('engineBoard_${e.id}')), findsOneWidget,
             reason: '${e.label} 板块应存在');
       }
+      expect(find.byKey(const ValueKey('engineBoard_erika')), findsNothing,
+          reason: '694：TV 移除 Erika');
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
@@ -211,11 +211,10 @@ void main() {
       await pumpTv(tester);
 
       final ys = [
-        for (final e in [PlayerEngine.mdk, PlayerEngine.erika, PlayerEngine.mpv])
+        for (final e in [PlayerEngine.mdk, PlayerEngine.mpv])
           tester.getTopLeft(find.byKey(ValueKey('engineBoard_${e.id}'))).dy,
       ];
       expect(ys[0], lessThan(ys[1]));
-      expect(ys[1], lessThan(ys[2]));
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
@@ -266,9 +265,9 @@ void main() {
       try {
       await pumpTv(tester);
 
-      await tester.tap(find.byKey(const ValueKey('engineBoard_erika')));
+      await tester.tap(find.byKey(const ValueKey('engineBoard_mdk')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('engineDetailPage_erika')), findsOneWidget);
+      expect(find.byKey(const ValueKey('engineDetailPage_mdk')), findsOneWidget);
 
       // 模拟系统返回
       await tester.pageBack();

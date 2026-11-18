@@ -538,21 +538,45 @@ class NipaMdkAdapter extends AbstractPlayer
   }
 
   @override
+  /// 694：在飞 prepare 取消信号（仿上游 FvpCreateCancellation 语义）。
+  /// fvp 每次 prepare 会重置内部 completer——旧 waiter 永挂；且 pending
+  /// prepare 会拖住释放（真机「快速切集/切换引擎卡顿」面）。新 prepare /
+  /// 释放先取消旧的，被取消者静默返回（新任务接管）。
+  Completer<void>? _prepareCancel;
+
+  /// 取消在飞 prepare（快速切集竞速 / 切换引擎 / 退出前调用）。
+  void cancelPendingPrepare() {
+    final c = _prepareCancel;
+    _prepareCancel = null;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
+  static final StateError _prepareCancelled =
+      StateError('mdk prepare cancelled');
+
   Future<void> prepare({int startMs = 0}) async {
     if (_released('prepare')) return;
+    cancelPendingPrepare();
+    final cancel = _prepareCancel = Completer<void>();
     try {
-      if (startMs > 0) {
-        await _mdkPlayer.prepare(position: startMs);
-      } else {
-        await _mdkPlayer.prepare();
-      }
+      final loading = startMs > 0
+          ? _mdkPlayer.prepare(position: startMs)
+          : _mdkPlayer.prepare();
+      await Future.any<void>([
+        loading,
+        cancel.future.then((_) => throw _prepareCancelled),
+      ]);
       // prepare后重新应用播放速度，确保设置生效
       if (_playbackRate != 1.0) {
         _mdkPlayer.playbackRate = _playbackRate;
         debugPrint('MDK: prepare后应用播放速度: ${_playbackRate}x');
       }
     } catch (e) {
+      // 被新 prepare/释放取消：静默返回（新任务接管），不向上传播。
+      if (identical(e, _prepareCancelled)) return;
       rethrow;
+    } finally {
+      if (identical(_prepareCancel, cancel)) _prepareCancel = null;
     }
   }
 
@@ -612,6 +636,8 @@ class NipaMdkAdapter extends AbstractPlayer
 
   Future<void> _disposeAsyncInternal() async {
     _isDisposed = true;
+    // 694 B：释放前取消在飞 prepare——pending prepare 会拖住释放。
+    cancelPendingPrepare();
     _buffering.dispose();
     _settleSeek();
     await _stateSub?.cancel();
@@ -622,16 +648,21 @@ class NipaMdkAdapter extends AbstractPlayer
     await _eventCtrl.close();
     await _mediaStatusSubscription?.cancel();
     LogService().log('Player', 'mdk teardown: begin', sync: true);
-    // 694 真机回归（MDK 释放必闪退，3/3 现场钉死在 disposeAsync 完成后）：
-    // fvp 的 dispose() 是 fire-and-forget 的 mdkPlayerAPI_delete（另一线程、
-    // 无完成信号），裸删撞上仍在收尾的原生资源（纹理/AudioTrack/渲染线程）
-    // → 必 SIGSEGV。照搬 MdkPlayerAdapter._disposeImpl 的确定性顺序
-    //（该实现只被静态引用、从未跑过）：显式 stop → 确定性释放纹理 →
-    // delete → settle。每步落盘：仍崩可直接分辨崩在哪一步。
+    // 694 真机回归（MDK 释放必闪退，himi_logs 多次现场钉死在 delete 窗口）：
+    // fvp 旧 dispose 是 fire-and-forget（「返回」≠删除完成），且 state=stopped
+    // 发出即走——渲染线程未静止就 mdkPlayerAPI_delete → UAF → SIGSEGV。
+    // 真确定性顺序（配合 fvp 0.40.0 可等待删除）：停 → **waitFor 真等静止** →
+    // 释放纹理 → **await disposeAsync 真等删除** → settle。每步落盘。
     try {
       _mdkPlayer.state = mdk.PlaybackState.stopped;
-    } catch (_) {}
-    LogService().log('Player', 'mdk teardown: stop', sync: true);
+      // waitFor(stopped, 2s)：等 mdk 解码/渲染线程真正静止（fvp 自带 API）。
+      final quiesced = _mdkPlayer.waitFor(mdk.PlaybackState.stopped,
+          timeout: 2000);
+      LogService().log('Player', 'mdk teardown: stop quiesced=$quiesced',
+          sync: true);
+    } catch (e) {
+      LogService().log('Player', 'mdk teardown: stop/wait 异常: $e', sync: true);
+    }
     try {
       await _mdkPlayer
           .updateTexture(width: -1)
@@ -639,12 +670,14 @@ class NipaMdkAdapter extends AbstractPlayer
     } catch (_) {}
     LogService().log('Player', 'mdk teardown: texture released', sync: true);
     try {
-      await Future<void>.sync(_mdkPlayer.dispose);
-    } catch (_) {}
+      // fvp 0.40.0 disposeAsync：删除可等待（旧 dispose() 只能 fire-and-forget）。
+      await _mdkPlayer.disposeAsync().timeout(const Duration(seconds: 4));
+    } catch (e) {
+      LogService().log('Player', 'mdk teardown: delete 异常: $e', sync: true);
+    }
     LogService().log('Player', 'mdk teardown: complete', sync: true);
-    // mdkPlayerAPI_delete 无 Future 可等：settle 等原生资源落定后再允许
-    // 新引擎创建/视图卸载（否则仍会撞上删除进行中的收尾）。
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    // 短 settle：给原生音频/纹理收尾一点余量再允许新引擎创建。
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     LogService().log('Player', 'mdk teardown: settled', sync: true);
   }
 

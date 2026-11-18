@@ -67,20 +67,18 @@ class PlayerEngineFactory {
   /// - **Windows**：只 MPV（646 起走 Qt 独立窗口 + vo=gpu-next HDR 直出）
   /// - **iOS**：只 Erika
   ///
-  /// [tvMode] 决定安卓是否保留三引擎——TV 遥控场景用户仍需要按机型
+  /// [tvMode] 决定安卓是否保留多引擎——TV 遥控场景用户仍需要按机型
   /// 挑内核（不同盒子硬解能力差异大），手机端则统一 MPV 避免歧义。
   static List<PlayerEngine> supportedEngines({bool tvMode = false}) {
     if (isOhos) return const <PlayerEngine>[PlayerEngine.mpv];
     if (kIsWeb) return const <PlayerEngine>[PlayerEngine.mdk];
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        // 681：手机只 MPV；TV 保留三引擎（用户明确要求）
+        // 681：手机只 MPV。
+        // 694：TV 移除 Erika（用户拍板）——TV 双引擎 MDK/MPV（按机型挑
+        // 硬解内核的诉求仍在；Erika 仅 iOS 保留）。
         return tvMode
-            ? const <PlayerEngine>[
-                PlayerEngine.mdk,
-                PlayerEngine.erika,
-                PlayerEngine.mpv,
-              ]
+            ? const <PlayerEngine>[PlayerEngine.mdk, PlayerEngine.mpv]
             : const <PlayerEngine>[PlayerEngine.mpv];
       case TargetPlatform.iOS:
         return const <PlayerEngine>[PlayerEngine.erika];

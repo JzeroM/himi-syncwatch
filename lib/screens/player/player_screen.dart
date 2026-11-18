@@ -10639,7 +10639,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           _player.setHttpHeaders({'X-Emby-Token': _currentToken});
         }
         _player.media = _currentPlayUrl;
-        await _player.prepare(startMs: positionMs);
+        // 694 C：切换重载 20s 超时（坏源/断网不再永久转圈）——超时抛
+        // TimeoutException 走 catch 回滚原引擎 + toast。
+        await _player
+            .prepare(startMs: positionMs)
+            .timeout(const Duration(seconds: 20));
         if (!mounted) return;
         await _ensureTexture();
         await _syncVideoNativeSize();
@@ -13340,6 +13344,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     final forceBitmapBottom =
         _currentEngine == PlayerEngine.mdk && _activeSubtitleIsBitmap;
+    // 694：mdk 0.40.0 新增 `subtitle.delay`（秒）——切轨/样式补写时一并落。
+    if (_currentEngine == PlayerEngine.mdk) {
+      _player.setProperty(
+        'subtitle.delay',
+        (_subtitleDelayMs / 1000.0).toStringAsFixed(3),
+      );
+    }
     for (final write in PlayerScreen.subtitleStyleWrites(
       forceBitmapBottom: forceBitmapBottom,
       scale: _subtitleScale,
@@ -13410,7 +13421,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _applyMpvSubtitleDelay(v);
       return;
     }
-    // 其他引擎（MDK/Erika 无等价属性）保留重写文件方案。
+    // 694：mdk 0.40.0 起有 `subtitle.delay` 等价属性（秒，浮点）——同 620
+    // 全部收益（立即生效/位图字幕有效/零网络/不动 ASS 相对时序），
+    // 弃用重写文件方案。
+    if (_currentEngine == PlayerEngine.mdk) {
+      if (!_trackSwitchInFlight) {
+        final seconds = (v / 1000.0).toStringAsFixed(3);
+        _player.setProperty('subtitle.delay', seconds);
+        LogService().log('Player', 'MDK subtitle.delay=$seconds（${v}ms）');
+      }
+      return;
+    }
+    // 其他引擎（Erika 无等价属性）保留重写文件方案。
     if (v == 0) {
       // 归零：立即恢复原素材轨
       _restoreActiveSubtitleSource();

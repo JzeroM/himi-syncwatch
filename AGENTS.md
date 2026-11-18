@@ -339,7 +339,7 @@ Qt 6 高 DPI 缩放恒开：`QWindow::setGeometry`/`QScreen::geometry` 是
 | 平台 | 引擎 | 播放器内切换 |
 |---|---|---|
 | Android 手机 | 仅 MPV | ✗ |
-| Android TV | MDK / Erika / MPV | ✓ 底栏 |
+| Android TV | MDK / MPV（694 移除 Erika） | ✓ 底栏 |
 | HarmonyOS | 仅 MPV | ✗ |
 | Windows | 仅 MPV（Qt 独立播放窗） | ✗ |
 | iOS / iPadOS | 仅 Erika | ✗ |

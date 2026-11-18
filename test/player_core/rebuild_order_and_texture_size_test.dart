@@ -141,4 +141,52 @@ void main() {
           reason: 'TV 引擎胶囊已改纯文字（MDK/Erika/MPV）');
     });
   });
+
+  group('⑤ mdk 0.40 升级配套（fvp 移植/teardown/取消/延迟/缓存）', () {
+    test('fvp 0.40.0 移植：disposeAsync 可等待 + updateTexture 释放不挂等', () {
+      final fvp = File('third_party/fvp/lib/src/player.dart').readAsStringSync();
+      expect(fvp, contains('Future<void> disposeAsync()'),
+          reason: '删除可等待（官方 0.40.0 "make player disposal awaitable"）');
+      expect(fvp, contains('void dispose() => unawaited(disposeAsync())'));
+      expect(fvp, contains('Releasing a texture must not wait'),
+          reason: 'updateTexture(-1) 释放后即返回，无媒体不再永久挂等');
+    });
+
+    test('teardown：waitFor 真等静止 + await disposeAsync', () {
+      final mdkAdapter =
+          File('lib/player_core/adapters/nipa_mdk_adapter.dart')
+              .readAsStringSync();
+      expect(mdkAdapter, contains('waitFor(mdk.PlaybackState.stopped'),
+          reason: 'state=stopped 发出即走；必须 waitFor 渲染线程静止再删');
+      expect(mdkAdapter, contains('_mdkPlayer.disposeAsync()'),
+          reason: '旧 dispose fire-and-forget「返回≠删除完成」是闪退根因');
+    });
+
+    test('prepare 取消（A/B：快切竞速 + 释放不被 pending prepare 拖住）', () {
+      final mdkAdapter =
+          File('lib/player_core/adapters/nipa_mdk_adapter.dart')
+              .readAsStringSync();
+      expect(mdkAdapter, contains('void cancelPendingPrepare()'));
+      expect(mdkAdapter, contains('Future.any<void>('),
+          reason: '新 prepare/释放取消旧 waiter（旧 Future 永挂根因）');
+      expect(mdkAdapter, contains('cancelPendingPrepare()'),
+          reason: '_disposeAsyncInternal 释放前取消');
+    });
+
+    test('切换重载 20s 超时回滚（C）', () {
+      expect(screen, contains('.timeout(const Duration(seconds: 20))'),
+          reason: '坏源/断网切换不再永久转圈，超时走 catch 回滚');
+    });
+
+    test('MDK 字幕延迟走 subtitle.delay 属性（弃重写文件方案）', () {
+      expect(screen, contains("setProperty(\n        'subtitle.delay',"),
+          reason: 'mdk 0.40.0 新增 subtitle.delay（秒），同 mpv sub-delay 语义');
+    });
+
+    test('DiskCache 启用（cache.disk.io=1）', () {
+      final fvpOptions =
+          File('lib/services/fvp_options.dart').readAsStringSync();
+      expect(fvpOptions, contains("'cache.disk.io': 1"));
+    });
+  });
 }
