@@ -62,8 +62,28 @@ void main() {
       expect(readme, contains('Android | 8.0（API 26） | MPV'));
     });
 
-    test('681：README：Android TV 保留三引擎', () {
-      expect(readme, contains('MDK / Erika / MPV'));
+    test('694：README：Android TV 双引擎 MDK / MPV（Erika 已移除）', () {
+      expect(readme, contains('MDK / MPV'));
+      expect(readme, isNot(contains('MDK / Erika / MPV')),
+          reason: '694：TV 移除 Erika（用户拍板），Erika 仅 iOS 保留');
+    });
+  });
+
+  group('②b 694 新特性描述（防 README 再腐化）', () {
+    test('弹幕弹窗/搜索绑定已写入', () {
+      expect(readme, contains('弹幕弹窗'));
+    });
+
+    test('画质增强（Anime4K）已写入', () {
+      expect(readme, contains('Anime4K'));
+    });
+
+    test('默认播放器设置已写入', () {
+      expect(readme, contains('默认播放器'));
+    });
+
+    test('解码模式胶囊已写入', () {
+      expect(readme, contains('解码模式胶囊'));
     });
   });
 

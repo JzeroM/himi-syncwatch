@@ -27,9 +27,10 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](ht
 |------|------|
 | **Emby 媒体库** | 登录、浏览、搜索、收藏、详情页、选集、播放线路 |
 | **高品质播放** | HDR 全链路、原生位图字幕/PGS、低延迟起播 |
+| **画质增强** | Anime4K 实时超分 + 线条锐化，低分辨率片源更清晰（MPV 着色器管线，默认关闭） |
 | **多人同步房间** | 房间码 / 二维码加入，播放控制全员同步 |
 | **房间双窗协作**（Windows） | 视频窗 + 资源面板窗并排，双向跟随移动/缩放 |
-| **弹幕** | [弹弹 Play](https://www.dandanplay.com) 协议兼容（免签名），时间轴匹配 + 本地缓存 |
+| **弹幕** | [弹弹 Play](https://www.dandanplay.com) 协议兼容（免签名）；弹幕弹窗搜索/绑定弹幕源，多服务器匹配、自动记忆绑定 |
 | **液态玻璃 UI** | 真折射 shader，参数可调（强度/折射率/色散），基于 [liquid_glass_widgets](https://github.com/sdegenaar/liquid_glass_widgets) |
 | **TV 模式** | 遥控器焦点导航、顶部横排导航、底栏引擎切换 |
 | **多图标集** | 默认 / 艺术 / 玻璃 / 霓虹，运行时切换 |
@@ -41,25 +42,31 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](ht
 | 平台 | 引擎 | 播放器内切换 | 说明 |
 |------|------|-------------|------|
 | **Android 手机** | 仅 **MPV** | ❌ | 原生 Surface + HDR 直出，统一体验 |
-| **Android TV** | **MDK / Erika / MPV** | ✅ 底栏 | 不同盒子硬解能力差异大，保留三引擎可选 |
+| **Android TV** | **MDK / MPV** | ✅ 底栏 | 不同盒子硬解能力差异大，MDK / MPV 可选 |
 | **HarmonyOS** | 仅 **MPV** | ❌ | XComponent + Vulkan（ohosvk） |
 | **Windows** | 仅 **MPV** | ❌ | Qt 独立播放窗 + `vo=gpu-next` HDR 直出（单人带原生窗口按钮） |
 | **iOS / iPadOS** | 仅 **Erika** | ❌ | Rust 内核，HDR10 + 原生位图字幕 |
 
+播放器内控件：
+
+- **引擎胶囊**（Android TV 底栏）：点击开面板切换 MDK / MPV，文案随当前引擎联动
+- **解码模式胶囊**（SW / HW / HW+ 点击循环）：仅 MPV 引擎显示（MDK 恒硬解、无档位）（安卓手机 / TV、Windows）
+- **默认播放器**：设置 → 播放器 → 默认播放器可选引擎，每次进入播放器从默认引擎开始
+
 引擎说明：
 
 - **MPV**（[mpv](https://mpv.io)）— 主力内核。原生 Surface / 独立窗口直出，HDR 零拷贝，格式覆盖最广。
-- **MDK**（[fvp](https://github.com/wang-bin/fvp)）— 备选，兼容性优先（Flutter 纹理）。
+- **MDK**（[fvp](https://github.com/wang-bin/fvp)）— Android TV 备选，兼容性优先，恒硬解。
 - **Erika**（[Erika](https://github.com/AimesSoft/Erika)）— Rust 内核，iOS 唯一选择。
 
-> 设置 → 播放器配置：单引擎平台只显示对应引擎一页（解码 / HDR / 渲染器选项仍可调），多引擎平台（Android TV）显示分页。
+> 设置 → 播放器配置：单引擎平台只显示对应引擎一页（解码 / HDR / 渲染器选项仍可调）；多引擎平台（Android TV）每个引擎独立设置页。
 
 ## 平台支持
 
 | 平台 | 最低要求 | 播放内核 | 房间模式 |
 |------|---------|---------|---------|
 | Android | 8.0（API 26） | MPV | ✅ 原生双窗（视频 + 资源面板） |
-| Android TV | 8.0+ | MPV / MDK / Erika | ✅ |
+| Android TV | 8.0+ | MDK / MPV | ✅ |
 | iOS / iPadOS | 12.0+ | Erika | ✅ |
 | Windows x64 | 10+ | MPV（Qt 独立窗口 + HDR 直出） | ✅ 双窗并排 + 双向跟随 |
 | HarmonyOS | 6.0+（API 26） | MPV（XComponent + Vulkan） | ✅ 原生双窗 |
@@ -125,7 +132,7 @@ HarmonyOS 不在 GitHub Release 提供 HAP，通过 AppGallery 官方分发测�
 | 状态管理 | Riverpod 2 | https://github.com/rrousselGit/riverpod |
 | 播放引擎（主力） | MPV（原生 Surface / Qt 独立窗口，HDR 直出） | https://mpv.io |
 | 播放引擎（备选，Android TV） | MDK（fvp 插件封装 [Bilibili MDK](https://github.com/bilibili/MDK)） | https://github.com/wang-bin/fvp |
-| 播放引擎（iOS / Android TV） | Erika（Rust 播放内核） | https://github.com/AimesSoft/Erika |
+| 播放引擎（iOS） | Erika（Rust 播放内核） | https://github.com/AimesSoft/Erika |
 | Windows 播放窗 | Qt Quick + libmpv（本仓库 `native/windows_qt_player`） | https://www.qt.io |
 | 实时通信 | Agora RTM 2 | https://github.com/AgoraIO-Extensions/Agora-Flutter-RTM-SDK |
 | Windows RTM | himi_windows_rtm 插件（本仓库） | 本地插件 |
