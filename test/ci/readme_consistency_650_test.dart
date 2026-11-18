@@ -87,6 +87,25 @@ void main() {
     });
   });
 
+  group('②c HDR 与杜比视界描述（防 README 再腐化）', () {
+    test('HDR 与杜比视界章节存在', () {
+      expect(readme, contains('## HDR 与杜比视界'));
+      expect(readme, contains('杜比视界'));
+    });
+
+    test('DV 动态元数据/感知映射已写入', () {
+      expect(readme, contains('RPU'));
+      expect(readme, contains('BT.2390'));
+    });
+
+    test('HDR 输出策略关键事实已写入', () {
+      expect(readme, contains('HDR10'));
+      expect(readme, contains('HLG'));
+      expect(readme, contains('tone map'));
+      expect(readme, contains('峰值亮度'));
+    });
+  });
+
   group('③ 过时描述已清除', () {
     test('不再写「自编译 libmpv 内核」', () {
       expect(

@@ -61,6 +61,15 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](ht
 
 > 设置 → 播放器配置：单引擎平台只显示对应引擎一页（解码 / HDR / 渲染器选项仍可调）；多引擎平台（Android TV）每个引擎独立设置页。
 
+## HDR 与杜比视界
+
+全链路 HDR：自动识别 HDR10 / HDR10+ / HLG / 杜比视界内容，按屏幕能力选择输出——HDR 屏直出真 HDR（BT.2100 PQ / HLG），SDR 屏走感知 tone map（不发白、不丢帧）。
+
+- **直出通道**：Windows Qt 独立窗口 `vo=gpu-next` HDR 直出；Android SurfaceView 独立显示层（TV 全分辨率输出）；HarmonyOS XComponent
+- **杜比视界**：P5 / P8 逐场景动态元数据（RPU）映射，高光细节完整保留；P7 解码基础层（不做 FEL）
+- **DV 感知映射**：DV 动态元数据使用 BT.2390 感知曲线（hybrid）逐场景亮度自适应；普通 HDR10 保持标准映射
+- **能力探测**：启动自动检测显示器 HDR 类型（HDR10 / HLG / DV / HDR10+）与峰值亮度（nits）、DV 硬解 profile，自动选择解码与输出路径
+
 ## 平台支持
 
 | 平台 | 最低要求 | 播放内核 | 房间模式 |
@@ -74,7 +83,7 @@ HIMI 是一款基于 **[Flutter](https://flutter.dev)** 的跨平台 **[Emby](ht
 补充说明：
 
 - Windows 7 不支持（Flutter 桌面运行时基线限制）。
-- HarmonyOS 通过 AppGallery 官方分发测试；DoVi P5/P8 依赖内核 RPU 解析，P7 仅解基础层，不做 FEL。
+- HarmonyOS 通过 AppGallery 官方分发测试；DoVi 支持详见「HDR 与杜比视界」一节。
 - macOS / Linux 暂停支持（多人观影 RTM 无对应原生实现，已从发版产物移除）。
 
 ## 房间模式
