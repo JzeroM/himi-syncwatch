@@ -537,7 +537,6 @@ class NipaMdkAdapter extends AbstractPlayer
     _mdkPlayer.setMedia(path, _fromPlayerMediaType(type));
   }
 
-  @override
   /// 694：在飞 prepare 取消信号（仿上游 FvpCreateCancellation 语义）。
   /// fvp 每次 prepare 会重置内部 completer——旧 waiter 永挂；且 pending
   /// prepare 会拖住释放（真机「快速切集/切换引擎卡顿」面）。新 prepare /
@@ -554,6 +553,7 @@ class NipaMdkAdapter extends AbstractPlayer
   static final StateError _prepareCancelled =
       StateError('mdk prepare cancelled');
 
+  @override
   Future<void> prepare({int startMs = 0}) async {
     if (_released('prepare')) return;
     cancelPendingPrepare();
