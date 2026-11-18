@@ -685,12 +685,18 @@ class NipaMdkAdapter extends AbstractPlayer
           .timeout(const Duration(seconds: 2));
     } catch (_) {}
     LogService().log('Player', 'mdk teardown: texture released', sync: true);
+    // 694 崩溃取证：delete 是 native 重操作，SIGSEGV 会丢异步批。用 sync:true
+    // 走 flushSync→writeAsStringSync（写内核页缓存，进程崩溃不丢），delete 前后
+    // 各留一条——下次导出 himi_runtime.log 即知删除是否完成（走到哪步）。
+    LogService().log('Player', 'MDK_DELETE_BEFORE', sync: true);
     try {
-      // fvp 0.40.0 disposeAsync：删除可等待（旧 dispose() 只能 fire-and-forget）。
+      // fvp 0.40.0 disposeAsync：删除可等待（旧 dispose() 只能 fire-and-forget），
+      // 内含 erase-before-delete（detachPlayer）。
       await _mdkPlayer.disposeAsync().timeout(const Duration(seconds: 4));
     } catch (e) {
       LogService().log('Player', 'mdk teardown: delete 异常: $e', sync: true);
     }
+    LogService().log('Player', 'MDK_DELETE_AFTER', sync: true);
     LogService().log('Player', 'mdk teardown: complete', sync: true);
     // 短 settle：给原生音频/纹理收尾一点余量再允许新引擎创建。
     await Future<void>.delayed(const Duration(milliseconds: 200));

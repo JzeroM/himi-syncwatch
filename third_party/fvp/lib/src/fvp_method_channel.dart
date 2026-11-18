@@ -47,6 +47,13 @@ class MethodChannelFvp extends FvpPlatform {
   }
 
   @override
+  Future<void> detachPlayer(int playerHandle) async {
+    await methodChannel.invokeMethod('DetachPlayer', {
+      "player": playerHandle,
+    });
+  }
+
+  @override
   Future<void> setMixWithOthers(bool mixWithOthers) async {
     await methodChannel.invokeMethod('MixWithOthers', {"value": mixWithOthers});
   }

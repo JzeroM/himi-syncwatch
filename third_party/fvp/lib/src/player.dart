@@ -187,6 +187,15 @@ class Player {
     }
     // await: ensure no player ref in fvp plugin before mdkPlayerAPI_delete() in dart
     await updateTexture(width: -1);
+    // 694 闪退根治：updateTexture(-1)→ReleaseRT 只覆盖 texture 输出（按 texId
+    // erase）；surfaceView 输出（TV 默认）无 texId，erase 靠 FvpVideoView 异步
+    // dispose()/surfaceDestroyed，可能**晚于** mdkPlayerAPI_delete → ~TexturePlayer
+    // 的 reset 作用在已释放 player → SIGSEGV。这里在 delete 前按 handle 强制
+    // erase（~TexturePlayer 在存活 player 上 reset），让迟到的 surfaceDestroyed
+    // 查无此 player 安全 no-op。await 保证 erase 完成再 delete。
+    try {
+      await FvpPlatform.instance.detachPlayer(nativeHandle);
+    } catch (_) {}
     state = PlaybackState.stopped;
     Libfvp.unregisterPort(nativeHandle);
     _eventCb.close();

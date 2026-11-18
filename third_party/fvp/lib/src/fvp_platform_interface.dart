@@ -45,6 +45,12 @@ abstract class FvpPlatform extends PlatformInterface {
     throw UnimplementedError('releaseTexture() has not been implemented.');
   }
 
+  /// 694 闪退根治：销毁引擎前按 handle 强制擦除原生 players 表项
+  /// （erase-before-delete，见 fvp_plugin.cpp nativeDetachPlayer）。
+  Future<void> detachPlayer(int playerHandle) {
+    throw UnimplementedError('detachPlayer() has not been implemented.');
+  }
+
   Future<void> setMixWithOthers(bool mixWithOthers) async {
     throw UnimplementedError('setMixWithOthers() has not been implemented.');
   }

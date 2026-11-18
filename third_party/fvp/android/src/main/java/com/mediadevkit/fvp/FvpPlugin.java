@@ -132,6 +132,12 @@ public class FvpPlugin implements FlutterPlugin, MethodCallHandler {
       }
       Log.i("FvpPlugin", "onMethodCall: ReleaseRT texId: " + texId + ", surfaces: " + surfaces.size() + " textures: " + textures.size());
       result.success(null);
+    } else if (call.method.equals("DetachPlayer")) {
+      // 694：Dart 销毁引擎前强制擦除 native 表项（erase-before-delete）。
+      final Number h = call.argument("player");
+      final long handle = h.longValue();
+      nativeDetachPlayer(handle);
+      result.success(null);
     } else if (call.method.equals("MixWithOthers")) {
       // TODO: Implement actual business.
       result.success(null);
@@ -160,6 +166,13 @@ public class FvpPlugin implements FlutterPlugin, MethodCallHandler {
     render path needs it; with "tunnel" the decoder owns the buffer geometry.
    */
   static native void nativeSetSurfaceSize(long texId, int w, int h);
+
+  /*!
+    694 闪退根治：Dart 销毁引擎前按 handle 强制擦除 native players 表项
+    （触发 ~TexturePlayer 在存活 player 上 reset callbacks），使 mdkPlayerAPI_delete
+    与后续迟到的 surfaceDestroyed 都安全。
+   */
+  static native void nativeDetachPlayer(long playerHandle);
 
   static {
     try {
