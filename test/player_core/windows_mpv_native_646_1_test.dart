@@ -196,7 +196,9 @@ void main() {
 
     test('设置页文案说明 Windows 默认 MPV', () {
       final src = read('lib/screens/settings/player_settings_screen.dart');
-      expect(src, contains('Android / Windows / 鸿蒙使用 MPV'));
+      // 694：文案改「当前平台（…）」动态（Windows 列表=MPV）。
+      expect(src, contains('当前平台（'));
+      expect(src, contains('supportedEngines('));
     });
   });
 }

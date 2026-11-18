@@ -119,11 +119,14 @@ class PlayerEngineFactory {
     return PlayerEngine.mdk;
   }
 
-  /// 解析落盘内核 id；不支持时回退平台默认。
+  /// 解析落盘内核 id；未设置时取平台默认；不支持时回退平台默认。
   ///
   /// 【681】安卓手机老用户存档可能是 `mdk` / `erika`——收敛到仅 MPV 后
   /// 必须回退，否则会拿到一个当前平台不支持的引擎。
+  /// 【694】空 id = 未设置 → 平台默认（旧 fromId('') 兜底 mdk 会把
+  /// 「默认引擎」意外变成 MDK）。
   static PlayerEngine resolveSelectedEngine(String? id, {bool tvMode = false}) {
+    if (id == null || id.isEmpty) return defaultEngine();
     final selected = PlayerEngine.fromId(id);
     return supportedEngines(tvMode: tvMode).contains(selected)
         ? selected

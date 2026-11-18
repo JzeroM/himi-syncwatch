@@ -534,7 +534,11 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
   /// 顶栏解码模式胶囊是否显示：仅非 TV（TV 的解码胶囊在底栏引擎控件左侧）。
   @visibleForTesting
-  static bool showDecodeButton({required bool tvMode}) => !tvMode;
+  /// 解码胶囊显隐：仅 MPV（694：MDK 硬编码硬解无档位；Erika 无直写档）。
+  /// TV 挂底栏、手机挂顶栏，两侧同此判据。
+  static bool showDecodeButton(
+          {required bool tvMode, required PlayerEngine engine}) =>
+      !tvMode && engine == PlayerEngine.mpv;
 
   /// 位图字幕编码判定（Emby codec 名，大小写不敏感）：PGS/VobSub/DVB。
   /// 位图字幕无法像文本字幕那样被重设样式/缩放/位置。
@@ -2115,9 +2119,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       enabled: () => _showControls && mounted,
     );
     FocusManager.instance.addListener(_onPrimaryFocusChanged);
-    // 播放内核：每次进入播放器都从平台默认引擎开始；顶栏切换仅当前
+    // 播放内核：每次进入播放器都从**默认引擎**开始（694：设置可改，写
+    // playerKernel；不被当前平台支持时回退平台默认）。顶栏切换仅当前
     // 播放会话生效，不写回默认设置。剧集切集沿用当前内核。
-    _currentEngine = PlayerEngineFactory.defaultEngine();
+    final initSettings = ref.read(settingsProvider);
+    _currentEngine = PlayerEngineFactory.resolveSelectedEngine(
+        initSettings.playerKernel,
+        tvMode: initSettings.tvMode);
     _player = PlayerEngineFactory.create(
       _currentEngine,
       erikaOutputMode: ErikaOutputMode.auto,
@@ -2401,7 +2409,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     // 音频硬解接线（1.1.186）：Android 不接线时 mdk 音频默认直接
     // FFmpeg 软解（真机日志确证），EAC3 软解音频钟抖动会让视频按
     // avsync 成簇判迟到丢帧；auto/hw 档优先 AMediaCodec，FFmpeg 兜底。
-    final decoders = DecodeModeService.resolveDecoders(settings.decodeMode);
+    // 694：MDK 硬编码硬解（忽略解码档，用户拍板）。
+    final decoders =
+        DecodeModeService.resolveDecoders(_effectiveDecodeMode(settings.decodeMode));
     _player.videoDecoders = decoders;
     final audioDecoders =
         DecodeModeService.resolveAudioDecoders(settings.decodeMode);
@@ -3085,7 +3095,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final expNoImage = s.videoDecoderNoImage;
       final expLowLatency = s.videoDecoderLowLatency;
       if (expNoImage || expLowLatency) {
-        var decoders = DecodeModeService.resolveDecoders(s.decodeMode);
+        // 694：MDK 硬编码硬解（忽略解码档，用户拍板）。
+        var decoders = DecodeModeService.resolveDecoders(
+            _effectiveDecodeMode(s.decodeMode));
         if (expNoImage) {
           decoders = PlayerScreen.mergeDecoderListImage(decoders, '0');
           LogService().log('Player',
@@ -4872,33 +4884,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _skipPromptTimer?.cancel();
     _skipPromptTimer = null;
     _skipPromptSegment = null;
-    // 694 真机回归（MDK→其它引擎闪退根因）：旧序「先卸视频视图（endOfFrame
-    // 真拆 SurfaceView/纹理）→ 再释放引擎」会与 fvp 的 mdkPlayerAPI_delete
-    // 对撞——fvp 的删除在**另一 isolate 异步**执行（无完成信号，"mdk teardown:
-    // complete" 只代表 Dart 包装返回），view/surface 销毁撞上删除进行中 →
-    // native SIGSEGV（日志现场：[dispose-old] disposeAsync 完成 后连
-    // 「dispose 异常/结束」都没留下就重启）。
-    // 新序：**先释放旧引擎（视图仍挂载、surface 还活着，fvp dispose 自己会
-    // 先 unregister 再 delete）→ settle → 再卸视图**。旧 widget 在释放窗口
-    // 内访问已释放播放器由各适配器 disposed 守卫兜底（NipaMdkAdapter 的
-    // 「called after teardown began」应答为 stopped）。
-    LogService().log('Player', '[rebuild] 3/7 释放旧引擎', sync: true);
-    await _disposeOldEngine();
+    // 694 三段式释放（真机「MDK→MPV 仍闪退」定稿）：先**静止**渲染线程
+    //（stop 发出即走，waitFor 真等停转）→ 再卸视频视图（渲染已静止，
+    // surface 销毁安全）→ 最后删除（await disposeAsync：纹理→delete→
+    // settle，无视图、无并发）。旧「先删后卸」与「先卸后删」各有 UAF
+    // 相撞面（两种顺序真机都崩过），三段式把两个面同时消除。
+    LogService().log('Player', '[rebuild] 3/8 静止旧引擎', sync: true);
+    final oldEngine = _player;
+    if (oldEngine is PlayerQuiesceable) {
+      await (oldEngine as PlayerQuiesceable).quiesce();
+    }
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 4/7 隐藏视频层', sync: true);
+    LogService().log('Player', '[rebuild] 4/8 隐藏视频层', sync: true);
     setState(() => _switchingEngine = true);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 5/7 创建新引擎', sync: true);
+    LogService().log('Player', '[rebuild] 5/8 释放旧引擎', sync: true);
+    await _disposeOldEngine();
+    if (!mounted || _disposed) return;
+    LogService().log('Player', '[rebuild] 6/8 创建新引擎', sync: true);
     // 原子赋值：_currentEngine 与 _player 紧邻同步更新（中间无 await），避免帧内错配。
     _currentEngine = engine;
     _player = PlayerEngineFactory.create(engine, erikaOutputMode: outputMode);
     _attachNativeUiBridge(_player);
     _switchingEngine = false;
-    LogService().log('Player', '[rebuild] 6/7 初始化属性', sync: true);
+    LogService().log('Player', '[rebuild] 7/8 初始化属性', sync: true);
     await _initPlayerProperties();
     if (!mounted || _disposed) return;
-    LogService().log('Player', '[rebuild] 7/7 完成', sync: true);
+    LogService().log('Player', '[rebuild] 8/8 完成', sync: true);
     // _initPlayerProperties 不覆盖的三项（initState 单独写、重建后会丢）：
     // 字幕属性 / 音频后端 / 音频滤镜策略（_disposeOldEngine 已复位去重态，
     // 此处重写保证新引擎与起播一致）。
@@ -10467,7 +10480,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
           ? NetworkSpeedMeter.formatMBs(_networkSpeedBps!)
           : null,
       // 解码模式胶囊：全平台所有引擎显示（MPV: SW/HW/HW+；Erika/MDK: SW/HW）。
-      showDecodeButton: PlayerScreen.showDecodeButton(tvMode: tvMode),
+      showDecodeButton: PlayerScreen.showDecodeButton(
+          tvMode: tvMode, engine: _currentEngine),
       decodeModeLabel: _decodeModeLabel,
       // TV 模式「显示调节」入口移到底部控制条（弹幕与字幕之间），顶栏隐藏
       showSubtitleStyleButton:
@@ -11691,6 +11705,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  /// 694：MDK 硬编码硬解（忽略解码档，用户拍板）——其余引擎按解码档。
+  String _effectiveDecodeMode(String mode) =>
+      _currentEngine == PlayerEngine.mdk ? 'hw' : mode;
+
   /// 解码模式胶囊标签：MPV 三档（SW/HW/HW+）；Erika/MDK 两档（SW/HW）。
   String get _decodeModeLabel {
     final mode = ref.read(settingsProvider).decodeMode;
@@ -12278,8 +12296,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   const SizedBox(width: 20),
 
                   // 694：解码模式胶囊（SW/HW/HW+）：文字，点击循环切换。
-                  // TV 放底栏引擎控件左侧。
-                  if (tvMode) ...[
+                  // TV 放底栏引擎控件左侧。仅 MPV（MDK 硬编码硬解、Erika 无档）。
+                  if (tvMode && _currentEngine == PlayerEngine.mpv) ...[
                     TvFocusable(
                       key: const ValueKey('playerDecodeButton'),
                       radius: 10,

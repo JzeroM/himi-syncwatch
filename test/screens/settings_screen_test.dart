@@ -962,7 +962,7 @@ void main() {
 
 // ---- 视频输出通道（Android 黑屏多档取证） ----
 
-  testWidgets('Android 展示视频输出设置，默认纹理', (tester) async {
+  testWidgets('Android 展示视频输出设置，默认 SurfaceView（694）', (tester) async {
     final container = await _pumpMdkSettings(tester);
     await tester.scrollUntilVisible(
       find.text('视频输出'),
@@ -973,11 +973,11 @@ void main() {
 
     expect(find.text('视频输出'), findsOneWidget);
     expect(
-      find.text('Flutter 纹理通道'),
+      find.textContaining('独立显示层'),
       findsOneWidget,
       reason: '默认档描述',
     );
-    expect(container.read(settingsProvider).videoOutput, 'texture');
+    expect(container.read(settingsProvider).videoOutput, 'surfaceView');
   });
 
   testWidgets('681/694：非 TV 安卓手机只有 MPV 页，视频路径已移除', (tester) async {
@@ -987,7 +987,7 @@ void main() {
     // 694：视频路径整项移除（MPV 全平台恒 Surface）；MDK 专属「视频输出」仍在。
     expect(find.text('视频路径'), findsNothing);
     expect(find.text('视频输出'), findsNothing);
-    expect(container.read(settingsProvider).videoOutput, 'texture');
+    expect(container.read(settingsProvider).videoOutput, 'surfaceView');
   });
 
   testWidgets('TV：视频输出行点开居中弹层，选择纹理+直通写入', (tester) async {
@@ -1357,13 +1357,14 @@ testWidgets('外观子页：分类页每行海报数滑块默认自动，改值�
     });
   });
 
-  testWidgets('播放器子页：显示平台默认播放器说明，不提供选择器', (tester) async {
+  testWidgets('播放器子页：默认播放引擎选择器（694，文案只写当前平台）',
+      (tester) async {
     await _pumpScreen(tester, category: '播放器');
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('defaultPlayerInfo')), findsOneWidget);
     expect(find.text('默认播放器'), findsOneWidget);
-    expect(find.textContaining('平台默认'), findsOneWidget);
+    expect(find.textContaining('当前平台'), findsOneWidget);
     expect(find.byKey(const ValueKey('engineAutoRouteInfo')), findsNothing);
     expect(find.textContaining('自动路由'), findsNothing);
   });

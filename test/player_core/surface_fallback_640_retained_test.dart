@@ -108,7 +108,9 @@ void main() {
         stripComments(playerSettings),
         isNot(contains('Android/Windows 使用 MDK')),
       );
-      expect(playerSettings, contains('Android / Windows / 鸿蒙使用 MPV'));
+      // 694：文案改**当前平台**动态（TV：MDK / MPV；手机：MPV；iOS：Erika）。
+      expect(playerSettings, contains('当前平台（'));
+      expect(playerSettings, contains('supportedEngines('));
     });
 
     test('MPV 配置页不再写死 HarmonyOS / ohcodec', () {

@@ -144,6 +144,13 @@ abstract interface class AsyncDisposablePlayer {
   Future<void> disposeAsync();
 }
 
+/// 694：可静止接口——三段式释放（静止 → 卸视图 → 删除）的第一段。
+/// 释放旧引擎前先静止渲染/解码线程，视图销毁与 native delete 就都不再与
+/// 活跃渲染相撞（UAF 闪退根因）。
+abstract interface class PlayerQuiesceable {
+  Future<void> quiesce();
+}
+
 /// 播放器抽象接口：统一 mdk / erika 的播放控制、属性、轨道、渲染、事件面。
 ///
 /// 设计原则：

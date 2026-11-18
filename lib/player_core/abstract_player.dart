@@ -153,6 +153,11 @@ abstract interface class ErikaDanmakuCapable {
 }
 
 abstract class AbstractPlayer {
+  /// 694：静止渲染/解码线程（三段式释放第一段：静止 → 卸视图 → 删除）。
+  /// 默认 no-op；MDK 覆写为 stop + waitFor(stopped)。释放前先静止，后续
+  /// 的视图销毁与 native delete 就都不再与活跃渲染相撞（UAF 闪退根因）。
+  Future<void> quiesce() async {}
+
   double get volume;
   set volume(double value);
 

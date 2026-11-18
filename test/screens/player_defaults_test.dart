@@ -461,9 +461,20 @@ void main() {
       );
     });
 
-    test('解码按钮：非 TV 显示，TV 隐藏（解码模式仅走设置页）', () {
-      expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
-      expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
+    test('解码按钮：仅 MPV 且非 TV（MDK 硬编码硬解无档）', () {
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: false, engine: PlayerEngine.mpv),
+          isTrue);
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: true, engine: PlayerEngine.mpv),
+          isFalse);
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: false, engine: PlayerEngine.mdk),
+          isFalse,
+          reason: '694：MDK 硬编码硬解，无解码档');
     });
   });
 

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
 import 'package:himi_syncwatch/screens/player/widgets/seek_time_labels.dart';
 import 'package:himi_syncwatch/services/player/native/native_player_theme.dart';
+import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 /// 原生控制层**布局语义**一致性。
 ///
@@ -154,12 +155,22 @@ void main() {
   });
 
   group('显隐谓词（与 Flutter PlayerScreen 静态谓词同语义）', () {
-    test('解码按钮：非 TV 顶栏 / TV 底栏（694 移到播放器胶囊）', () {
-      expect(PlayerScreen.showDecodeButton(tvMode: false), isTrue);
-      expect(PlayerScreen.showDecodeButton(tvMode: true), isFalse);
-      // 694：TV 胶囊恒显（底栏，Erika 两档循环）；手机顶栏非 Erika 才显。
-      expect(kotlinScreen,
-          contains('decodeChip.visibility = if (tv || state.engineLabel != "Erika")'));
+    test('解码按钮：仅 MPV 且非 TV（MDK 硬编码硬解无档）', () {
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: false, engine: PlayerEngine.mpv),
+          isTrue);
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: true, engine: PlayerEngine.mpv),
+          isFalse);
+      expect(
+          PlayerScreen.showDecodeButton(
+              tvMode: false, engine: PlayerEngine.mdk),
+          isFalse,
+          reason: '694：MDK 硬编码硬解，无解码档');
+      // 694：仅 MPV 显示（原生同判据）。
+      expect(kotlinScreen, contains('state.engineLabel == "MPV"'));
       expect(ohosView, contains('if (!this.state().tvMode)'));
     });
 
@@ -2393,8 +2404,10 @@ void main() {
       }
     });
 
-    test('可见性对齐：解码 TV 恒显 / 内核 engineOptions 单引擎隐', () {
-      expect(kotlin694, contains('if (tv || state.engineLabel != "Erika") VISIBLE else GONE'));
+    test('可见性对齐：解码仅 MPV / 内核 engineOptions 单引擎隐', () {
+      // 694：MDK 硬编码硬解无档、Erika 无直写档 → 解码胶囊仅 MPV。
+      expect(kotlin694,
+          contains('if (state.engineLabel == "MPV") VISIBLE else GONE'));
       expect(kotlin694, contains('kernelChip.visibility = if (state.engineOptions.size > 1) VISIBLE else GONE'));
     });
 

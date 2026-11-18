@@ -4853,9 +4853,10 @@ class NativePlayerScreenView(
         // 顶栏可见项
         speedChip.visibility = if (!tv && !state.isRoom) VISIBLE else GONE
         subtitleStyleChip.visibility = if (!tv) VISIBLE else GONE
-        // 解码：694 布局对齐——TV 恒显（底栏，Erika 也走 SW/HW 两档循环，
-        // 对齐 Flutter TV `if (tvMode)`）；手机维持顶栏「非 Erika 才显」。
-        decodeChip.visibility = if (tv || state.engineLabel != "Erika") VISIBLE else GONE
+        // 解码：694 恒定仅 MPV 显示（MDK 硬编码硬解无档位；Erika 无直写档）。
+        // 胶囊在 TV 挂底栏、手机挂顶栏（由 configure* 的挂载位置决定）。
+        decodeChip.visibility =
+            if (state.engineLabel == "MPV") VISIBLE else GONE
         // 内核：694 对齐 Flutter isSingleEngine 隐藏（单引擎平台不显示，
         // 安卓 TV 三引擎恒显）；文案随 engineLabel 联动（见 applyState 上文）。
         kernelChip.visibility = if (state.engineOptions.size > 1) VISIBLE else GONE

@@ -58,25 +58,31 @@ void main() {
     return src.substring(start);
   }
 
-  group('① 引擎重建步序：先释放旧引擎、后卸视频层', () {
-    test('_recreateEngineForLoad 里 _disposeOldEngine 在 _switchingEngine 之前', () {
+  group('① 引擎重建三段式：静止 → 卸视图 → 删除（两 UAF 面同时消除）', () {
+    test('quiesce 在卸视图前、_disposeOldEngine 在卸视图后', () {
       final body = extractFun(
           screen, 'Future<void> _recreateEngineForLoad(');
-      final disposeIdx = body.indexOf('await _disposeOldEngine();');
+      final quiesceIdx = body.indexOf('.quiesce()');
       final hideIdx = body.indexOf('setState(() => _switchingEngine = true);');
-      expect(disposeIdx, greaterThanOrEqualTo(0), reason: '必须释放旧引擎');
+      final disposeIdx = body.indexOf('await _disposeOldEngine();');
+      expect(quiesceIdx, greaterThanOrEqualTo(0), reason: '必须先静止渲染线程');
       expect(hideIdx, greaterThanOrEqualTo(0), reason: '必须隐藏视频层');
-      expect(disposeIdx, lessThan(hideIdx),
+      expect(disposeIdx, greaterThanOrEqualTo(0), reason: '必须释放旧引擎');
+      expect(quiesceIdx, lessThan(hideIdx),
           reason:
-              '694 闪退根因：先卸视图（SurfaceView/纹理销毁）再释放引擎会与 '
-              'fvp 的异步原生 delete 对撞 → SIGSEGV。顺序不得回退');
+              '三段式：渲染静止后卸视图（surface 销毁不再撞活跃渲染）');
+      expect(hideIdx, lessThan(disposeIdx),
+          reason:
+              '三段式：视图卸完再 delete（native 删除不再撞活跃视图）。'
+              '旧「先删后卸」「先卸后删」真机都崩过，顺序不得回退');
     });
 
     test('步序日志同步落盘（崩溃取证）', () {
       final body = extractFun(
           screen, 'Future<void> _recreateEngineForLoad(');
-      expect(body, contains('[rebuild] 3/7 释放旧引擎'));
-      expect(body, contains('[rebuild] 4/7 隐藏视频层'));
+      expect(body, contains('[rebuild] 3/8 静止旧引擎'));
+      expect(body, contains('[rebuild] 4/8 隐藏视频层'));
+      expect(body, contains('[rebuild] 5/8 释放旧引擎'));
       expect(body, contains('sync: true'));
     });
   });
@@ -187,6 +193,34 @@ void main() {
       final fvpOptions =
           File('lib/services/fvp_options.dart').readAsStringSync();
       expect(fvpOptions, contains("'cache.disk.io': 1"));
+    });
+  });
+
+  group('⑥ MDK 恒硬解 + 默认引擎设置 + 默认 surfaceView', () {
+    test('MDK 硬编码硬解（忽略解码档，用户拍板）', () {
+      expect(screen, contains('String _effectiveDecodeMode(String mode)'));
+      expect(screen, contains("_currentEngine == PlayerEngine.mdk ? 'hw' : mode"));
+    });
+
+    test('默认播放引擎设置写 playerKernel，初始引擎接 resolveSelectedEngine', () {
+      expect(screen, contains('initSettings.playerKernel'));
+      expect(screen, contains('PlayerEngineFactory.resolveSelectedEngine('));
+      final settingsScreen =
+          File('lib/screens/settings/player_settings_screen.dart')
+              .readAsStringSync();
+      expect(settingsScreen, contains('playerKernel: v'));
+      expect(settingsScreen, contains('supportedEngines('),
+          reason: '文案/选项只写当前平台引擎（TV=MDK/MPV 等）');
+    });
+
+    test('videoOutput 默认 surfaceView + decodeModeDescription 死码已删', () {
+      final settings =
+          File('lib/models/app_settings.dart').readAsStringSync();
+      expect(settings, contains("this.videoOutput = 'surfaceView'"));
+      final common =
+          File('lib/screens/settings/settings_common.dart').readAsStringSync();
+      expect(common, isNot(contains('decodeModeDescription')),
+          reason: 'MDK 设置无解码项，死码一并删除（用户拍板）');
     });
   });
 }

@@ -657,9 +657,9 @@ void main() {
   });
 
   group('videoOutput（视频输出通道）', () {
-    test('默认 texture', () {
-      expect(const AppSettings().videoOutput, 'texture');
-      expect(AppSettings.fromJson(const {}).videoOutput, 'texture');
+    test('默认 surfaceView（694 用户拍板）', () {
+      expect(const AppSettings().videoOutput, 'surfaceView');
+      expect(AppSettings.fromJson(const {}).videoOutput, 'surfaceView');
     });
 
     test('copyWith 透传 videoOutput', () {
@@ -676,7 +676,7 @@ void main() {
             .videoOutput,
         'surfaceView',
       );
-      expect(settings.copyWith(decodeMode: 'hw').videoOutput, 'texture');
+      expect(settings.copyWith(decodeMode: 'hw').videoOutput, 'surfaceView');
     });
 
     test('toJson/fromJson 往返保持 videoOutput', () {
@@ -687,14 +687,14 @@ void main() {
       );
     });
 
-    test('fromJson 非法值回退 texture（不落三档之外的值）', () {
+    test('fromJson 非法值回退 surfaceView（不落三档之外的值）', () {
       expect(
         AppSettings.fromJson({'videoOutput': 'hdmi'}).videoOutput,
-        'texture',
+        'surfaceView',
       );
       expect(
         AppSettings.fromJson({'videoOutput': 42}).videoOutput,
-        'texture',
+        'surfaceView',
       );
     });
 
@@ -988,9 +988,10 @@ void main() {
       expect(tunnel.usesSurfaceView, isFalse);
       expect(tunnel.textureTunnel, isTrue);
 
-      const texture = AppSettings();
-      expect(texture.usesSurfaceView, isFalse);
-      expect(texture.textureTunnel, isFalse);
+      // 694：默认 surfaceView。
+      const defaults = AppSettings();
+      expect(defaults.usesSurfaceView, isTrue);
+      expect(defaults.textureTunnel, isFalse);
     });
 
     test('非 Android 平台存了 surfaceView 也不进 platform view 分支', () {

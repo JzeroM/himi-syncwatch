@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
+import 'package:himi_syncwatch/services/player/player_engine.dart';
 
 /// 播放器设置枢纽页：默认播放器说明 / 播放器配置入口 / 网速 / 弹幕配置。
 ///
@@ -27,15 +28,30 @@ class PlayerSettingsScreen extends ConsumerWidget {
         SettingsGroupCard(
           title: '播放引擎',
           children: [
-            ListTile(
+            // 694：默认播放引擎（可改，写 playerKernel）——选项/文案只写
+            // **当前平台**引擎（TV：MDK / MPV；手机：MPV；iOS：Erika）。
+            // 每次进入播放器从默认引擎开始；播放页切换仅当前播放，下一集
+            // 沿用当前内核。
+            KeyedSubtree(
               key: const ValueKey('defaultPlayerInfo'),
-              leading: const Icon(Icons.play_circle_outline),
-              title: const Text('默认播放器'),
-              subtitle: const Text(
-                '平台默认：Android / Windows / 鸿蒙使用 MPV，iOS 使用 Erika。'
-                '每次进入播放器从默认引擎开始；'
-                '播放页切换仅当前播放，下一集沿用当前内核',
-              ),
+              child: Builder(builder: (context) {
+                final engines = PlayerEngineFactory.supportedEngines(
+                    tvMode: settings.tvMode);
+                final names = engines.map((e) => e.label).join(' / ');
+                return settingOptionTile(
+                  context: context,
+                  tvMode: settings.tvMode,
+                  title: '默认播放器',
+                  subtitle: '当前平台（$names）：每次进入播放器从默认引擎开始；'
+                      '播放页切换仅当前播放，下一集沿用当前内核',
+                  labels: {for (final e in engines) e.id: e.label},
+                  value: PlayerEngineFactory.resolveSelectedEngine(
+                          settings.playerKernel,
+                          tvMode: settings.tvMode)
+                      .id,
+                  onSelected: (v) => notifier.update(playerKernel: v),
+                );
+              }),
             ),
             settingsTvWrapRow(
               tvMode: settings.tvMode,

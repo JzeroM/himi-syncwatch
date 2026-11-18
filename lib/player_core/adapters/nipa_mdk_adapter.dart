@@ -537,6 +537,22 @@ class NipaMdkAdapter extends AbstractPlayer
     _mdkPlayer.setMedia(path, _fromPlayerMediaType(type));
   }
 
+  /// 694：静止渲染/解码线程（三段式释放第一段）。MDK 专属实现：
+  /// stop 是发出即走，必须 waitFor(stopped) 真等渲染线程停转，后续
+  /// 卸视图/删除才安全。
+  @override
+  Future<void> quiesce() async {
+    if (_released('quiesce')) return;
+    try {
+      _mdkPlayer.state = mdk.PlaybackState.stopped;
+      final quiesced = _mdkPlayer.waitFor(mdk.PlaybackState.stopped,
+          timeout: 2000);
+      LogService().log('Player', 'mdk quiesce: stopped=$quiesced', sync: true);
+    } catch (e) {
+      LogService().log('Player', 'mdk quiesce 异常: $e', sync: true);
+    }
+  }
+
   /// 694：在飞 prepare 取消信号（仿上游 FvpCreateCancellation 语义）。
   /// fvp 每次 prepare 会重置内部 completer——旧 waiter 永挂；且 pending
   /// prepare 会拖住释放（真机「快速切集/切换引擎卡顿」面）。新 prepare /

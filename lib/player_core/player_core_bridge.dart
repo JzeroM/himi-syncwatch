@@ -19,12 +19,17 @@ class PlayerCoreBridge
     implements
         himi.PlayerAdapter,
         himi.AsyncDisposablePlayer,
+        himi.PlayerQuiesceable,
         himi.ErikaPlayerProvider,
         himi.MediaLoadWaitPlayer,
         himi.ErikaDanmakuPlayer {
   PlayerCoreBridge(this.core);
 
   final AbstractPlayer core;
+
+  /// 694：三段式释放第一段——静止渲染/解码线程（MDK 实做 stop+waitFor）。
+  @override
+  Future<void> quiesce() => core.quiesce();
 
   /// 迁移期访问底层 HIMI adapter（Erika 原生 view）。
   himi.PlayerAdapter? get wrappedAdapter => core is HimiPlayerCoreAdapter

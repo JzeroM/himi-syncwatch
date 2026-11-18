@@ -69,7 +69,8 @@ void main() {
       expect(notifier.state.tvMode, isFalse);
       // 694：默认解码模式改为「硬解+」（tvMode 关时无 TV 默认覆盖）。
       expect(notifier.state.decodeMode, 'hwplus');
-      expect(notifier.state.videoOutput, 'texture');
+      // 694：默认输出改为 surfaceView（用户拍板）。
+      expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.audioRenderer, 'auto');
     });
 
@@ -106,14 +107,15 @@ void main() {
       expect(notifier.state.tvMode, isTrue);
     });
 
-    test('非 TV 且 tvMode 关闭 → 全部不动（手机端默认 auto/texture）', () async {
+    test('非 TV 且 tvMode 关闭 → 全部不动（手机端默认 auto/surfaceView）', () async {
       final notifier = FakeSettingsNotifier();
       await notifier.applyTvAutoDetection(isTelevision: false);
 
       expect(notifier.state.tvMode, isFalse);
       // 694：默认解码模式改为「硬解+」（tvMode 关时无 TV 默认覆盖）。
       expect(notifier.state.decodeMode, 'hwplus');
-      expect(notifier.state.videoOutput, 'texture');
+      // 694：默认输出改为 surfaceView（用户拍板）。
+      expect(notifier.state.videoOutput, 'surfaceView');
       expect(notifier.state.audioRenderer, 'auto');
       expect(notifier.persistCount, 0, reason: '无变更不落盘');
     });
@@ -136,7 +138,9 @@ void main() {
     });
 
     test('老装机迁移：tvMode 已 true + texture/auto → 下次引导翻 TV 默认', () async {
-      final notifier = FakeSettingsNotifier(const AppSettings(tvMode: true));
+      // 老装机存档显式 texture（694 后默认已是 surfaceView，构造旧值模拟）。
+      final notifier = FakeSettingsNotifier(
+          const AppSettings(tvMode: true, videoOutput: 'texture'));
       expect(notifier.state.videoOutput, 'texture');
 
       await notifier.applyTvAutoDetection(isTelevision: true);

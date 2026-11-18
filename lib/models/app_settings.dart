@@ -504,7 +504,7 @@ class AppSettings {
     this.tvSyncEnabled = true,
     this.homeCarousel = true,
     this.tvModeUserSet = false,
-    this.videoOutput = 'texture',
+    this.videoOutput = 'surfaceView',
     this.videoOutputUserSet = false,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
@@ -1052,7 +1052,7 @@ class AppSettings {
         'surfaceViewDirect'
       ].contains(json['videoOutput'])
           ? json['videoOutput'] as String
-          : 'texture',
+          : 'surfaceView',
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
