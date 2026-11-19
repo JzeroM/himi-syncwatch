@@ -1015,6 +1015,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 695：媒体徽章 + 详情条目（进度条上方胶囊行 / 详情面板，仅非房间）。
   List<String> _mediaBadges = const [];
+
+  /// 695：当前集 Emby 详情（徽章/详情面板主数据源——详情页同源字段）。
+  MediaItem? _currentMediaItem;
   List<MediaInfoGroup> _mediaInfoGroups = const [];
   DateTime _lastBadgeRefresh = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -10987,11 +10990,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   /// 695：全量「视频详细信息」（点信息按钮现采——属性回读较重，不进轮询）。
-  /// 仿 mpv `i` 统计页四段；MDK/Erika 缺指标整行省略。
+  /// 仿 mpv `i` 统计页四段；**Emby 主数据源**（产品拍板「都能从 emby 获取
+  /// 到」），mpv 属性回读兜底；音频三源兜底（修「少了音频组」）。
   Future<MediaInfoSummary> _collectMediaInfoSummary() async {
     final info = _player.mediaInfo;
-    final base = mediaInfoFromPlayer(info,
-        fileName: PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex));
+    final title =
+        PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex);
+    final item = _currentMediaItem;
+    final emby = item == null
+        ? mediaInfoFromPlayer(info, fileName: title)
+        : mediaInfoFromEmby(item,
+            fileName: title, sourceId: _activeMediaSourceId);
     final props = <String, String?>{};
     for (final name in const [
       'file-size',
@@ -11008,61 +11017,86 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       'video-params/primaries',
       'video-params/gamma',
       'video-params/sig-peak',
+      'video-params/min-luma',
+      'video-params/max-luma',
       'video-params/max-cll',
+      'audio-codec',
+      'audio-params/channels',
+      'audio-params/samplerate',
+      'audio-bitrate',
       'cache-used',
       'cache-duration',
     ]) {
       props[name] = await _readMpvProperty(name);
     }
+    double? pnum(String k) => double.tryParse(props[k] ?? '');
+    // mpv `video-params/max-cll` 形如 "1300/1080"（MaxCLL/MaxFALL）。
+    final cllParts = (props['video-params/max-cll'] ?? '').split('/');
     final cacheBytes = int.tryParse(props['cache-used'] ?? '');
-    final cacheSec = double.tryParse(props['cache-duration'] ?? '');
-    final sigPeak = double.tryParse(props['video-params/sig-peak'] ?? '');
-    final maxCll = props['video-params/max-cll'];
+    final cacheSec = pnum('cache-duration');
     final src = MediaInfoSource(
-      fileName: base.fileName,
-      fileBytes: int.tryParse(props['file-size'] ?? '') ?? base.fileBytes,
-      container: props['file-format'],
+      fileName: emby.fileName,
+      fileBytes: emby.fileBytes ?? int.tryParse(props['file-size'] ?? ''),
+      container: emby.container ?? props['file-format'],
       cacheText: cacheBytes == null
           ? null
           : '${(cacheBytes / (1 << 20)).toStringAsFixed(2)} MiB'
               '${cacheSec == null ? '' : ' (${cacheSec.toStringAsFixed(1)} sec)'}',
       vo: props['current-vo'],
       gpuContext: props['current-gpu-context'],
-      refreshRateHz: double.tryParse(props['display-fps'] ?? ''),
+      refreshRateHz: pnum('display-fps'),
       droppedDecoder: int.tryParse(props['decoder-frame-drop-count'] ?? ''),
       droppedOutput: int.tryParse(props['frame-drop-count'] ?? ''),
-      videoCodecDesc: base.videoCodecDesc,
+      videoCodecDesc: emby.videoCodecDesc,
       hwdec: props['hwdec-current'],
-      fps: double.tryParse(props['container-fps'] ?? '') ?? base.fps,
-      width: base.width,
-      height: base.height,
-      pixelFormat: props['video-params/pixelformat'] ?? base.pixelFormat,
+      fps: emby.fps ?? pnum('container-fps'),
+      width: emby.width,
+      height: emby.height,
+      pixelFormat: props['video-params/pixelformat'] ?? emby.pixelFormat,
       colorMatrix: props['video-params/colormatrix'],
       primaries: props['video-params/primaries'],
       transfer: props['video-params/gamma'],
-      hdr10Text: (maxCll == null || maxCll.isEmpty)
-          ? (sigPeak == null ? null : '峰值 ${(sigPeak * 100).round()} cd/m²')
-          : 'MaxCLL $maxCll cd/m²',
-      videoBitrateBps: base.videoBitrateBps,
-      audioCodecDesc: base.audioCodecDesc,
-      channels: base.channels,
-      sampleRateHz: base.sampleRateHz,
-      audioBitrateBps: base.audioBitrateBps,
-    );
-    return MediaInfoSummary(
-      badges: buildMediaBadges(
-        width: base.width ?? 0,
-        height: base.height ?? 0,
-        doviProfile: info.video.isNotEmpty ? info.video.first.doviProfile : 0,
-        hdr10: props['video-params/gamma'] == 'pq',
-        hlg: props['video-params/gamma'] == 'hlg',
-        codecName: base.videoCodecDesc == null
-            ? null
-            : base.videoCodecDesc!.toLowerCase(),
-        fps: double.tryParse(props['container-fps'] ?? '') ?? base.fps,
-        bitRateBps: base.videoBitrateBps ?? 0,
-        fileBytes: int.tryParse(props['file-size'] ?? ''),
+      // 695：HDR10 亮度修「值恒为 0」——max-cll 仅 >0 显示（hdr10LumaText）。
+      hdr10Text: hdr10LumaText(
+        minLuma: pnum('video-params/min-luma'),
+        maxLuma: pnum('video-params/max-luma'),
+        sigPeak: pnum('video-params/sig-peak'),
+        maxCll: double.tryParse(cllParts.isNotEmpty ? cllParts[0] : ''),
+        maxFall: double.tryParse(cllParts.length > 1 ? cllParts[1] : ''),
       ),
+      videoBitrateBps: emby.videoBitrateBps,
+      // 音频三源：Emby（详情页）→ mpv 运行时 → 引擎 mediaInfo
+      audioCodecDesc: emby.audioCodecDesc ??
+          codecShortName(props['audio-codec']),
+      channels: emby.channels ??
+          int.tryParse(props['audio-params/channels'] ?? ''),
+      sampleRateHz: emby.sampleRateHz ??
+          int.tryParse(props['audio-params/samplerate'] ?? ''),
+      audioBitrateBps:
+          emby.audioBitrateBps ?? int.tryParse(props['audio-bitrate'] ?? ''),
+    );
+    // 徽章：Emby 主源、运行时兜底、六项全显（产品拍板）。
+    final embyBadge = item == null
+        ? const MediaBadgeSource()
+        : badgeSourceFromEmby(item, sourceId: _activeMediaSourceId);
+    final videos = info.video;
+    final v = videos.isNotEmpty ? videos.first : null;
+    final badges = buildMediaBadges(MediaBadgeSource(
+      width: embyBadge.width > 0 ? embyBadge.width : (v?.width ?? 0),
+      height: embyBadge.height > 0 ? embyBadge.height : (v?.height ?? 0),
+      doviProfile: embyBadge.dvProfileLabel != null ? 0 : (v?.doviProfile ?? 0),
+      dvProfileLabel: embyBadge.dvProfileLabel,
+      hdr10: embyBadge.hdr10 || props['video-params/gamma'] == 'pq',
+      hlg: embyBadge.hlg || props['video-params/gamma'] == 'hlg',
+      codecName: embyBadge.codecName ?? v?.codec,
+      fps: embyBadge.fps ?? pnum('container-fps'),
+      bitRateBps: embyBadge.bitRateBps > 0
+          ? embyBadge.bitRateBps
+          : (v?.bitRate ?? 0),
+      fileBytes: embyBadge.fileBytes ?? int.tryParse(props['file-size'] ?? ''),
+    ));
+    return MediaInfoSummary(
+      badges: badges,
       groups: buildMediaInfoGroups(src),
     );
   }

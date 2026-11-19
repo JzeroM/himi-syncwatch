@@ -362,17 +362,17 @@ export struct NativePlayerPanel {
           Text(g.title)
             .fontSize(13)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#B3FFFFFF')
+            .fontColor(PANEL_TEXT_DIM)
             .margin({ bottom: 6 })
           ForEach(g.rows, (r: MediaInfoRowG): void => {
             Row() {
               Text(r.label)
                 .fontSize(12)
-                .fontColor('#8AFFFFFF')
+                .fontColor(PANEL_TEXT_DIM)
                 .width(96)
               Text(r.value)
                 .fontSize(12)
-                .fontColor(Color.White)
+                .fontColor(PANEL_TEXT)
                 .layoutWeight(1)
                 .textAlign(TextAlign.End)
             }

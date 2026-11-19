@@ -2879,14 +2879,15 @@ export struct HimiNativePlayerView {
             .fontSize(11)
             .fontWeight(FontWeight.Bold)
             .fontColor(Color.White)
-            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            // 圆角矩形（radius 6，非药丸/椭圆——695 真机回归）
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
             .backgroundColor('#14FFFFFF')
-            .borderRadius(10)
+            .borderRadius(6)
             .margin({ left: 6 })
         }, (b: string): string => b)
       }
       .width('100%')
-      .justifyContent(FlexAlign.Center)
+      .justifyContent(FlexAlign.End)
       .visibility(this.state().isRoom ? Visibility.None : Visibility.Visible)
       .margin({ bottom: 4 })
 

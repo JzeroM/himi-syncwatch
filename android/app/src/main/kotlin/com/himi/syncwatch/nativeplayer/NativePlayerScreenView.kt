@@ -1218,7 +1218,7 @@ class NativePlayerScreenView(
             return
         }
         mediaBadgeRow.orientation = LinearLayout.HORIZONTAL
-        mediaBadgeRow.gravity = Gravity.CENTER_HORIZONTAL
+        mediaBadgeRow.gravity = Gravity.END
         for (b in badges) {
             val chip = TextView(context)
             chip.text = b
@@ -1248,66 +1248,78 @@ class NativePlayerScreenView(
      * 组内每条信息纵向独占一行（左中文标签、右英文值）。数据为 Dart
      * 预格式化 JSON，本方法只解析渲染（四壳同构）。
      */
-    private fun showMediaInfoDialog() {
-        val raw = lastState.mediaInfoJson ?: return
-        val groups = try {
-            org.json.JSONObject(raw).optJSONArray("groups") ?: return
-        } catch (_: Exception) {
-            return
-        }
-        val scroll = android.widget.ScrollView(context)
-        val col = LinearLayout(context)
-        col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(16), dp(12), dp(16), dp(12))
-        scroll.addView(col)
-        val title = TextView(context)
-        title.text = "视频详细信息"
-        title.setTextColor(Color.WHITE)
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        title.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        title.gravity = Gravity.CENTER
-        col.addView(title, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        for (gi in 0 until groups.length()) {
-            val g = groups.getJSONObject(gi)
-            val card = LinearLayout(context)
-            card.orientation = LinearLayout.VERTICAL
-            card.background = glassBackground(10)
-            card.setPadding(dp(12), dp(10), dp(12), dp(10))
-            val gt = TextView(context)
-            gt.text = g.optString("title")
-            gt.setTextColor(Color.argb(178, 255, 255, 255))
-            gt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            gt.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            card.addView(gt, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-            val rows = g.optJSONArray("rows")
-            if (rows != null) {
-                for (ri in 0 until rows.length()) {
-                    val r = rows.getJSONObject(ri)
-                    val row = LinearLayout(context)
-                    row.orientation = LinearLayout.HORIZONTAL
-                    row.gravity = Gravity.CENTER_VERTICAL
-                    val label = TextView(context)
-                    label.text = r.optString("label")
-                    label.setTextColor(Color.argb(138, 255, 255, 255))
-                    label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    row.addView(label, lp(dp(96), dp(24)))
-                    val value = TextView(context)
-                    value.text = r.optString("value")
-                    value.setTextColor(Color.WHITE)
-                    value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    value.gravity = Gravity.END
-                    row.addView(
-                        value,
-                        LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-                    )
-                    card.addView(row, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+    /** 695：解析详情分组（Dart 预格式化 JSON）。 */
+    private fun parseMediaGroups(json: String?): List<Pair<String, List<Pair<String, String>>>> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val groups = org.json.JSONObject(json).optJSONArray("groups")
+                ?: return emptyList()
+            (0 until groups.length()).map { gi ->
+                val g = groups.getJSONObject(gi)
+                val rows = g.optJSONArray("rows")
+                val pairs = if (rows == null) {
+                    emptyList()
+                } else {
+                    (0 until rows.length()).map { ri ->
+                        val r = rows.getJSONObject(ri)
+                        Pair(r.optString("label"), r.optString("value"))
+                    }
                 }
+                Pair(g.optString("title"), pairs)
             }
-            col.addView(card, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        } catch (_: Exception) {
+            emptyList()
         }
-        val dlg = android.app.AlertDialog.Builder(context).setView(scroll).create()
-        dlg.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dlg.show()
+    }
+
+    /**
+     * 695：「视频详细信息」体——走既有侧板（openPanel 分发）；每个分组
+     * 一张矩形玻璃卡片；组内每条信息纵向独占一行（左中文标签、右英文值）。
+     */
+    private fun buildMediaInfoContent() {
+        val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        for ((title, rows) in parseMediaGroups(lastState.mediaInfoJson)) {
+            if (rows.isEmpty()) continue
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                background = glassBackground(10)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }
+            val gt = TextView(context).apply {
+                text = title
+                setTextColor(Color.argb(178, 255, 255, 255))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            card.addView(gt, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            for ((label, value) in rows) {
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val lv = TextView(context).apply {
+                    text = label
+                    setTextColor(Color.argb(138, 255, 255, 255))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                }
+                row.addView(lv, lp(dp(96), dp(24)))
+                val vv = TextView(context).apply {
+                    text = value
+                    setTextColor(Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    gravity = Gravity.END
+                }
+                row.addView(
+                    vv,
+                    LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
+                )
+                card.addView(row, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            }
+            col.addView(card, LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT,
+            ).also { it.topMargin = dp(8) })
+        }
+        panelContainer.addView(scrollWrap(col))
     }
 
     /** 组装层级：tapLayer → topBar → bottomBar → 面板层。 */
@@ -2149,7 +2161,7 @@ class NativePlayerScreenView(
         // 695：视频详细信息按钮（底栏最右；仅非房间，产品拍板）。
         if (!lastState.isRoom) {
             trailingGroup.addView(
-                iconButton(NativePlayerIcons.ICON_INFO) { showMediaInfoDialog() },
+                iconButton(NativePlayerIcons.ICON_INFO) { openPanel(PANEL_MEDIA_INFO) },
                 llp(dp(32), dp(32), NPTheme.CONTROL_GAP),
             )
         }
@@ -2694,7 +2706,7 @@ class NativePlayerScreenView(
         val available = videoAreaWidth()
         val target = (available * 0.42f).toInt()
         // 694：弹幕弹窗加宽到 480dp——搜索结果（剧名·集名）完整显示。
-        val maxDp = if (panel == PANEL_DANMAKU) 480 else NPTheme.PANEL_MAX_WIDTH
+        val maxDp = if (panel == PANEL_DANMAKU || panel == PANEL_MEDIA_INFO) 480 else NPTheme.PANEL_MAX_WIDTH
         return target.coerceIn(dp(NPTheme.PANEL_MIN_WIDTH.toInt()), dp(maxDp.toInt()))
     }
 
@@ -2899,6 +2911,7 @@ class NativePlayerScreenView(
                 }
                 panelContainer.addView(panelHeader(panelTitle(panel)))
                 when (panel) {
+                    PANEL_MEDIA_INFO -> buildMediaInfoContent()
                     PANEL_SPEED -> buildSpeedContent()
                     PANEL_AUDIO -> buildTrackContent(
                         lastState.tracks.filter { it.type == "audio" },
@@ -2936,6 +2949,7 @@ class NativePlayerScreenView(
     }
 
     private fun panelTitle(panel: String): String = when (panel) {
+        PANEL_MEDIA_INFO -> "视频详细信息"
         PANEL_SPEED -> "倍速"
         PANEL_AUDIO -> "音轨"
         PANEL_SUBTITLE -> "字幕"
@@ -5308,6 +5322,8 @@ class NativePlayerScreenView(
         const val PANEL_KERNEL = "kernel"
         const val PANEL_DANMAKU = "danmaku"
         const val PANEL_DISPLAY = "display"
+        /** 695：视频详细信息（分组玻璃卡片 + 每条一行）。 */
+        const val PANEL_MEDIA_INFO = "mediaInfo"
         const val PANEL_DECODE = "decode"
 
         val SPEED_STEPS = doubleArrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)

@@ -887,9 +887,13 @@ ApplicationWindow {
     MediaInfoPanel {
         id: mediaInfoPanel
         visible: root.mediaInfoOpen
-        width: Math.min(560, parent.width - 80)
+        // 695：靠右显示（与弹幕弹窗等播放器弹出面板同定位、同玻璃风格）
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.rightMargin: Theme.panelRight
+        anchors.topMargin: Theme.panelTopOffset
+        width: Math.min(460, parent.width - 80)
         height: Math.min(640, parent.height - 160)
-        anchors.centerIn: parent
         onCloseRequested: root.mediaInfoOpen = false
     }
 

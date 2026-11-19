@@ -52,8 +52,10 @@ void main() {
 
     test('徽章行/详情面板 widget 就位', () {
       expect(badgeRow, contains('class MediaBadgeRow'));
-      expect(badgeRow, contains('MainAxisAlignment.center'),
-          reason: '徽章居中');
+      expect(badgeRow, contains('MainAxisAlignment.end'),
+          reason: '徽章靠右（695 拍板）');
+      expect(badgeRow, contains('BorderRadius.circular(6)'),
+          reason: '圆角矩形胶囊（非药丸/椭圆）');
       expect(infoSheet, contains('showVideoInfoSheet'));
       expect(infoSheet, contains('class VideoInfoSheet'));
     });
@@ -67,8 +69,8 @@ void main() {
     test('底栏徽章行 + 信息按钮（仅非房间）', () {
       expect(qtBottom, contains('mediaBadges'));
       expect(qtBottom, contains('signal mediaInfoClicked()'));
-      expect(qtBottom, contains('anchors.horizontalCenter: parent.horizontalCenter'),
-          reason: '徽章居中且绝对定位（不占 96 高度预算，防按钮行截断）');
+      expect(qtBottom, contains('anchors.right: parent.right'),
+          reason: '徽章靠右且绝对定位（不占 96 高度预算，防按钮行截断）');
       expect(qtBottom, contains('visible: !playerState.isRoom'),
           reason: '徽章/信息按钮仅非房间');
     });
@@ -96,17 +98,20 @@ void main() {
 
     test('徽章行（进度条上方右对齐）+ 信息按钮（底栏最右）', () {
       expect(kotlinView, contains('mediaBadgeRow'));
-      expect(kotlinView, contains('Gravity.CENTER_HORIZONTAL'), reason: '徽章居中');
+      expect(kotlinView, contains('gravity = Gravity.END'), reason: '徽章靠右');
       expect(kotlinView, contains('updateMediaBadges()'),
           reason: '内容在 applyState 按推送重建（组装期数据为空）');
       expect(kotlinView, contains('parseMediaBadges(lastState.mediaInfoJson)'));
       expect(kotlinView, contains('NativePlayerIcons.ICON_INFO'));
-      expect(kotlinView, contains('showMediaInfoDialog()'));
+      expect(kotlinView, contains('openPanel(PANEL_MEDIA_INFO)'),
+          reason: '详情面板走既有侧板（与其他弹出面板统一风格）');
     });
 
-    test('详情弹窗：分组玻璃卡片 + 每条一行 + 可滚动', () {
-      expect(kotlinView, contains('fun showMediaInfoDialog()'));
-      expect(kotlinView, contains('android.widget.ScrollView'));
+    test('详情侧板：分组玻璃卡片 + 每条一行 + 可滚动 + 靠右（同面板框架）', () {
+      expect(kotlinView, contains('fun buildMediaInfoContent()'));
+      expect(kotlinView, contains('PANEL_MEDIA_INFO -> buildMediaInfoContent()'));
+      expect(kotlinView, contains('scrollWrap(col)'), reason: '可滚动');
+      expect(kotlinView, contains('glassBackground(10)'), reason: '分组玻璃卡片');
       expect(kotlinView, contains('optJSONArray("groups")'));
     });
   });
@@ -123,7 +128,7 @@ void main() {
 
     test('徽章行 + 信息按钮 + 详情面板', () {
       expect(ohosView, contains('parseMediaPayload()'));
-      expect(ohosView, contains('FlexAlign.Center'), reason: '徽章居中');
+      expect(ohosView, contains('FlexAlign.End'), reason: '徽章靠右');
       expect(ohosView, contains('showMediaInfoDialog()'));
       expect(ohosView, contains('NativePlayerIcons.ICON_INFO'));
       expect(ohosView, contains('NativePlayerPanelType.mediaInfo'),

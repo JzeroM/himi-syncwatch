@@ -100,24 +100,25 @@ Rectangle {
         return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s)
     }
 
-    // 695：媒体徽章行——**绝对定位**悬于底栏上方（进度条上方）且水平居中：
+    // 695：媒体徽章行——**绝对定位**悬于底栏上方（进度条上方）且靠右对齐：
     // 不进 ColumnLayout（root height: 96 是固定预算，塞进去会把按钮行挤出
     // 窗口下缘——真机截图回归），叠在视频上零布局影响；仅非房间。
     Row {
         anchors.bottom: parent.top
-        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.right: parent.right
         anchors.bottomMargin: 4
         spacing: 6
         visible: !playerState.isRoom && mediaBadges.length > 0
         Repeater {
             model: mediaBadges
             delegate: Rectangle {
-                radius: 10
+                // 圆角矩形（radius 6，非药丸/椭圆——695 真机回归）
+                radius: 6
                 color: Qt.rgba(1, 1, 1, 0.08)
                 border.color: Qt.rgba(1, 1, 1, 0.14)
                 border.width: 1
                 width: badgeText.implicitWidth + 16
-                height: badgeText.implicitHeight + 5
+                height: badgeText.implicitHeight + 6
                 Text {
                     id: badgeText
                     anchors.centerIn: parent

@@ -3,21 +3,33 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../services/player/media_info_summary.dart';
+import '../screens/player/widgets/selector_side_panel.dart';
 
-/// 695：「视频详细信息」面板——点击底栏信息按钮弹出。
+/// 695：「视频详细信息」面板——点按底栏信息按钮弹出。
 ///
-/// 排版（产品拍板）：整体**可滚动**；每个分组一张**矩形玻璃卡片**；
-/// 组内**每条信息纵向独占一行**（左：中文标签；右：英文值）；值缺失
-/// 的行/组已在 [buildMediaInfoGroups] 省略。仅非房间模式由调用方门控。
+/// 样式（产品拍板）：与播放页其他弹出面板**同风格**——右侧玻璃浮层
+/// （复用 [SelectorSidePanel]，`GlassContainer(popup:true)` 深色磨砂+白
+/// 描边+投影），**靠右显示**；整体可滚动；每个分组一张矩形玻璃卡片；
+/// 组内每条信息纵向独占一行（左：中文标签；右：英文值）。仅非房间由
+/// 调用方门控。
 Future<void> showVideoInfoSheet(
   BuildContext context,
   MediaInfoSummary summary,
 ) {
-  return showModalBottomSheet<void>(
+  return showDialog<void>(
     context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
-    builder: (_) => VideoInfoSheet(summary: summary),
+    barrierColor: Colors.black38,
+    builder: (ctx) => Dialog(
+      alignment: Alignment.centerRight,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding:
+          const EdgeInsets.only(left: 16, right: 12, top: 16, bottom: 16),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 680),
+        child: VideoInfoSheet(summary: summary),
+      ),
+    ),
   );
 }
 
@@ -28,49 +40,18 @@ class VideoInfoSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groups = summary.groups;
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      maxChildSize: 0.92,
-      builder: (context, scrollController) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xE6121417),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const Text(
-                  '视频详细信息',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 12),
-                for (final g in groups) ...[
-                  _GroupCard(group: g),
-                  const SizedBox(height: 10),
-                ],
-              ],
-            ),
-          ),
+    return SelectorSidePanel(
+      title: '视频详细信息',
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final g in summary.groups) ...[
+              _GroupCard(group: g),
+              const SizedBox(height: 10),
+            ],
+          ],
         ),
       ),
     );

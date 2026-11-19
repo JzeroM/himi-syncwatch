@@ -177,7 +177,8 @@ Item {
         laneOf: ({}),   // 行号绑定：timeMs:text → lane（-1 = 满槽丢弃）
         laneSig: "",    // 当前轨道容量签名
         sorted: [],     // 694：时间升序缓存（集合变化才重排）
-        laneTravel: -1  // 694：上次派道用的 travelMs（倍速变化才重派）
+        laneTravel: -1,  // 694：上次派道用的 travelMs（倍速变化才重派）
+        incoming: []  // 695：待准入缓存（reindex 填，tick 准入；替代逐帧全表扫描）
     })
     /// 当前帧要渲染的弹幕（含 lane 与 progress）。
     property var frameItems: []
@@ -192,7 +193,11 @@ Item {
         _state.flying = []
         tick()
     }
-    onDanmakuItemsChanged: tick()
+    onDanmakuItemsChanged: {
+        // 695：数据变化才重索引（200ms 快照节拍，安卓「内容没变不刷」同款）
+        root.reindex()
+        tick()
+    }
     Component.onCompleted: tick()
 
     /// 估算文本宽度（逐字复刻 Flutter `DanmakuTimeline.estimateTextWidth`）。
@@ -235,41 +240,94 @@ Item {
     /// 飞行缓存维护（对应安卓 `syncFlying`）。
     ///
     /// 窗口新条目并入（`timeMs:text` 去重），生命周期结束才移除并释放行号。
-    function syncFlying(pos, travelMs) {
-        var list = _state.flying
-        var changed = false
-        // 694：去重表化——旧双重循环 O(n²) 且 keyOf 每次字符串拼接，
-        // 每帧数百次分配（GC churn，DV P5 等帧预算紧的场景弹幕一卡一卡）。
-        var existing = ({})
-        for (var j0 = 0; j0 < list.length; j0++) existing['#' + keyOf(list[j0])] = true
-        for (var i = 0; i < danmakuItems.length; i++) {
-            var it = danmakuItems[i]
-            var k = '#' + keyOf(it)
-            if (!existing[k]) {
-                existing[k] = true
-                list = list.concat([it])
-                changed = true
+    /// 695：文本宽缓存（estimateWidth 逐字估算，旧实现逐帧逐条跑——
+    /// 密集弹幕/长文本的另一卡顿源）。fontSize 变化由 laneSig 清表重排。
+    function textWOf(it) {
+        if (it._textW === undefined || it._textWFont !== fontSize) {
+            it._textW = estimateWidth(it.text, fontSize)
+            it._textWFont = fontSize
+        }
+        return it._textW
+    }
+
+    /// 695：数据变化时重索引（快照节拍）——缓存 _key（免逐帧字符串拼接，
+    /// GC churn 根源）、与在飞/待准入去重后把新条目放进 incoming。
+    function reindex() {
+        var seen = ({})
+        var f = _state.flying
+        for (var j = 0; j < f.length; j++) seen[f[j]._key] = true
+        var inc = _state.incoming
+        for (var k = 0; k < inc.length; k++) seen[inc[k]._key] = true
+        var fresh = []
+        var src = danmakuItems
+        for (var i = 0; i < src.length; i++) {
+            var it = src[i]
+            if (it._key === undefined) it._key = keyOf(it)
+            if (seen[it._key] !== true) {
+                seen[it._key] = true
+                fresh.push(it)
             }
         }
+        if (fresh.length > 0) _state.incoming = inc.concat(fresh)
+    }
+
+    /// 准入 + 在飞修剪（695 性能改造：**逐帧不再扫 danmakuItems 全表**——
+    /// 密集资源数千条 × 每帧 = 一卡一卡的根源；新条目由 reindex() 在数据
+    /// 变化时入 incoming，本函数只做 O(在飞) 工作，帧循环零字符串分配。
+    /// 函数名保留 694 守卫契约。）
+    function syncFlying(pos, travelMs) {
+        var changed = false
+        var inc = _state.incoming
+        if (inc.length > 0) {
+            var rest = []
+            var list = _state.flying
+            for (var i = 0; i < inc.length; i++) {
+                var it = inc[i]
+                var elapsed = pos - it.timeMs
+                var life0 = (it.mode === "top" || it.mode === "bottom")
+                    ? fixedMs : travelMs
+                if (elapsed > life0 + lifeSlackMs) continue  // 已过期：丢弃
+                if (elapsed < -keepAheadMs) { rest.push(it); continue }  // 超前：待时
+                list.push(it)
+                changed = true
+            }
+            _state.incoming = rest
+            _state.flying = list
+        }
+        // 在飞修剪（O(在飞)，零分配语义：超前项回 incoming 待时）
         var alive = []
+        var back = []
         var lanes = _state.laneOf
         var lanesChanged = false
-        for (var m = 0; m < list.length; m++) {
-            var f = list[m]
-            var elapsed = pos - f.timeMs
+        var list2 = _state.flying
+        for (var m = 0; m < list2.length; m++) {
+            var f = list2[m]
+            var elapsed2 = pos - f.timeMs
             var life = (f.mode === "top" || f.mode === "bottom")
                 ? fixedMs : travelMs
-            // 生命周期结束 + 余量 → 移除；超前过多（换集/大跨度 seek）→ 丢弃
-            if (elapsed > life + lifeSlackMs || elapsed < -keepAheadMs) {
-                if (lanes[keyOf(f)] !== undefined) {
-                    delete lanes[keyOf(f)]
+            if (elapsed2 > life + lifeSlackMs) {
+                if (lanes[f._key] !== undefined) {
+                    delete lanes[f._key]
                     lanesChanged = true
                 }
                 continue
             }
+            if (elapsed2 < -keepAheadMs) {
+                // 大跨度 seek 后超前 → 回待准入（时间到了自然上屏）
+                if (lanes[f._key] !== undefined) {
+                    delete lanes[f._key]
+                    lanesChanged = true
+                }
+                back.push(f)
+                continue
+            }
             alive.push(f)
         }
-        if (alive.length !== list.length) changed = true
+        if (back.length > 0) {
+            _state.incoming = _state.incoming.concat(back)
+            changed = true
+        }
+        if (alive.length !== list2.length) changed = true
         _state.flying = alive
         if (lanesChanged) _state.laneOf = lanes
         return changed
@@ -292,7 +350,7 @@ Item {
         // ① 重建冲突表（从当前在场条目，已离场的占用不再残留）
         for (var j = 0; j < all.length; j++) {
             var it = all[j]
-            var lane = lanes[keyOf(it)]
+            var lane = lanes[it._key]
             if (lane === undefined || lane < 0) continue
             var avail = it.mode === "top" ? topAvail
                 : (it.mode === "bottom" ? botAvail : scrollAvail)
@@ -335,6 +393,11 @@ Item {
             if (frameItems.length > 0) frameItems = []
             return
         }
+        // 695：空短路（安卓「无活跃弹幕不重绘」同款）
+        if (_state.flying.length === 0 && _state.incoming.length === 0) {
+            if (frameItems.length > 0) frameItems = []
+            return
+        }
         var pos = currentPos()
         var spd = Math.max(0.25, Math.min(4.0, speed))
         var travelMs = scrollBaseMs / spd
@@ -358,13 +421,13 @@ Item {
         var out = []
         for (var i = 0; i < all.length; i++) {
             var it = all[i]
-            var lane = lanes[keyOf(it)]
+            var lane = lanes[it._key]
             if (lane === undefined || lane < 0) continue
             var elapsed = pos - it.timeMs
             var isFixed = it.mode === "top" || it.mode === "bottom"
             var life = isFixed ? fixedMs : travelMs
             if (elapsed < 0 || elapsed > life) continue
-            var textW = estimateWidth(it.text, fontSize)
+            var textW = textWOf(it)
             out.push({
                 text: it.text || "",
                 mode: it.mode,
@@ -400,6 +463,8 @@ Item {
             font.pixelSize: root.fontSize
             font.weight: Font.Medium
             font.family: "Microsoft YaHei"
+            // 695：原生字形缓存渲染（弹幕滚动重绘更省，对齐安卓 Canvas 字形路径）
+            renderType: Text.NativeRendering
             color: item !== null ? root.effectiveColor(item.color) : "transparent"
 
             // 滚动：progress=0 前沿贴右缘外，progress=1 完全离开左缘

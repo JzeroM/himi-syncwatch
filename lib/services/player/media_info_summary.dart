@@ -1,3 +1,4 @@
+import '../../models/media_item.dart';
 import 'player_adapter.dart';
 
 /// 695：媒体徽章 + 「视频详细信息」聚合。
@@ -41,36 +42,77 @@ class MediaInfoSummary {
       };
 }
 
-/// 徽章格式化（进度条上方胶囊行）：无值省略。
+/// 徽章数据源（全部可空；渲染时兜底 `—`，**六项不省略**——产品拍板）。
+class MediaBadgeSource {
+  const MediaBadgeSource({
+    this.width = 0,
+    this.height = 0,
+    this.doviProfile = 0,
+    this.dvProfileLabel,
+    this.hdr10 = false,
+    this.hlg = false,
+    this.codecName,
+    this.fps,
+    this.bitRateBps = 0,
+    this.fileBytes,
+  });
+
+  final int width;
+  final int height;
+
+  /// 运行时 DV profile（1-9）；0 = 非 DV。
+  final int doviProfile;
+
+  /// Emby `extendedVideoSubType`（'DoviProfile50' 等）优先于 [doviProfile]。
+  final String? dvProfileLabel;
+  final bool hdr10;
+  final bool hlg;
+  final String? codecName;
+  final double? fps;
+  final int bitRateBps;
+  final int? fileBytes;
+}
+
+/// 徽章格式化：**六项全显不省略**（产品拍板「列出来的几项都要显示」），
+/// 数据从 Emby 获取，极缺时兜底 `—`。
 ///
 /// 示例输出：`['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G']`。
-List<String> buildMediaBadges({
-  int width = 0,
-  int height = 0,
+List<String> buildMediaBadges(MediaBadgeSource s) {
+  return [
+    resolutionTier(s.width, s.height) ?? '—',
+    videoRangeBadge(
+      doviProfile: s.doviProfile,
+      dvProfileLabel: s.dvProfileLabel,
+      hdr10: s.hdr10,
+      hlg: s.hlg,
+    ),
+    codecShortName(s.codecName) ?? '—',
+    (s.fps != null && s.fps! > 0) ? '${s.fps!.toStringAsFixed(1)} fps' : '—',
+    s.bitRateBps > 0 ? formatMbpsBadge(s.bitRateBps) : '—',
+    (s.fileBytes != null && s.fileBytes! > 0) ? formatSizeBadge(s.fileBytes!) : '—',
+  ];
+}
+
+/// 视频范围徽章：DV P5 / DV P8.1（Emby `DoviProfile50` 优先）/ HDR10 / HLG / SDR。
+String videoRangeBadge({
   int doviProfile = 0,
+  String? dvProfileLabel,
   bool hdr10 = false,
   bool hlg = false,
-  String? codecName,
-  double? fps,
-  int bitRateBps = 0,
-  int? fileBytes,
 }) {
-  final out = <String>[];
-  final tier = resolutionTier(width, height);
-  if (tier != null) out.add(tier);
-  if (doviProfile > 0) {
-    out.add('DV P$doviProfile');
-  } else if (hdr10) {
-    out.add('HDR10');
-  } else if (hlg) {
-    out.add('HLG');
+  // Emby `extendedVideoSubType`：'DoviProfile50' → 5.0 → 'DV P5'；
+  // 'DoviProfile81' → 8.1 → 'DV P8.1'。
+  final m = RegExp(r'[Dd]ovi[Pp]rofile(\d+)').firstMatch(dvProfileLabel ?? '');
+  if (m != null) {
+    final digits = m.group(1)!;
+    final major = int.tryParse(digits.substring(0, 1)) ?? 0;
+    final minor = digits.length > 1 ? int.tryParse(digits.substring(1)) ?? 0 : 0;
+    return minor == 0 ? 'DV P$major' : 'DV P$major.$minor';
   }
-  final codec = codecShortName(codecName);
-  if (codec != null) out.add(codec);
-  if (fps != null && fps > 0) out.add('${fps.toStringAsFixed(1)} fps');
-  if (bitRateBps > 0) out.add(formatMbpsBadge(bitRateBps));
-  if (fileBytes != null && fileBytes > 0) out.add(formatSizeBadge(fileBytes));
-  return out;
+  if (doviProfile > 0) return 'DV P$doviProfile';
+  if (hdr10) return 'HDR10';
+  if (hlg) return 'HLG';
+  return 'SDR';
 }
 
 /// 分辨率档位徽章：4K / 2K / 1080P / 720P；无分辨率返回 null。
@@ -265,4 +307,112 @@ MediaInfoSource mediaInfoFromPlayer(AdapterMediaInfo? info,
     sampleRateHz: (a == null || a.sampleRate <= 0) ? null : a.sampleRate,
     audioBitrateBps: (a == null || a.bitRate <= 0) ? null : a.bitRate,
   );
+}
+
+/// 695：取当前生效 `MediaSource`（按 [sourceId] 匹配，缺省取首个）。
+MediaSource? pickMediaSource(MediaItem item, {String? sourceId}) {
+  if (item.mediaSources.isEmpty) return null;
+  if (sourceId != null && sourceId.isNotEmpty) {
+    for (final s in item.mediaSources) {
+      if (s.id == sourceId) return s;
+    }
+  }
+  return item.mediaSources.first;
+}
+
+/// 695：Emby 元数据 → 徽章数据（详情页同源；产品拍板「都能从 emby 获取到」
+/// ——徽章主数据源，运行时仅兜底）。
+MediaBadgeSource badgeSourceFromEmby(MediaItem item, {String? sourceId}) {
+  final src = pickMediaSource(item, sourceId: sourceId);
+  final streams = src?.mediaStreams ?? const <MediaStream>[];
+  final videos =
+      streams.where((s) => s.type.toLowerCase() == 'video').toList();
+  final v = videos.isNotEmpty ? videos.first : null;
+  final rangeType = v?.videoRangeType ?? '';
+  return MediaBadgeSource(
+    width: v?.width ?? src?.width ?? 0,
+    height: v?.height ?? src?.height ?? 0,
+    dvProfileLabel: v?.extendedVideoSubType,
+    hdr10: rangeType.contains('HDR10'),
+    hlg: rangeType.contains('HLG'),
+    codecName: v?.codec,
+    fps: v?.frameRate,
+    bitRateBps: v?.bitRate ?? src?.bitrate ?? 0,
+    fileBytes: src?.size,
+  );
+}
+
+/// 695：Emby 元数据 → 详情面板静态源（文件/音频/视频编码段）。
+/// 音频取 `defaultAudioStreamIndex`（缺省取首条）。
+MediaInfoSource mediaInfoFromEmby(MediaItem item,
+    {String? fileName, String? sourceId}) {
+  final src = pickMediaSource(item, sourceId: sourceId);
+  final streams = src?.mediaStreams ?? const <MediaStream>[];
+  final audios =
+      streams.where((s) => s.type.toLowerCase() == 'audio').toList();
+  MediaStream? a;
+  final defIdx = src?.defaultAudioStreamIndex;
+  if (defIdx != null) {
+    for (final s in audios) {
+      if (s.index == defIdx) {
+        a = s;
+        break;
+      }
+    }
+  }
+  a ??= audios.isNotEmpty ? audios.first : null;
+  final videos =
+      streams.where((s) => s.type.toLowerCase() == 'video').toList();
+  final v = videos.isNotEmpty ? videos.first : null;
+  String? codecDesc(String? codec, String? profile) {
+    final short = codecShortName(codec);
+    if (short == null) return null;
+    return (profile == null || profile.isEmpty) ? short : '$short [$profile]';
+  }
+
+  return MediaInfoSource(
+    fileName: fileName,
+    fileBytes: src?.size,
+    container: src?.container,
+    videoCodecDesc: codecDesc(v?.codec, v?.profile),
+    videoBitrateBps: (v?.bitRate ?? 0) > 0
+        ? v!.bitRate
+        : ((src?.bitrate ?? 0) > 0 ? src!.bitrate : null),
+    audioCodecDesc: codecDesc(a?.codec, a?.profile),
+    channels: (a?.channels ?? 0) > 0 ? a!.channels : null,
+    sampleRateHz: (a?.sampleRate ?? 0) > 0 ? a!.sampleRate : null,
+    audioBitrateBps: (a?.bitRate ?? 0) > 0 ? a!.bitRate : null,
+    width: v?.width ?? src?.width,
+    height: v?.height ?? src?.height,
+    fps: v?.frameRate,
+  );
+}
+
+/// 695：HDR10 亮度文本（mpv 统计页同款语义，**修「值恒为 0」**）：
+/// 亮度范围 = `min-luma`/`max-luma`（cd/m²）；`max-cll` 仅 >0 才显示；
+/// `sig-peak` 是 max_luma/100 倍数（×100 = nits），作信号峰值。
+///
+/// 【为什么不用 max-cll 优先】真机回归：`video-params/max-cll` 常为 0
+/// 且盖过 sig-peak 分支 → 显示 `MaxCLL 0 cd/m²`（恒 0）。
+String? hdr10LumaText({
+  double? minLuma,
+  double? maxLuma,
+  double? sigPeak,
+  double? maxCll,
+  double? maxFall,
+}) {
+  final parts = <String>[];
+  if (maxLuma != null && maxLuma > 0) {
+    final min = (minLuma ?? 0).toStringAsFixed(4);
+    parts.add('Mastering display: $min / ${maxLuma.toStringAsFixed(0)} cd/m²');
+  }
+  if (maxCll != null && maxCll > 0) {
+    parts.add('MaxCLL: ${maxCll.toStringAsFixed(0)} cd/m²');
+    if (maxFall != null && maxFall > 0) {
+      parts.add('MaxFALL: ${maxFall.toStringAsFixed(0)} cd/m²');
+    }
+  } else if (sigPeak != null && sigPeak > 0) {
+    parts.add('峰值 ${(sigPeak * 100).toStringAsFixed(0)} cd/m²');
+  }
+  return parts.isEmpty ? null : parts.join('   ');
 }

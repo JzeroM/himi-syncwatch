@@ -391,7 +391,8 @@ void main() {
 
     test('9.3 四壳加宽（Qt 460 / 安卓 480 / 鸿蒙 480·52%）', () {
       expect(qtPanel, contains('implicitWidth: 460'));
-      expect(kotlinView, contains('PANEL_DANMAKU) 480'));
+      expect(kotlinView, contains('PANEL_DANMAKU || panel == PANEL_MEDIA_INFO) 480'),
+          reason: '弹幕 480 不变量；695 视频详细信息同 480');
       expect(
         ohosContainer,
         contains("maxWidth: this.panelType === 'danmaku' ? 480 : 320"),
@@ -519,9 +520,20 @@ void main() {
       expect(qtLayer, contains('var all = _state.sorted'));
     });
 
-    test('11.3 syncFlying 去重表化（O(n²) 字符串拼接 → O(n)）', () {
-      expect(qtLayer, contains("existing['#' + keyOf(list[j0])] = true"));
-      expect(qtLayer, isNot(contains('for (var j = 0; j < list.length; j++) {\n                if (keyOf(list[j]) === k)')));
+    test('11.3 syncFlying 性能演进（694 去重表化 → 695 逐帧零全表扫描/零拼接）', () {
+      // 695：逐帧不再扫 danmakuItems 全表（密集资源卡顿根源）、零字符串
+      // 拼接（_key 缓存）；新条目由 reindex() 在数据节拍准入。
+      expect(qtLayer, contains('function reindex()'));
+      expect(qtLayer, contains('it._key = keyOf(it)'));
+      expect(qtLayer, isNot(contains("existing['#' + keyOf(list[j0])] = true")),
+          reason: '694 的逐帧哈希构建已被数据节拍 reindex 取代');
+      final syncBody = qtLayer.substring(
+          qtLayer.indexOf('function syncFlying'),
+          qtLayer.indexOf('function assignLanes'));
+      expect(syncBody, isNot(contains('danmakuItems')),
+          reason: 'syncFlying 逐帧不得扫弹幕源全表');
+      expect(syncBody, isNot(contains('keyOf(')),
+          reason: '帧循环零字符串拼接（用 _key 缓存）');
     });
 
     test('11.4 raise 节流（事件化，不在 50ms 轮询）', () {

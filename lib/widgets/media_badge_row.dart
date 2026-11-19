@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'glass/glass_container.dart';
 
-/// 695：媒体信息徽章行（进度条上方）——玻璃矩形圆角胶囊、**居中**、
+/// 695：媒体信息徽章行（进度条上方）——玻璃**圆角矩形**胶囊、靠右对齐、
 /// 胶囊间等距；无徽章时不占位。仅非房间模式由调用方门控。
 class MediaBadgeRow extends StatelessWidget {
   const MediaBadgeRow({super.key, required this.badges});
@@ -15,7 +15,7 @@ class MediaBadgeRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           for (final badge in badges)
             Padding(
@@ -36,9 +36,10 @@ class _BadgeCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassContainer(
-      // 矩形圆角胶囊（胶囊 10，与焦点环胶囊圆角规范一致）
-      borderRadius: BorderRadius.circular(10),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      // 圆角矩形胶囊（radius 6 + 纵向内距 3 → 矩形观感，非药丸/椭圆；
+      // 695 真机回归：radius 10 + 小高变椭圆，不好看）
+      borderRadius: BorderRadius.circular(6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       child: Text(
         text,
         style: const TextStyle(

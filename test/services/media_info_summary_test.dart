@@ -1,34 +1,40 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
+import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/player/media_info_summary.dart';
 
 void main() {
-  group('① 徽章格式化（进度条上方胶囊行）', () {
+  group('① 徽章格式化（六项全显不省略，Emby 主数据源）', () {
     test('完整示例：[4K] [DV P5] [HEVC] [60.0 fps] [29Mbps] [20.50G]', () {
       expect(
-        buildMediaBadges(
+        buildMediaBadges(const MediaBadgeSource(
           width: 3840,
           height: 1606,
-          doviProfile: 5,
+          dvProfileLabel: 'DoviProfile50',
           codecName: 'hevc',
           fps: 60,
           bitRateBps: 29000000,
           fileBytes: 22011707392, // 20.50 GiB
-        ),
+        )),
         ['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G'],
       );
     });
 
-    test('无值项省略（不显示空胶囊）', () {
-      expect(buildMediaBadges(width: 1920, height: 800), ['1080P']);
-      expect(buildMediaBadges(), isEmpty);
+    test('六项全显不省略（极缺兜底 —，产品拍板）', () {
+      expect(buildMediaBadges(const MediaBadgeSource()),
+          ['—', 'SDR', '—', '—', '—', '—']);
     });
 
-    test('DV 优先；无 DV 时 HDR10/HLG 兜底徽章', () {
+    test('DV profile：Emby DoviProfile50/81 → DV P5 / DV P8.1', () {
       expect(
-          buildMediaBadges(doviProfile: 8, hdr10: true), ['DV P8']);
-      expect(buildMediaBadges(hdr10: true), ['HDR10']);
-      expect(buildMediaBadges(hlg: true), ['HLG']);
+          videoRangeBadge(dvProfileLabel: 'DoviProfile50'), 'DV P5');
+      expect(
+          videoRangeBadge(dvProfileLabel: 'DoviProfile81'), 'DV P8.1');
+      expect(videoRangeBadge(doviProfile: 5), 'DV P5',
+          reason: '运行时 profile 兜底');
+      expect(videoRangeBadge(hdr10: true), 'HDR10');
+      expect(videoRangeBadge(hlg: true), 'HLG');
+      expect(videoRangeBadge(), 'SDR');
     });
 
     test('分辨率档位（4K/2K/1080P/720P）', () {
@@ -53,6 +59,76 @@ void main() {
       expect(formatMbpsBadge(9800000), '9.8Mbps');
       expect(formatSizeBadge(22011707392), '20.50G');
       expect(formatSizeBadge(512 << 20), '512M');
+    });
+  });
+
+  group('①b HDR10 亮度语义（修「值恒为 0」）', () {
+    test('亮度范围优先；max-cll 仅 >0 显示；sig-peak 兜底', () {
+      expect(
+        hdr10LumaText(minLuma: 0.0001, maxLuma: 1000, maxCll: 1300, maxFall: 1080),
+        'Mastering display: 0.0001 / 1000 cd/m²   MaxCLL: 1300 cd/m²   MaxFALL: 1080 cd/m²',
+      );
+      // max-cll 恒 0 是真机坑：不得显示 MaxCLL 0，改走 sig-peak
+      expect(
+        hdr10LumaText(minLuma: 0.0001, maxLuma: 1000, sigPeak: 10, maxCll: 0),
+        'Mastering display: 0.0001 / 1000 cd/m²   峰值 1000 cd/m²',
+      );
+      expect(hdr10LumaText(), isNull);
+    });
+  });
+
+  group('①c Emby 映射（详情页同源）', () {
+    test('MediaItem → 徽章源/详情源（含音频三源字段）', () {
+      final item = MediaItem(
+        id: 'x',
+        name: 'movie',
+        type: 'Movie',
+        mediaSources: [
+          MediaSource(
+            id: 's1',
+            name: 'movie',
+            container: 'mkv',
+            size: 22011707392,
+            bitrate: 29000000,
+            width: 3840,
+            height: 1606,
+            defaultAudioStreamIndex: 1,
+            mediaStreams: [
+              MediaStream(
+                type: 'Video',
+                codec: 'hevc',
+                width: 3840,
+                height: 1606,
+                bitRate: 29000000,
+                frameRate: 60,
+                profile: 'Main 10',
+                extendedVideoSubType: 'DoviProfile50',
+                videoRangeType: 'DOVI',
+                index: 0,
+              ),
+              MediaStream(
+                type: 'Audio',
+                codec: 'aac',
+                channels: 2,
+                sampleRate: 48000,
+                bitRate: 124000,
+                profile: 'LC',
+                index: 1,
+              ),
+            ],
+          ),
+        ],
+      );
+      final b = badgeSourceFromEmby(item);
+      expect(buildMediaBadges(b),
+          ['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G']);
+      final s = mediaInfoFromEmby(item, fileName: 'movie.mkv');
+      expect(s.container, 'mkv');
+      expect(s.videoCodecDesc, 'HEVC [Main 10]');
+      expect(s.audioCodecDesc, 'AAC [LC]');
+      expect(s.channels, 2);
+      expect(s.sampleRateHz, 48000);
+      expect(s.audioBitrateBps, 124000);
     });
   });
 
