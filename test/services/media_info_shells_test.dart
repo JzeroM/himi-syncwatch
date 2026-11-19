@@ -71,6 +71,13 @@ void main() {
           reason: '徽章/信息按钮仅非房间');
     });
 
+    test('CMake QML_FILES 注册 MediaInfoPanel（漏注册=类型缺失冒烟崩）', () {
+      final cmake =
+          read('native/windows_qt_player/CMakeLists.txt');
+      expect(cmake, contains('src/qml/MediaInfoPanel.qml'));
+      expect(cmake, contains('BottomBar MediaInfoPanel'));
+    });
+
     test('MediaInfoPanel：矩形玻璃分组卡片 + 每条一行', () {
       expect(qtPanel, contains('695：「视频详细信息」面板'), reason: '组件文件');
       expect(qtPanel, contains('mediaGroups'));

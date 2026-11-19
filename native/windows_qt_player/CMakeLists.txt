@@ -111,6 +111,7 @@ qt_add_qml_module(himi_qt_player
         src/qml/DanmakuLayer.qml
         src/qml/DebugPanel.qml
         src/qml/DanmakuPanel.qml
+        src/qml/MediaInfoPanel.qml
         src/qml/evolveui/ETheme.qml
         src/qml/evolveui/EButton.qml
         src/qml/evolveui/ESlider.qml
