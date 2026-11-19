@@ -100,6 +100,36 @@ Rectangle {
         return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s)
     }
 
+    // 695：媒体徽章行——**绝对定位**悬于底栏上方（进度条上方）且水平居中：
+    // 不进 ColumnLayout（root height: 96 是固定预算，塞进去会把按钮行挤出
+    // 窗口下缘——真机截图回归），叠在视频上零布局影响；仅非房间。
+    Row {
+        anchors.bottom: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottomMargin: 4
+        spacing: 6
+        visible: !playerState.isRoom && mediaBadges.length > 0
+        Repeater {
+            model: mediaBadges
+            delegate: Rectangle {
+                radius: 10
+                color: Qt.rgba(1, 1, 1, 0.08)
+                border.color: Qt.rgba(1, 1, 1, 0.14)
+                border.width: 1
+                width: badgeText.implicitWidth + 16
+                height: badgeText.implicitHeight + 5
+                Text {
+                    id: badgeText
+                    anchors.centerIn: parent
+                    text: modelData
+                    color: "white"
+                    font.pixelSize: 11
+                    font.bold: true
+                }
+            }
+        }
+    }
+
     /// 时间列宽（≥1 小时用宽列，与 Flutter `SeekTimeLabels.cellWidth` 一致）
     function timeCellWidthFor(ms) {
         return ms >= 3600000 ? Theme.timeCellWidthWide : Theme.timeCellWidth
@@ -119,33 +149,6 @@ Rectangle {
         anchors.topMargin: Theme.barPadTop
         anchors.bottomMargin: Theme.barPadBottom
         spacing: 2
-
-        // 695：媒体徽章行（进度条上方右对齐；仅非房间，产品拍板）
-        Row {
-            Layout.fillWidth: true
-            Layout.alignment: Qt.AlignRight
-            spacing: 6
-            visible: !playerState.isRoom && mediaBadges.length > 0
-            Repeater {
-                model: mediaBadges
-                delegate: Rectangle {
-                    radius: 10
-                    color: Qt.rgba(1, 1, 1, 0.08)
-                    border.color: Qt.rgba(1, 1, 1, 0.14)
-                    border.width: 1
-                    width: badgeText.implicitWidth + 16
-                    height: badgeText.implicitHeight + 5
-                    Text {
-                        id: badgeText
-                        anchors.centerIn: parent
-                        text: modelData
-                        color: "white"
-                        font.pixelSize: 11
-                        font.bold: true
-                    }
-                }
-            }
-        }
 
         // ── 第一行：进度条 + 时间 ──
         RowLayout {

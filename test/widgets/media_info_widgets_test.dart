@@ -11,7 +11,7 @@ import 'package:himi_syncwatch/widgets/video_info_sheet.dart';
 
 /// 695：媒体徽章行 + 视频详细信息面板渲染行为。
 void main() {
-  testWidgets('徽章行：逐胶囊渲染、右对齐布局；空徽章不占位', (tester) async {
+  testWidgets('徽章行：逐胶囊渲染、居中布局；空徽章不占位', (tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         settingsProvider.overrideWith(
@@ -30,7 +30,7 @@ void main() {
 
     final row = tester.widget<Row>(
         find.descendant(of: find.byType(MediaBadgeRow), matching: find.byType(Row)));
-    expect(row.mainAxisAlignment, MainAxisAlignment.end, reason: '右对齐');
+    expect(row.mainAxisAlignment, MainAxisAlignment.center, reason: '居中（695 真机回归修正）');
 
     await tester.pumpWidget(ProviderScope(
       overrides: [

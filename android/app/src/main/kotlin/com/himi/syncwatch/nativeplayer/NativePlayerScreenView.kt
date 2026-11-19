@@ -1206,6 +1206,32 @@ class NativePlayerScreenView(
 
     // ── 视图装配 ──────────────────────────────────────────────────
 
+    /**
+     * 695：重建媒体徽章行内容——进度条上方**居中**、玻璃矩形圆角胶囊；
+     * 仅非房间（产品拍板）。每次状态推送调用（assemble 建容器，本函数填内容）。
+     */
+    private fun updateMediaBadges() {
+        mediaBadgeRow.removeAllViews()
+        val badges = parseMediaBadges(lastState.mediaInfoJson)
+        if (lastState.isRoom || badges.isEmpty()) {
+            mediaBadgeRow.visibility = View.GONE
+            return
+        }
+        mediaBadgeRow.orientation = LinearLayout.HORIZONTAL
+        mediaBadgeRow.gravity = Gravity.CENTER_HORIZONTAL
+        for (b in badges) {
+            val chip = TextView(context)
+            chip.text = b
+            chip.setTextColor(Color.WHITE)
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            chip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            chip.background = glassBackground(10)
+            chip.setPadding(dp(8), dp(2), dp(8), dp(2))
+            mediaBadgeRow.addView(chip, llp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, 6))
+        }
+        mediaBadgeRow.visibility = View.VISIBLE
+    }
+
     /** 695：解析 Dart 预格式化 JSON 的徽章列表。 */
     private fun parseMediaBadges(json: String?): List<String> {
         if (json.isNullOrEmpty()) return emptyList()
@@ -1937,27 +1963,9 @@ class NativePlayerScreenView(
         bottomBar.addView(logoImage, lp(dp(NPTheme.LOGO_WIDTH), dp(NPTheme.LOGO_HEIGHT)))
         logoSpacer.visibility = GONE
         bottomBar.addView(logoSpacer, lp(LayoutParams.MATCH_PARENT, dp(4)))
-        // 695：媒体徽章行（进度条上方右对齐、玻璃矩形圆角胶囊、不遮挡标识图；
-        // 仅非房间，产品拍板）。
-        mediaBadgeRow.removeAllViews()
-        mediaBadgeRow.orientation = LinearLayout.HORIZONTAL
-        mediaBadgeRow.gravity = Gravity.END
-        val badges695 = parseMediaBadges(lastState.mediaInfoJson)
-        if (!lastState.isRoom && badges695.isNotEmpty()) {
-            for (b in badges695) {
-                val chip = TextView(context)
-                chip.text = b
-                chip.setTextColor(Color.WHITE)
-                chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                chip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                chip.background = glassBackground(10)
-                chip.setPadding(dp(8), dp(2), dp(8), dp(2))
-                mediaBadgeRow.addView(chip, llp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, 6))
-            }
-            mediaBadgeRow.visibility = View.VISIBLE
-        } else {
-            mediaBadgeRow.visibility = View.GONE
-        }
+        // 695：媒体徽章行（进度条上方居中、玻璃矩形圆角胶囊、不遮挡标识图；
+        // 仅非房间，产品拍板）。内容由 updateMediaBadges() 按状态推送刷新——
+        // 组装时 mediaInfoJson 常为空（首帧），只挂容器，勿在此处建内容。
         bottomBar.addView(mediaBadgeRow, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         // 进度条行：时间(56/78) · Slider · 时间
@@ -4745,6 +4753,8 @@ class NativePlayerScreenView(
     }
 
     private fun applyState() {
+        // 695：媒体徽章随状态推送刷新（组装期数据未到，必须在此重建）。
+        updateMediaBadges()
         val state = lastState
         val now = System.currentTimeMillis()
 

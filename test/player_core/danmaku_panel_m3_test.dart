@@ -398,7 +398,9 @@ void main() {
       );
       expect(
         ohosContainer,
-        contains(".width(this.panelType === 'danmaku' ? '52%' : '42%')"),
+        contains(
+            ".width(this.panelType === 'danmaku' || this.panelType === 'mediaInfo' ? '52%' : '42%')"),
+        reason: '弹幕 52%（694 加宽不变量）；695 视频详细信息同 52%',
       );
     });
 

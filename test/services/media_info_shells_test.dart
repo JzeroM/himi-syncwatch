@@ -52,8 +52,8 @@ void main() {
 
     test('徽章行/详情面板 widget 就位', () {
       expect(badgeRow, contains('class MediaBadgeRow'));
-      expect(badgeRow, contains('MainAxisAlignment.end'),
-          reason: '徽章右对齐');
+      expect(badgeRow, contains('MainAxisAlignment.center'),
+          reason: '徽章居中');
       expect(infoSheet, contains('showVideoInfoSheet'));
       expect(infoSheet, contains('class VideoInfoSheet'));
     });
@@ -67,6 +67,8 @@ void main() {
     test('底栏徽章行 + 信息按钮（仅非房间）', () {
       expect(qtBottom, contains('mediaBadges'));
       expect(qtBottom, contains('signal mediaInfoClicked()'));
+      expect(qtBottom, contains('anchors.horizontalCenter: parent.horizontalCenter'),
+          reason: '徽章居中且绝对定位（不占 96 高度预算，防按钮行截断）');
       expect(qtBottom, contains('visible: !playerState.isRoom'),
           reason: '徽章/信息按钮仅非房间');
     });
@@ -94,7 +96,9 @@ void main() {
 
     test('徽章行（进度条上方右对齐）+ 信息按钮（底栏最右）', () {
       expect(kotlinView, contains('mediaBadgeRow'));
-      expect(kotlinView, contains('Gravity.END'), reason: '徽章右对齐');
+      expect(kotlinView, contains('Gravity.CENTER_HORIZONTAL'), reason: '徽章居中');
+      expect(kotlinView, contains('updateMediaBadges()'),
+          reason: '内容在 applyState 按推送重建（组装期数据为空）');
       expect(kotlinView, contains('parseMediaBadges(lastState.mediaInfoJson)'));
       expect(kotlinView, contains('NativePlayerIcons.ICON_INFO'));
       expect(kotlinView, contains('showMediaInfoDialog()'));
@@ -119,9 +123,15 @@ void main() {
 
     test('徽章行 + 信息按钮 + 详情面板', () {
       expect(ohosView, contains('parseMediaPayload()'));
+      expect(ohosView, contains('FlexAlign.Center'), reason: '徽章居中');
       expect(ohosView, contains('showMediaInfoDialog()'));
       expect(ohosView, contains('NativePlayerIcons.ICON_INFO'));
-      expect(ohosView, contains('MediaInfoDialogContent'));
+      expect(ohosView, contains('NativePlayerPanelType.mediaInfo'),
+          reason: '详情面板走既有 NativePlayerPanel 分发');
+      final ohosPanel = read(
+          'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/NativePlayerPanel.ets');
+      expect(ohosPanel, contains("panelType === 'mediaInfo'"));
+      expect(ohosPanel, contains('MediaInfoContent'));
     });
   });
 }

@@ -16,6 +16,7 @@ import { window } from '@kit.ArkUI';
 import settings from '@ohos.settings';
 import {
   HimiMpvNativeHost,
+  MediaInfoPayloadG,
   NativePlayerUiState,
   NativePlayerViewListener,
   NativePlayerPanelType,
@@ -48,22 +49,6 @@ const ROOM_PANEL_WIDTH = 320;
  * 逐值一致。竖屏时面板贴视频区下缘、占满宽度。
  */
 const ROOM_PANEL_HEIGHT = 280;
-
-/** 695：视频详细信息数据类（Dart 预格式化 JSON 的结构化镜像）。 */
-class MediaInfoRowG {
-  label: string = '';
-  value: string = '';
-}
-
-class MediaInfoGroupG {
-  title: string = '';
-  rows: MediaInfoRowG[] = [];
-}
-
-class MediaInfoPayloadG {
-  badges: string[] = [];
-  groups: MediaInfoGroupG[] = [];
-}
 
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
@@ -2873,67 +2858,10 @@ export struct HimiNativePlayerView {
     }
   }
 
-  /** 695：打开「视频详细信息」面板（可滚动；每组一张矩形玻璃卡片；每条一行）。 */
+  /** 695：打开「视频详细信息」面板（复用 NativePlayerPanel 分发；分组
+   * 矩形玻璃卡片、每条信息纵向独占一行）。 */
   showMediaInfoDialog(): void {
-    AlertDialog.show({
-      builder: (): void => {
-        this.MediaInfoDialogContent();
-      },
-      alignment: DialogAlignment.Center,
-      autoCancel: true,
-    });
-  }
-
-  @Builder
-  MediaInfoDialogContent() {
-    Scroll() {
-      Column() {
-        Text('视频详细信息')
-          .fontSize(15)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .margin({ bottom: 12 })
-        ForEach(this.parseMediaPayload().groups, (g: MediaInfoGroupG): void => {
-          Column() {
-            Text(g.title)
-              .fontSize(13)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#B3FFFFFF')
-              .margin({ bottom: 6 })
-            ForEach(g.rows, (r: MediaInfoRowG): void => {
-              Row() {
-                Text(r.label)
-                  .fontSize(12)
-                  .fontColor('#8AFFFFFF')
-                  .width(96)
-                  .textAlign(TextAlign.Start)
-                Text(r.value)
-                  .fontSize(12)
-                  .fontColor(Color.White)
-                  .layoutWeight(1)
-                  .textAlign(TextAlign.End)
-              }
-              .width('100%')
-              .margin({ top: 3, bottom: 3 })
-            }, (r: MediaInfoRowG): string => r.label + '|' + r.value)
-          }
-          .padding(12)
-          .borderRadius(10)
-          .backgroundColor('#14FFFFFF')
-          .border({ width: 1, color: '#1FFFFFFF' })
-          .margin({ bottom: 10 })
-          .alignItems(HorizontalAlign.Start)
-          .width('100%')
-        }, (g: MediaInfoGroupG): string => g.title)
-      }
-      .padding(16)
-      .alignItems(HorizontalAlign.Center)
-    }
-    .scrollable(ScrollDirection.Vertical)
-    .height(420)
-    .width('86%')
-    .backgroundColor('#E6121417')
-    .borderRadius(12)
+    this.openPanel(NativePlayerPanelType.mediaInfo);
   }
 
   @Builder
@@ -2958,7 +2886,7 @@ export struct HimiNativePlayerView {
         }, (b: string): string => b)
       }
       .width('100%')
-      .justifyContent(FlexAlign.End)
+      .justifyContent(FlexAlign.Center)
       .visibility(this.state().isRoom ? Visibility.None : Visibility.Visible)
       .margin({ bottom: 4 })
 

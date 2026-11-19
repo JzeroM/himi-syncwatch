@@ -26,6 +26,22 @@ export interface NativePlayerViewListener {
  * Phase 2 二级面板类型（计划书 §5.2 面板清单）。
  * 每个面板一个模态，打开时遮住视频、点外/返回关闭。
  */
+/** 695：视频详细信息数据类（Dart 预格式化 JSON 的结构化镜像）。 */
+export class MediaInfoRowG {
+  label: string = '';
+  value: string = '';
+}
+
+export class MediaInfoGroupG {
+  title: string = '';
+  rows: MediaInfoRowG[] = [];
+}
+
+export class MediaInfoPayloadG {
+  badges: string[] = [];
+  groups: MediaInfoGroupG[] = [];
+}
+
 export class NativePlayerPanelType {
   static readonly speed: string = 'speed';
   static readonly audio: string = 'audio';
@@ -42,6 +58,8 @@ export class NativePlayerPanelType {
   static readonly decode: string = 'decode';
   /** 694 M3：弹幕弹窗（开关/绑定/搜索）。 */
   static readonly danmaku: string = 'danmaku';
+  /** 695：视频详细信息（分组玻璃卡片 + 每条一行）。 */
+  static readonly mediaInfo: string = 'mediaInfo';
   /** 片头片尾标记（居中玻璃卡）。 */
   static readonly segment: string = 'segment';
 }

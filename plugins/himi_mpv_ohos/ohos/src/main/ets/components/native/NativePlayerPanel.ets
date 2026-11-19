@@ -14,6 +14,9 @@
  */
 
 import {
+  MediaInfoGroupG,
+  MediaInfoPayloadG,
+  MediaInfoRowG,
   HimiMpvNativeHost,
   NativePlayerUiState,
   NativeTrackUi,
@@ -350,6 +353,58 @@ export struct NativePlayerPanel {
     }
   }
 
+  /** 695：视频详细信息体——分组=矩形玻璃卡片；每条信息纵向独占一行。 */
+  @Builder
+  MediaInfoContent() {
+    Column() {
+      ForEach(this.parseMediaGroups(), (g: MediaInfoGroupG): void => {
+        Column() {
+          Text(g.title)
+            .fontSize(13)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#B3FFFFFF')
+            .margin({ bottom: 6 })
+          ForEach(g.rows, (r: MediaInfoRowG): void => {
+            Row() {
+              Text(r.label)
+                .fontSize(12)
+                .fontColor('#8AFFFFFF')
+                .width(96)
+              Text(r.value)
+                .fontSize(12)
+                .fontColor(Color.White)
+                .layoutWeight(1)
+                .textAlign(TextAlign.End)
+            }
+            .width('100%')
+            .margin({ top: 3, bottom: 3 })
+          }, (r: MediaInfoRowG): string => r.label + '|' + r.value)
+        }
+        .padding(12)
+        .borderRadius(10)
+        .backgroundColor('#14FFFFFF')
+        .border({ width: 1, color: '#1FFFFFFF' })
+        .margin({ bottom: 10 })
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }, (g: MediaInfoGroupG): string => g.title)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  private parseMediaGroups(): MediaInfoGroupG[] {
+    try {
+      const raw = this.state().mediaInfoJson;
+      if (raw.length === 0) {
+        return [];
+      }
+      return (JSON.parse(raw) as MediaInfoPayloadG).groups;
+    } catch (e) {
+      return [];
+    }
+  }
+
   private state(): NativePlayerUiState {
     return this.host.state;
   }
@@ -412,7 +467,7 @@ export struct NativePlayerPanel {
           this.SidePanel();
         }
         // 694：弹幕弹窗加宽（搜索结果完整显示不省略）。
-        .width(this.panelType === 'danmaku' ? '52%' : '42%')
+        .width(this.panelType === 'danmaku' || this.panelType === 'mediaInfo' ? '52%' : '42%')
         .constraintSize({
           minWidth: 260,
           maxWidth: this.panelType === 'danmaku' ? 480 : 320,
@@ -469,6 +524,8 @@ export struct NativePlayerPanel {
         this.DecodeContent();
       } else if (this.panelType === 'danmaku') {
         DanmakuPanelContent({ revision: this.revision });
+      } else if (this.panelType === 'mediaInfo') {
+        this.MediaInfoContent();
       }
     }
     // 宽 42%（钳 260~320）与上下避让移到外层容器（见 build()）：面板容器
