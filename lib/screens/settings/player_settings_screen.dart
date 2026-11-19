@@ -96,7 +96,8 @@ class PlayerSettingsScreen extends ConsumerWidget {
                   .update(showNetworkSpeed: !settings.showNetworkSpeed),
               child: SwitchListTile(
                 title: const Text('显示网速'),
-                subtitle: const Text('播放页顶栏右侧显示真实下载速度（播放时≈视频流速度）'),
+                subtitle:
+                    const Text('播放页顶栏显示网速（MPV 为视频流加载速度；MDK/Erika 为设备下载速度近似）'),
                 value: settings.showNetworkSpeed,
                 onChanged: (v) => notifier.update(showNetworkSpeed: v),
               ),

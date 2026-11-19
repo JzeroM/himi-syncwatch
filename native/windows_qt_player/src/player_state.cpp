@@ -150,6 +150,8 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     dirty |= assign(engineLabel_, readString(json, "engineLabel", engineLabel_));
     dirty |= assign(networkSpeedText_,
                     readString(json, "networkSpeedText", networkSpeedText_));
+    dirty |= assign(mediaInfoJson_,
+                    readString(json, "mediaInfoJson", mediaInfoJson_));
     dirty |= assign(videoFit_, readString(json, "videoFit", videoFit_));
     dirty |= assign(decodeMode_, readString(json, "decodeMode", decodeMode_));
     dirty |= assign(glassUi_, readBool(json, "glassUi", glassUi_));

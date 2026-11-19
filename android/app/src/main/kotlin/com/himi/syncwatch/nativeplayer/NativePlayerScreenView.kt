@@ -1065,6 +1065,9 @@ class NativePlayerScreenView(
     private val skipPromptIcon = TextView(context)
     private val skipPromptLabel = TextView(context)
     private val trailingGroup = LinearLayout(context)
+
+    // 695：媒体徽章行（进度条上方右对齐）+ 视频详细信息按钮（底栏最右）。
+    private val mediaBadgeRow = LinearLayout(context)
     /** trailing 的测量级缩放容器（等价 Flutter FittedBox(scaleDown)）。 */
     private val trailingBox = ScaleDownBox(context)
     private val bottomSpeedChip = LinearLayout(context)
@@ -1202,6 +1205,84 @@ class NativePlayerScreenView(
     private val roomBroadcastIcon = TextView(context)
 
     // ── 视图装配 ──────────────────────────────────────────────────
+
+    /** 695：解析 Dart 预格式化 JSON 的徽章列表。 */
+    private fun parseMediaBadges(json: String?): List<String> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val arr = org.json.JSONObject(json).optJSONArray("badges") ?: return emptyList()
+            (0 until arr.length()).map { arr.optString(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 695：「视频详细信息」面板——可滚动；每个分组一张矩形玻璃卡片；
+     * 组内每条信息纵向独占一行（左中文标签、右英文值）。数据为 Dart
+     * 预格式化 JSON，本方法只解析渲染（四壳同构）。
+     */
+    private fun showMediaInfoDialog() {
+        val raw = lastState.mediaInfoJson ?: return
+        val groups = try {
+            org.json.JSONObject(raw).optJSONArray("groups") ?: return
+        } catch (_: Exception) {
+            return
+        }
+        val scroll = android.widget.ScrollView(context)
+        val col = LinearLayout(context)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(16), dp(12), dp(16), dp(12))
+        scroll.addView(col)
+        val title = TextView(context)
+        title.text = "视频详细信息"
+        title.setTextColor(Color.WHITE)
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        title.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        title.gravity = Gravity.CENTER
+        col.addView(title, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        for (gi in 0 until groups.length()) {
+            val g = groups.getJSONObject(gi)
+            val card = LinearLayout(context)
+            card.orientation = LinearLayout.VERTICAL
+            card.background = glassBackground(10)
+            card.setPadding(dp(12), dp(10), dp(12), dp(10))
+            val gt = TextView(context)
+            gt.text = g.optString("title")
+            gt.setTextColor(Color.argb(178, 255, 255, 255))
+            gt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gt.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            card.addView(gt, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            val rows = g.optJSONArray("rows")
+            if (rows != null) {
+                for (ri in 0 until rows.length()) {
+                    val r = rows.getJSONObject(ri)
+                    val row = LinearLayout(context)
+                    row.orientation = LinearLayout.HORIZONTAL
+                    row.gravity = Gravity.CENTER_VERTICAL
+                    val label = TextView(context)
+                    label.text = r.optString("label")
+                    label.setTextColor(Color.argb(138, 255, 255, 255))
+                    label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    row.addView(label, lp(dp(96), dp(24)))
+                    val value = TextView(context)
+                    value.text = r.optString("value")
+                    value.setTextColor(Color.WHITE)
+                    value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    value.gravity = Gravity.END
+                    row.addView(
+                        value,
+                        LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                    card.addView(row, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+                }
+            }
+            col.addView(card, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+        val dlg = android.app.AlertDialog.Builder(context).setView(scroll).create()
+        dlg.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dlg.show()
+    }
 
     /** 组装层级：tapLayer → topBar → bottomBar → 面板层。 */
     private fun buildHierarchy() {
@@ -1774,6 +1855,10 @@ class NativePlayerScreenView(
      * [radiusDp]：Flutter 规范——胶囊 10、常规控件 8。
      */
     private fun makeFocusable(view: View, radiusDp: Int = 8) {
+        // 695：遥控焦点（可聚焦 + 焦点环 + touch 聚焦）是 TV 专属——真机
+        // 回归：手机模式点按控件即持焦画环，看起来像 TV 遥控焦点。手机
+        // 模式一律不建（单点收口，覆盖全部 6 处调用：底栏控件/面板行/搜索框）。
+        if (!lastState.tvMode) return
         view.isFocusable = true
         // 694：必须允许 touch mode 聚焦——真机（手机 TV 模式）触摸后进入
         // touch mode，focusableInTouchMode=false 的视图 requestFocus() 一律
@@ -1852,6 +1937,28 @@ class NativePlayerScreenView(
         bottomBar.addView(logoImage, lp(dp(NPTheme.LOGO_WIDTH), dp(NPTheme.LOGO_HEIGHT)))
         logoSpacer.visibility = GONE
         bottomBar.addView(logoSpacer, lp(LayoutParams.MATCH_PARENT, dp(4)))
+        // 695：媒体徽章行（进度条上方右对齐、玻璃矩形圆角胶囊、不遮挡标识图；
+        // 仅非房间，产品拍板）。
+        mediaBadgeRow.removeAllViews()
+        mediaBadgeRow.orientation = LinearLayout.HORIZONTAL
+        mediaBadgeRow.gravity = Gravity.END
+        val badges695 = parseMediaBadges(lastState.mediaInfoJson)
+        if (!lastState.isRoom && badges695.isNotEmpty()) {
+            for (b in badges695) {
+                val chip = TextView(context)
+                chip.text = b
+                chip.setTextColor(Color.WHITE)
+                chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                chip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                chip.background = glassBackground(10)
+                chip.setPadding(dp(8), dp(2), dp(8), dp(2))
+                mediaBadgeRow.addView(chip, llp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, 6))
+            }
+            mediaBadgeRow.visibility = View.VISIBLE
+        } else {
+            mediaBadgeRow.visibility = View.GONE
+        }
+        bottomBar.addView(mediaBadgeRow, lp(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         // 进度条行：时间(56/78) · Slider · 时间
         seekRow.orientation = LinearLayout.HORIZONTAL
@@ -2030,6 +2137,14 @@ class NativePlayerScreenView(
         panelToggleButton.setOnClickListener { listener?.onToggleResourcePanel() }
         applyPressFeedback(panelToggleButton)
         trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
+
+        // 695：视频详细信息按钮（底栏最右；仅非房间，产品拍板）。
+        if (!lastState.isRoom) {
+            trailingGroup.addView(
+                iconButton(NativePlayerIcons.ICON_INFO) { showMediaInfoDialog() },
+                llp(dp(32), dp(32), NPTheme.CONTROL_GAP),
+            )
+        }
 
         // HDR 徽标：Flutter 控制层**没有**这个元素（只在调试面板里体现），
         // 原生多画一个会与 Flutter 观感不一致 → 移除，HDR 信息走诊断行。

@@ -1116,6 +1116,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
   late final TextEditingController _usernameController;
   final _passwordController = TextEditingController();
   final _remarkController = TextEditingController();
+  // 695：密码可见性（小眼睛切换），默认打码。
+  bool _obscurePassword = true;
   late bool _useHttps;
   bool _isLoading = false;
   bool _isApplyingPastedUrl = false;
@@ -1408,6 +1410,8 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
               controller: _passwordController,
               hintText: _isEdit ? '输入新密码（可选）' : '输入密码（可选）',
               obscure: true,
+              obscureToggle: true,
+              fieldKey: const Key('serverPasswordField'),
             ),
             if (!_isEdit)
               _formField(
@@ -1445,9 +1449,13 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
     required TextEditingController controller,
     String? hintText,
     bool obscure = false,
+
+    /// 695：密码框小眼睛（显示/隐藏切换），样式同 TMDB 设置 API Key 框。
+    bool obscureToggle = false,
     Key? fieldKey,
     ValueChanged<String>? onChanged,
   }) {
+    final hide = obscureToggle ? _obscurePassword : obscure;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -1459,7 +1467,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
           TextField(
             key: fieldKey,
             controller: controller,
-            obscureText: obscure,
+            obscureText: hide,
             onChanged: onChanged,
             style: const TextStyle(fontSize: 15),
             decoration: InputDecoration(
@@ -1472,6 +1480,17 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
               ),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              suffixIcon: obscureToggle
+                  ? IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword),
+                    )
+                  : null,
             ),
           ),
         ],

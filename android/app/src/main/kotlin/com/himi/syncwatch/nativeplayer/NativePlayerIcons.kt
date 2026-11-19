@@ -22,6 +22,9 @@ object NativePlayerIcons {
     /** tune */
     const val ICON_TUNE = 0xE683
 
+    /** 695：视频详细信息（fa-info 语义，Material Symbols info）。 */
+    const val ICON_INFO = 0xE33C
+
     /** memory */
     const val ICON_MEMORY = 0xE3DB
 

@@ -2605,6 +2605,7 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
       videoHeight: _lastVideoH,
       logoUrl: _nativeUiExtras.logoUrl,
       networkSpeedText: _nativeUiExtras.networkSpeedText,
+      mediaInfoJson: _nativeUiExtras.mediaInfoJson,
       clockFormat: _nativeUiExtras.clockFormat,
       glassUi: _nativeUiExtras.glassUi,
       engineLabel: _nativeUiExtras.engineLabel,

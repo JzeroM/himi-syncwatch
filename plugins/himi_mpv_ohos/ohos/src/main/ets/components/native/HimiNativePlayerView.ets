@@ -49,6 +49,22 @@ const ROOM_PANEL_WIDTH = 320;
  */
 const ROOM_PANEL_HEIGHT = 280;
 
+/** 695：视频详细信息数据类（Dart 预格式化 JSON 的结构化镜像）。 */
+class MediaInfoRowG {
+  label: string = '';
+  value: string = '';
+}
+
+class MediaInfoGroupG {
+  title: string = '';
+  rows: MediaInfoRowG[] = [];
+}
+
+class MediaInfoPayloadG {
+  badges: string[] = [];
+  groups: MediaInfoGroupG[] = [];
+}
+
 /** 面板分隔线（与 NativePlayerPanel.PANEL_DIVIDER 同值，白 12%）。 */
 const ROOM_PANEL_DIVIDER = '#1FFFFFFF';
 
@@ -338,6 +354,8 @@ export struct HimiNativePlayerView {
   @State engineLabel: string = '';
   @State displayTitle: string = '';
   @State networkSpeedText: string = '';
+  /** 695：媒体徽章 + 视频详细信息 JSON（@Builder 经 epoch 签名随变重建）。 */
+  @State mediaInfoJson: string = '';
   @State durationMs: number = 0;
   @State currentEpisodeIndex: number = -1;
   @State episodeCount: number = 0;
@@ -609,6 +627,7 @@ export struct HimiNativePlayerView {
     this.engineLabel = s.engineLabel;
     this.displayTitle = s.displayTitle();
     this.networkSpeedText = s.networkSpeedText;
+    this.mediaInfoJson = s.mediaInfoJson;
     this.durationMs = s.durationMs;
     this.currentEpisodeIndex = s.currentEpisodeIndex;
     this.episodeCount = s.episodes.length;
@@ -684,7 +703,7 @@ export struct HimiNativePlayerView {
     // 进签名会反复销毁重建控件子树（含滑杆）→ 触摸序列被打断、手指与拇指
     // 脱节（真机回归）。进度行/数值文本由自驱子组件刷新，不靠重建。
     const sig = `${this.paused}|${this.danmakuEnabled}|${this.videoFit}|${this.speed}`
-      + `|${this.canControl}|${this.engineLabel}|${this.displayTitle}|${this.networkSpeedText}`
+      + `|${this.canControl}|${this.engineLabel}|${this.displayTitle}|${this.networkSpeedText}|${this.mediaInfoJson}`
       + `|${this.durationMs}|${this.currentEpisodeIndex}|${this.episodeCount}|${this.versionCount}`
       + `|${this.subtitleStreamCount}|${this.audioStreamCount}|${this.segmentEnabled}|${this.skipPrompt}`
       + `|${this.locked}|${this.activePanel}|${this.bottomScale}|${this.currentTime}`;
@@ -2842,6 +2861,81 @@ export struct HimiNativePlayerView {
   }
 
   /** 底栏：Logo / 进度条 / 播放组（手机居中·TV 置左）/ 右侧图标组。 */
+  /** 695：解析媒体信息 JSON（徽章 + 详情分组；坏数据回空）。 */
+  parseMediaPayload(): MediaInfoPayloadG {
+    if (this.mediaInfoJson.length === 0) {
+      return new MediaInfoPayloadG();
+    }
+    try {
+      return JSON.parse(this.mediaInfoJson) as MediaInfoPayloadG;
+    } catch (e) {
+      return new MediaInfoPayloadG();
+    }
+  }
+
+  /** 695：打开「视频详细信息」面板（可滚动；每组一张矩形玻璃卡片；每条一行）。 */
+  showMediaInfoDialog(): void {
+    AlertDialog.show({
+      builder: (): void => {
+        this.MediaInfoDialogContent();
+      },
+      alignment: DialogAlignment.Center,
+      autoCancel: true,
+    });
+  }
+
+  @Builder
+  MediaInfoDialogContent() {
+    Scroll() {
+      Column() {
+        Text('视频详细信息')
+          .fontSize(15)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Color.White)
+          .margin({ bottom: 12 })
+        ForEach(this.parseMediaPayload().groups, (g: MediaInfoGroupG): void => {
+          Column() {
+            Text(g.title)
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#B3FFFFFF')
+              .margin({ bottom: 6 })
+            ForEach(g.rows, (r: MediaInfoRowG): void => {
+              Row() {
+                Text(r.label)
+                  .fontSize(12)
+                  .fontColor('#8AFFFFFF')
+                  .width(96)
+                  .textAlign(TextAlign.Start)
+                Text(r.value)
+                  .fontSize(12)
+                  .fontColor(Color.White)
+                  .layoutWeight(1)
+                  .textAlign(TextAlign.End)
+              }
+              .width('100%')
+              .margin({ top: 3, bottom: 3 })
+            }, (r: MediaInfoRowG): string => r.label + '|' + r.value)
+          }
+          .padding(12)
+          .borderRadius(10)
+          .backgroundColor('#14FFFFFF')
+          .border({ width: 1, color: '#1FFFFFFF' })
+          .margin({ bottom: 10 })
+          .alignItems(HorizontalAlign.Start)
+          .width('100%')
+        }, (g: MediaInfoGroupG): string => g.title)
+      }
+      .padding(16)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .scrollable(ScrollDirection.Vertical)
+    .height(420)
+    .width('86%')
+    .backgroundColor('#E6121417')
+    .borderRadius(12)
+  }
+
   @Builder
   BottomBar($$: ControlsRef) {
     Column() {
@@ -2850,6 +2944,24 @@ export struct HimiNativePlayerView {
       // 进度行自驱（ProgressRow）：不再进 epoch 签名——旧实现播放中每秒、
       // 拖动中每帧重建整棵控件子树（含滑杆）→ 触摸序列被打断、手指与拇指
       // 脱节（真机回归）。
+      // 695：媒体徽章行（进度条上方右对齐、玻璃矩形圆角胶囊；仅非房间）。
+      Row() {
+        ForEach(this.parseMediaPayload().badges, (b: string): void => {
+          Text(b)
+            .fontSize(11)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Color.White)
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .backgroundColor('#14FFFFFF')
+            .borderRadius(10)
+            .margin({ left: 6 })
+        }, (b: string): string => b)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .visibility(this.state().isRoom ? Visibility.None : Visibility.Visible)
+      .margin({ bottom: 4 })
+
       ProgressRow({
         durationMs: this.durationMs,
         // 622：房间观众不可拖进度（ProgressRow 内会回弹）。
@@ -3069,7 +3181,21 @@ export struct HimiNativePlayerView {
             // 留白，这里补一层显式右间距。
             .margin({ left: 20 * this.bottomScale, right: 8 });
           }
-        }
+
+          if (!this.state().isRoom) {
+            // 695：视频详细信息按钮（底栏最右；仅非房间，产品拍板）。
+            Row() {
+              this.IconChip(
+                String.fromCodePoint(NativePlayerIcons.ICON_INFO),
+                24, 4, false, false, 'mediaInfo',
+                (): void => {
+                  this.pokeAutoHide();
+                  this.showMediaInfoDialog();
+                },
+                this.bottomScale);
+            }
+            .margin({ left: 20 * this.bottomScale, right: 8 });
+          }        }
         .alignItems(VerticalAlign.Center);
       }
       .layoutWeight(1)

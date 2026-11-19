@@ -432,6 +432,7 @@ class NativePlayerState {
     // ── Phase 2.5 控制层布局/样式 ──
     this.logoUrl,
     this.networkSpeedText,
+    this.mediaInfoJson,
     this.clockFormat = 'off',
     this.glassUi = true,
     this.engineLabel = 'MPV',
@@ -605,6 +606,9 @@ class NativePlayerState {
 
   /// 顶栏网速文本（如 `2.09 MB/s`）；设置关闭或未采样时 null。
   final String? networkSpeedText;
+
+  /// 695：媒体徽章 + 视频详细信息（预格式化 JSON，四壳解析渲染，仅非房间）。
+  final String? mediaInfoJson;
 
   /// TV 时钟格式：off / 12h / 24h。
   final String clockFormat;
@@ -808,6 +812,7 @@ class NativePlayerState {
       audioParams: json['audioParams'] as String?,
       logoUrl: json['logoUrl'] as String?,
       networkSpeedText: json['networkSpeedText'] as String?,
+      mediaInfoJson: json['mediaInfoJson'] as String?,
       clockFormat: json['clockFormat'] as String? ?? 'off',
       glassUi: json['glassUi'] != false,
       engineLabel: json['engineLabel'] as String? ?? 'MPV',
@@ -978,6 +983,7 @@ class NativePlayerState {
         'audioParams': audioParams,
         'logoUrl': logoUrl,
         'networkSpeedText': networkSpeedText,
+        'mediaInfoJson': mediaInfoJson,
         'clockFormat': clockFormat,
         'glassUi': glassUi,
         'engineLabel': engineLabel,
@@ -1108,6 +1114,7 @@ class NativePlayerState {
     String? audioParams,
     String? logoUrl,
     String? networkSpeedText,
+    String? mediaInfoJson,
     String? clockFormat,
     bool? glassUi,
     String? engineLabel,
@@ -1227,6 +1234,7 @@ class NativePlayerState {
         audioParams: audioParams ?? this.audioParams,
         logoUrl: logoUrl ?? this.logoUrl,
         networkSpeedText: networkSpeedText ?? this.networkSpeedText,
+        mediaInfoJson: mediaInfoJson ?? this.mediaInfoJson,
         clockFormat: clockFormat ?? this.clockFormat,
         glassUi: glassUi ?? this.glassUi,
         engineLabel: engineLabel ?? this.engineLabel,
@@ -1342,6 +1350,7 @@ class NativePlayerState {
       other.audioParams == audioParams &&
       other.logoUrl == logoUrl &&
       other.networkSpeedText == networkSpeedText &&
+      other.mediaInfoJson == mediaInfoJson &&
       other.clockFormat == clockFormat &&
       other.glassUi == glassUi &&
       other.engineLabel == engineLabel &&
@@ -1439,6 +1448,7 @@ class NativePlayerState {
         audioParams,
         logoUrl,
         networkSpeedText,
+        mediaInfoJson,
         clockFormat,
         glassUi,
         engineLabel,
@@ -1638,6 +1648,7 @@ class NativePlayerUiExtras {
     this.title,
     this.logoUrl,
     this.networkSpeedText,
+    this.mediaInfoJson,
     this.clockFormat = 'off',
     this.glassUi = true,
     this.engineLabel = 'MPV',
@@ -1694,6 +1705,9 @@ class NativePlayerUiExtras {
   final String? title;
   final String? logoUrl;
   final String? networkSpeedText;
+
+  /// 695：媒体徽章 + 视频详细信息（预格式化 JSON，四壳解析渲染，仅非房间）。
+  final String? mediaInfoJson;
   final String clockFormat;
   final bool glassUi;
   final String engineLabel;

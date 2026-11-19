@@ -67,6 +67,7 @@ void main() {
       'replay': Icons.replay,
       'forward10': Icons.forward_10,
       'replay10': Icons.replay_10,
+      'info': Icons.info,
       'openInFull': Icons.open_in_full,
       'closeFullscreen': Icons.close_fullscreen,
       'share': Icons.share,

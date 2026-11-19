@@ -4,6 +4,7 @@
   "note": "Material Icons 码点单一来源：Dart NativePlayerIcons 常量、Android/OHOS 原生图标常量都必须与此一致（test/native_player_icons_test.dart 校验）。",
   "icons": {
     "arrowBack": 57490,
+    "info": 58172,
     "speed": 58848,
     "tune": 59011,
     "memory": 58331,

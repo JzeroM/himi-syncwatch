@@ -17,6 +17,9 @@ abstract final class NativePlayerIcons {
   static const String fontFile = 'MaterialIcons-Regular.otf';
 
   static const int arrowBack = 0xE092;
+
+  /// info（695 视频详细信息）
+  static const int info = 0xE33C;
   static const int speed = 0xE5E0;
   static const int tune = 0xE683;
   static const int memory = 0xE3DB;
@@ -73,6 +76,7 @@ abstract final class NativePlayerIcons {
   /// 名称 → 码点（与 `tool/native_icons.json` 的 `icons` 表一一对应）。
   static const Map<String, int> all = <String, int>{
     'arrowBack': arrowBack,
+    'info': info,
     'speed': speed,
     'tune': tune,
     'memory': memory,

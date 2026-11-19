@@ -47,6 +47,8 @@ ApplicationWindow {
     property bool adjustOpen: false
     // 694 M3b：弹幕弹窗（点击弹幕按钮弹出；开关/绑定/搜索都在其中）
     property bool danmakuPanelOpen: false
+    // 695：视频详细信息面板（仅非房间；底栏最右按钮打开）
+    property bool mediaInfoOpen: false
     // 675 D：开面板即取消滑杆选中（点别处语义）
     onPanelOpenChanged: if (panelOpen) selectedSlider = ""
     onAdjustOpenChanged: if (adjustOpen) selectedSlider = ""
@@ -144,6 +146,7 @@ ApplicationWindow {
         panelOpen = false
         adjustOpen = false
         danmakuPanelOpen = false
+        mediaInfoOpen = false
         segmentMenu.visible = false
         // 675 D：点别处（含开面板）取消音量/亮度选中态
         selectedSlider = ""
@@ -340,6 +343,7 @@ ApplicationWindow {
         onAudioClicked: root.openAudioPanel()
         onEpisodeClicked: root.openEpisodePanel()
         onSpeedClicked: root.openSpeedPanel()
+        onMediaInfoClicked: root.mediaInfoOpen = true
         onFullscreenClicked: mpvWindow.toggleHostFullscreen()
         onSkipSegmentClicked: {
             // 677：房间观众不得跳片头/片尾（切集/seek 均属播放控制）
@@ -879,6 +883,16 @@ ApplicationWindow {
     }
 
     // ── 694 M3b：弹幕弹窗 ──
+    // 695：视频详细信息面板（矩形玻璃分组卡片 + 每条一行，MediaInfoPanel）
+    MediaInfoPanel {
+        id: mediaInfoPanel
+        visible: root.mediaInfoOpen
+        width: Math.min(560, parent.width - 80)
+        height: Math.min(640, parent.height - 160)
+        anchors.centerIn: parent
+        onCloseRequested: root.mediaInfoOpen = false
+    }
+
     DanmakuPanel {
         id: danmakuPanel
         anchors.right: parent.right

@@ -19,6 +19,15 @@ Rectangle {
     id: root
 
     property bool showControls: true
+    // 695：媒体徽章（Dart 预格式化 JSON 解析；仅非房间显示）。
+    readonly property var mediaBadges: {
+        var out = []
+        try {
+            var o = JSON.parse(playerState.mediaInfoJson || '{}')
+            out = o.badges || []
+        } catch (e) { out = [] }
+        out
+    }
     property real seekRatio: playerState.durationMs > 0
                               ? playerState.positionMs / playerState.durationMs
                               : 0
@@ -33,6 +42,8 @@ Rectangle {
     signal episodeClicked()
     signal speedClicked()
     signal fullscreenClicked()
+    // 695：视频详细信息（仅非房间；底栏最右按钮）
+    signal mediaInfoClicked()
     signal volumeChanged(real v)
     signal brightnessChanged(real v)
     // 672：滑杆选中态（点击胶囊选中；选中后窗口滚轮调节该滑杆）
@@ -108,6 +119,33 @@ Rectangle {
         anchors.topMargin: Theme.barPadTop
         anchors.bottomMargin: Theme.barPadBottom
         spacing: 2
+
+        // 695：媒体徽章行（进度条上方右对齐；仅非房间，产品拍板）
+        Row {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignRight
+            spacing: 6
+            visible: !playerState.isRoom && mediaBadges.length > 0
+            Repeater {
+                model: mediaBadges
+                delegate: Rectangle {
+                    radius: 10
+                    color: Qt.rgba(1, 1, 1, 0.08)
+                    border.color: Qt.rgba(1, 1, 1, 0.14)
+                    border.width: 1
+                    width: badgeText.implicitWidth + 16
+                    height: badgeText.implicitHeight + 5
+                    Text {
+                        id: badgeText
+                        anchors.centerIn: parent
+                        text: modelData
+                        color: "white"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+            }
+        }
 
         // ── 第一行：进度条 + 时间 ──
         RowLayout {
@@ -425,6 +463,14 @@ Rectangle {
                           ? Icons.closeFullscreen : Icons.fullscreen
                     tooltip: mpvWindow.hostFullscreen ? "退出全屏" : "全屏"
                     onClicked: root.fullscreenClicked()
+                }
+
+                // 695：视频详细信息（底栏最右；仅非房间，产品拍板）
+                ControlButton {
+                    visible: !playerState.isRoom
+                    icon: Icons.info
+                    tooltip: "视频详细信息"
+                    onClicked: root.mediaInfoClicked()
                 }
             }
         }

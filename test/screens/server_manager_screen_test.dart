@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -2232,4 +2234,44 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
   });
+
+  group('695：密码框小眼睛（显示/隐藏）', () {
+    testWidgets('配置表单：默认打码 → 点眼睛显明文 → 再点恢复（文本不丢）', (tester) async {
+      await _pumpScreen(tester);
+
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      final field = find.byKey(const Key('serverPasswordField'));
+      expect(field, findsOneWidget);
+      expect(tester.widget<TextField>(field).obscureText, isTrue,
+          reason: '默认打码');
+
+      await tester.enterText(field, 'secret123');
+      // 与 TMDB 设置先例同款：打码时显 visibility_off，点后显 visibility。
+      expect(find.byIcon(Icons.visibility_off), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.visibility_off));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).obscureText, isFalse,
+          reason: '点眼睛显示明文');
+
+      await tester.tap(find.byIcon(Icons.visibility));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).obscureText, isTrue,
+          reason: '再点恢复打码');
+      expect(tester.widget<TextField>(field).controller!.text, 'secret123',
+          reason: '切换不丢文本');
+      await _settleSnackbars(tester);
+    });
+
+    test('服务设置面板：重新登录/修改密码共 4 个密码框走 _PasswordTextField', () {
+      final sheet = File('lib/widgets/server_service_settings_sheet.dart')
+          .readAsStringSync();
+      expect(sheet, contains('class _PasswordTextField'));
+      expect(sheet, contains('Icons.visibility_off'));
+      expect('_PasswordTextField(controller:'.allMatches(sheet).length, 4,
+          reason: '重新登录 1 处 + 修改密码 3 处');
+    });
+  });
+
 }

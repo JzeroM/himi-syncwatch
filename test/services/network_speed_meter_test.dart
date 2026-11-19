@@ -265,4 +265,67 @@ void main() {
       }
     });
   });
+
+  group('695：双口径（视频流优先，整机回落）', () {
+    test('streamRate 有值 → 直接用视频流口径（0 也是有效值，不回落）', () {
+      fakeAsync((async) {
+        final counter = _SeqCounter([1000, 3000]); // 整机口径本应报 2000
+        final values = <double?>[];
+        final meter = NetworkSpeedMeter(
+          counter: counter,
+          onSpeed: values.add,
+          streamRate: () async => 0.0,
+        );
+        meter.start();
+        async.elapse(const Duration(seconds: 1));
+        async.elapse(const Duration(seconds: 1));
+        expect(values, [0.0, 0.0],
+            reason: '0 = 缓存满/加载停止，是真实视频流速度，不回落整机口径');
+      });
+    });
+
+    test('streamRate null（MDK/Erika 无此指标）→ 回落整机口径差分', () {
+      fakeAsync((async) {
+        final counter = _SeqCounter([1000, 3000, 5000]);
+        final values = <double?>[];
+        final meter = NetworkSpeedMeter(
+          counter: counter,
+          onSpeed: values.add,
+          streamRate: () async => null,
+        );
+        meter.start();
+        async.elapse(const Duration(seconds: 1));
+        async.elapse(const Duration(seconds: 1));
+        async.elapse(const Duration(seconds: 1));
+        expect(values, [2000.0, 2000.0], reason: '整机口径差分照旧，网速不断显');
+      });
+    });
+
+    test('streamRate 抛异常 → 回落整机口径（不断显）', () {
+      fakeAsync((async) {
+        final counter = _SeqCounter([100, 200]);
+        final values = <double?>[];
+        final meter = NetworkSpeedMeter(
+          counter: counter,
+          onSpeed: values.add,
+          streamRate: () async => throw Exception('engine dead'),
+        );
+        meter.start();
+        async.elapse(const Duration(seconds: 1));
+        async.elapse(const Duration(seconds: 1));
+        expect(values, [100.0]);
+      });
+    });
+
+    test('接线守卫：MPV=cache-speed 视频流口径；设置文案注明口径', () {
+      final screen =
+          File('lib/screens/player/player_screen.dart').readAsStringSync();
+      expect(screen, contains("_readMpvProperty('cache-speed')"),
+          reason: 'mpv cache-speed = 缓存↔网络 I/O 速率，严格视频流加载速度');
+      expect(screen, contains('streamRate: _readVideoStreamRate'));
+      final settings = File('lib/screens/settings/player_settings_screen.dart')
+          .readAsStringSync();
+      expect(settings, contains('视频流加载速度'));
+    });
+  });
 }

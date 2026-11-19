@@ -18,6 +18,7 @@ import QtQuick
 QtObject {
     // ── 顶栏 ──
     readonly property string arrowBack: "\uf060"          // fa-arrow-left
+    readonly property string info: "\uf129"               // fa-info（695 视频详细信息）
     readonly property string memory: "\uf2db"             // fa-microchip
     readonly property string highQuality: "\uf5fd"        // fa-layer-group（多版本）
     readonly property string aspectRatio: "\uf125"        // fa-crop（比例=原始）

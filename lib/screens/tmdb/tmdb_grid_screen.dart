@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
+import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
 
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -267,9 +268,13 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
               final cellHeight = TmdbPosterCard.heightFor(cellWidth);
               final topInset = GlassConfig.topInsetOf(context);
 
-              return CustomScrollView(
+              return ScrollGlassScope(
+                // 687：滚动中玻璃降级（同首页）。
+                child: CustomScrollView(
                 key: const ValueKey('tmdbGridScroll'),
                 controller: _scrollController,
+                // ignore: deprecated_member_use 与首页一致（scrollCacheExtent 换 API 非平替）
+                cacheExtent: 250,
                 slivers: [
                   if (widget.isPlatform)
                     SliverPadding(
@@ -352,7 +357,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final entry = _entries[index];
-                            return TmdbPosterCard(
+                            return RepaintBoundary(child: TmdbPosterCard(
                               key: ValueKey(
                                 'tmdbGrid_${entry.server.id}_${entry.item.id}',
                               ),
@@ -373,7 +378,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                               onTap: () => context.push(
                                 '/detail/${entry.item.id}?server=${Uri.encodeComponent(entry.server.id)}&aggregate=true',
                               ),
-                            );
+                            ));
                           },
                           childCount: _entries.length,
                         ),
@@ -405,7 +410,7 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
                     ),
                   ),
                 ],
-              );
+              ));
             },
           ),
         ),

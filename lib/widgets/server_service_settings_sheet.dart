@@ -160,11 +160,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
               controller: userCtrl,
               decoration: const InputDecoration(labelText: '用户名'),
             ),
-            TextField(
-              controller: pwCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: '密码'),
-            ),
+            _PasswordTextField(controller: pwCtrl, label: '密码'),
           ],
         ),
         actions: [
@@ -196,21 +192,9 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: curCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '当前密码'),
-              ),
-              TextField(
-                controller: newCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '新密码'),
-              ),
-              TextField(
-                controller: confirmCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '确认新密码'),
-              ),
+              _PasswordTextField(controller: curCtrl, label: '当前密码'),
+              _PasswordTextField(controller: newCtrl, label: '新密码'),
+              _PasswordTextField(controller: confirmCtrl, label: '确认新密码'),
               if (error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -405,6 +389,37 @@ class _ActionTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 695：密码输入框（小眼睛显示/隐藏切换），重新登录/修改密码共用。
+/// 样式对齐 TMDB 设置的 API Key 框（visibility / visibility_off）。
+class _PasswordTextField extends StatefulWidget {
+  const _PasswordTextField({required this.controller, required this.label});
+
+  final TextEditingController controller;
+  final String label;
+
+  @override
+  State<_PasswordTextField> createState() => _PasswordTextFieldState();
+}
+
+class _PasswordTextFieldState extends State<_PasswordTextField> {
+  bool _obscure = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: widget.controller,
+      obscureText: _obscure,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        suffixIcon: IconButton(
+          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+          onPressed: () => setState(() => _obscure = !_obscure),
         ),
       ),
     );

@@ -256,7 +256,10 @@ class _HomeListState extends ConsumerState<_HomeList> {
             bottom: GlassConfig.bottomReserveOf(context),
           ),
           itemCount: content.length,
-          itemBuilder: (context, index) => content[index],
+          // 687：列表单项包 RepaintBoundary（服务端首页同款）——玻璃/阴影
+          // 逐项隔离重绘，否则滚屏整列表逐帧重绘（TMDB 模式滑动卡顿根因）。
+          itemBuilder: (context, index) =>
+              RepaintBoundary(child: content[index]),
         ),
       ),
     );
@@ -412,6 +415,7 @@ class _Hero extends StatelessWidget {
                   radius: 22,
                   onTap: onTap,
                   child: GlassContainer(
+                    degradeWhileScrolling: true,
                     borderRadius: BorderRadius.circular(22),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
@@ -512,12 +516,14 @@ class _PlatformBar extends ConsumerWidget {
             arrowAnchorHeight: _height,
             itemCount: tmdbPlatforms.length,
             itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _PlatformCard(
-                  platform: tmdbPlatforms[index],
-                  width: cardWidth,
-                  allowServerPosters: allowServerPosters,
+              return RepaintBoundary(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _PlatformCard(
+                    platform: tmdbPlatforms[index],
+                    width: cardWidth,
+                    allowServerPosters: allowServerPosters,
+                  ),
                 ),
               );
             },
@@ -628,7 +634,7 @@ class _SectionRow extends StatelessWidget {
             itemCount: section.items.length,
             itemBuilder: (context, index) {
               final entry = section.items[index];
-              return SizedBox(
+              return RepaintBoundary(child: SizedBox(
                 width: 110,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -651,7 +657,7 @@ class _SectionRow extends StatelessWidget {
                     ),
                   ),
                 ),
-              );
+              ));
             },
           ),
         ),

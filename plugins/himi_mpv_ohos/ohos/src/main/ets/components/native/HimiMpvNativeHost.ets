@@ -458,6 +458,8 @@ export class NativePlayerUiState {
   logoUrl: string = '';
   /** 顶栏网速文本（如 `2.09 MB/s`）；设置关闭或未采样时为空串。 */
   networkSpeedText: string = '';
+  /** 695：媒体徽章 + 视频详细信息（Dart 预格式化 JSON，View 解析渲染，仅非房间）。 */
+  mediaInfoJson: string = '';
   /** TV 时钟格式：off / 12h / 24h。 */
   clockFormat: string = 'off';
   /** 液态玻璃开关（false 时面板/胶囊/滑杆降级纯色）。 */
@@ -631,6 +633,7 @@ export class NativePlayerUiState {
     // ── Phase 2.5 控制层布局/样式 ──
     this.logoUrl = jsonStr(obj.logoUrl, this.logoUrl);
     this.networkSpeedText = jsonStr(obj.networkSpeedText, this.networkSpeedText);
+    this.mediaInfoJson = jsonStr(obj.mediaInfoJson, this.mediaInfoJson);
     this.clockFormat = jsonStr(obj.clockFormat, this.clockFormat);
     this.glassUi = jsonBool(obj.glassUi, this.glassUi);
     this.engineLabel = jsonStr(obj.engineLabel, this.engineLabel);

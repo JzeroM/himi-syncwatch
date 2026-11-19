@@ -149,6 +149,9 @@ import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart'
     show kShellDesktopBreakpoint;
 import 'package:window_manager/window_manager.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
+import 'package:himi_syncwatch/widgets/media_badge_row.dart';
+import 'package:himi_syncwatch/widgets/video_info_sheet.dart';
+import 'package:himi_syncwatch/services/player/media_info_summary.dart';
 
 /// 兼容 re-export：既有测试/调用方从 player_screen 导入 [EpisodeInfo]。
 export 'package:himi_syncwatch/models/episode_info.dart' show EpisodeInfo;
@@ -1009,6 +1012,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   /// 上一次推送给原生顶栏的网速文本（变化才重推，避免每秒全量快照）。
   String? _lastNativeNetworkText;
+
+  /// 695：媒体徽章 + 详情条目（进度条上方胶囊行 / 详情面板，仅非房间）。
+  List<String> _mediaBadges = const [];
+  List<MediaInfoGroup> _mediaInfoGroups = const [];
+  DateTime _lastBadgeRefresh = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// 热键层焦点（PlayerHotkey 外部节点）：控制条隐藏后焦点回落于此，
   /// 遥控器方向键恢复 seek/唤出控制条语义
@@ -4436,6 +4444,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         title: _currentEpisodeTitle,
         logoUrl: isRoom ? null : widget.logoUrl,
         networkSpeedText: networkText,
+        mediaInfoJson: _mediaInfoJson,
         clockFormat: settings.topBarClockFormat.storageValue,
         glassUi: settings.glassUi,
         engineLabel: _currentEngine.shortLabel,
@@ -5653,6 +5662,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       }
       // 694：Anime4K 签名检查（设置/尺寸/HDR 变化才重放，纯字符串比较）。
       unawaited(_applyAnime4K());
+      // 695：媒体徽章 + 详情条目刷新（内部 5s 节流；仅非房间）。
+      unawaited(_refreshMediaInfo());
       // 冻结兜底（v1.1.69 F-h；v1.2.14 修条件漏洞）：直写档（故障直写 /
       // 手动 surfaceViewDirect）下 fvp 未装 render callback，mdk renderer
       // 可能在等外部驱动（himi_logs_4：帧被内部 renderer 持续 not rendered
@@ -10952,6 +10963,129 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return p is MpvPlayerAdapter ? p.readProperty(name) : null;
   }
 
+  /// 695：视频流口径网速——mpv `cache-speed`（缓存↔网络 I/O 速率，字节/秒，
+  /// 严格视频流加载速度）。非 MPV/读取失败/引擎切换中 → null 回落整机口径。
+  Future<double?> _readVideoStreamRate() async {
+    final raw = await _readMpvProperty('cache-speed');
+    if (raw == null || raw.isEmpty) return null;
+    return double.tryParse(raw);
+  }
+
+  /// 695：媒体信息刷新（5s 节流）——徽章 + 详情条目同源收集；
+  /// 仅非房间模式。MDK/Erika 无值项自动省略。
+  Future<void> _refreshMediaInfo() async {
+    if (widget.roomCode != null) return;
+    final now = DateTime.now();
+    if (now.difference(_lastBadgeRefresh) < const Duration(seconds: 5)) return;
+    _lastBadgeRefresh = now;
+    final summary = await _collectMediaInfoSummary();
+    if (!mounted) return;
+    setState(() {
+      _mediaBadges = summary.badges;
+      _mediaInfoGroups = summary.groups;
+    });
+  }
+
+  /// 695：全量「视频详细信息」（点信息按钮现采——属性回读较重，不进轮询）。
+  /// 仿 mpv `i` 统计页四段；MDK/Erika 缺指标整行省略。
+  Future<MediaInfoSummary> _collectMediaInfoSummary() async {
+    final info = _player.mediaInfo;
+    final base = mediaInfoFromPlayer(info,
+        fileName: PlayerScreen.mediaTitleAt(_episodes, _currentEpisodeIndex));
+    final props = <String, String?>{};
+    for (final name in const [
+      'file-size',
+      'file-format',
+      'container-fps',
+      'current-vo',
+      'current-gpu-context',
+      'display-fps',
+      'frame-drop-count',
+      'decoder-frame-drop-count',
+      'hwdec-current',
+      'video-params/pixelformat',
+      'video-params/colormatrix',
+      'video-params/primaries',
+      'video-params/gamma',
+      'video-params/sig-peak',
+      'video-params/max-cll',
+      'cache-used',
+      'cache-duration',
+    ]) {
+      props[name] = await _readMpvProperty(name);
+    }
+    final cacheBytes = int.tryParse(props['cache-used'] ?? '');
+    final cacheSec = double.tryParse(props['cache-duration'] ?? '');
+    final sigPeak = double.tryParse(props['video-params/sig-peak'] ?? '');
+    final maxCll = props['video-params/max-cll'];
+    final src = MediaInfoSource(
+      fileName: base.fileName,
+      fileBytes: int.tryParse(props['file-size'] ?? '') ?? base.fileBytes,
+      container: props['file-format'],
+      cacheText: cacheBytes == null
+          ? null
+          : '${(cacheBytes / (1 << 20)).toStringAsFixed(2)} MiB'
+              '${cacheSec == null ? '' : ' (${cacheSec.toStringAsFixed(1)} sec)'}',
+      vo: props['current-vo'],
+      gpuContext: props['current-gpu-context'],
+      refreshRateHz: double.tryParse(props['display-fps'] ?? ''),
+      droppedDecoder: int.tryParse(props['decoder-frame-drop-count'] ?? ''),
+      droppedOutput: int.tryParse(props['frame-drop-count'] ?? ''),
+      videoCodecDesc: base.videoCodecDesc,
+      hwdec: props['hwdec-current'],
+      fps: double.tryParse(props['container-fps'] ?? '') ?? base.fps,
+      width: base.width,
+      height: base.height,
+      pixelFormat: props['video-params/pixelformat'] ?? base.pixelFormat,
+      colorMatrix: props['video-params/colormatrix'],
+      primaries: props['video-params/primaries'],
+      transfer: props['video-params/gamma'],
+      hdr10Text: (maxCll == null || maxCll.isEmpty)
+          ? (sigPeak == null ? null : '峰值 ${(sigPeak * 100).round()} cd/m²')
+          : 'MaxCLL $maxCll cd/m²',
+      videoBitrateBps: base.videoBitrateBps,
+      audioCodecDesc: base.audioCodecDesc,
+      channels: base.channels,
+      sampleRateHz: base.sampleRateHz,
+      audioBitrateBps: base.audioBitrateBps,
+    );
+    return MediaInfoSummary(
+      badges: buildMediaBadges(
+        width: base.width ?? 0,
+        height: base.height ?? 0,
+        doviProfile: info.video.isNotEmpty ? info.video.first.doviProfile : 0,
+        hdr10: props['video-params/gamma'] == 'pq',
+        hlg: props['video-params/gamma'] == 'hlg',
+        codecName: base.videoCodecDesc == null
+            ? null
+            : base.videoCodecDesc!.toLowerCase(),
+        fps: double.tryParse(props['container-fps'] ?? '') ?? base.fps,
+        bitRateBps: base.videoBitrateBps ?? 0,
+        fileBytes: int.tryParse(props['file-size'] ?? ''),
+      ),
+      groups: buildMediaInfoGroups(src),
+    );
+  }
+
+  /// 695：媒体信息预格式化 JSON（badges + groups，四壳解析渲染；仅非房间）。
+  String? get _mediaInfoJson {
+    if (widget.roomCode != null) return null;
+    if (_mediaBadges.isEmpty && _mediaInfoGroups.isEmpty) return null;
+    return jsonEncode({
+      'badges': _mediaBadges,
+      'groups': [for (final g in _mediaInfoGroups) g.toJson()],
+    });
+  }
+
+  /// 695：打开「视频详细信息」面板（仅非房间；底栏最右信息按钮）。
+  Future<void> _openVideoInfoSheet() async {
+    if (widget.roomCode != null) return;
+    final summary = await _collectMediaInfoSummary();
+    if (!mounted || widget.roomCode != null) return;
+    setState(() => _mediaInfoGroups = summary.groups);
+    unawaited(showVideoInfoSheet(context, summary));
+  }
+
   /// 最近 mpv 错误日志（抓着色器编译失败）。
   List<String> _recentMpvErrors() {
     if (_switchingKernel || _switchingEngine) return const <String>[];
@@ -11635,6 +11769,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     var loggedNull = false;
     _speedMeter = NetworkSpeedMeter(
       counter: counter,
+      // 695：MPV 用视频流口径（cache-speed = 缓存↔网络 I/O 速率，严格
+      // 视频加载速度）；MDK/Erika 无此指标（_readMpvProperty 返回 null）
+      // → 回落整机口径（播放时 ≈ 视频流下载量），网速不断显。
+      streamRate: _readVideoStreamRate,
       onSpeed: (bps) {
         if (bps != null && !loggedFirst) {
           loggedFirst = true;
@@ -12155,6 +12293,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
                 const SizedBox(height: 4),
               ],
+              // 695：媒体徽章行（进度条上方右对齐、玻璃胶囊、避让标识图）。
+              // 仅非房间模式（产品拍板）。
+              if (widget.roomCode == null && _mediaBadges.isNotEmpty)
+                MediaBadgeRow(badges: _mediaBadges),
               // 焦点承载在滑杆外层：TV 描边环显示在进度条上，且 Slider 自带
               // Shortcuts（_AdjustSliderIntent）脱离焦点冒泡链——左右键改由
               // PlayerHotkey 接管（单击 ±5 秒 / 长按每步 ±10 秒）；
@@ -12505,6 +12647,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                           ? Icons.fullscreen_exit
                           : Icons.fullscreen,
                       onTap: _toggleWindowFullscreen,
+                    ),
+                  ],
+
+                  // 695：视频详细信息按钮（底栏最右；仅非房间模式，产品拍板）
+                  if (widget.roomCode == null) ...[
+                    const SizedBox(width: 20),
+                    _buildControlButton(
+                      icon: Icons.info_outline,
+                      onTap: () => unawaited(_openVideoInfoSheet()),
                     ),
                   ],
                 ],

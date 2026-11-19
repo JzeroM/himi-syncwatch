@@ -1361,6 +1361,8 @@ void main() {
           reason: '695：Space 在 C++ KeyRouter（QML Shortcut 对 Space 无效）');
       expect(mainCpp, contains('host->installEventFilter(keyRouter)'));
       expect(mainCpp, contains('overlay->installEventFilter(keyRouter)'));
+      expect(shortcuts, isNot(contains('sequence: "Space"')),
+          reason: '695：Space 已迁 C++ KeyRouter');
       expect(mainQmlSrc, contains('PlayerShortcuts'));
       expect(overlayQml, contains('PlayerShortcuts'));
     });

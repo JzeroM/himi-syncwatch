@@ -180,11 +180,18 @@ class NetworkSpeedMeter {
     required this.counter,
     required this.onSpeed,
     this.interval = const Duration(seconds: 1),
+    this.streamRate,
   });
 
   final RxCounter counter;
   final void Function(double? bytesPerSecond) onSpeed;
   final Duration interval;
+
+  /// 695：视频流口径（优先于整机口径）。返回非 null = 直接作为网速
+  ///（如 mpv `cache-speed` = 缓存↔网络 I/O 速率，**严格视频流加载速度**）；
+  /// 返回 null = 该引擎无此指标/读取失败（MDK/Erika）→ 回落整机口径差分。
+  /// 注意 0 是**有效值**（缓存满、加载停止）——仅 null 触发回落。
+  final Future<double?> Function()? streamRate;
 
   Timer? _timer;
   int? _prev;
@@ -213,6 +220,20 @@ class NetworkSpeedMeter {
     if (_ticking) return; // 上一 tick 未完成（慢 IO/channel）→ 跳过本拍
     _ticking = true;
     try {
+      // 695：视频流口径优先（mpv cache-speed）；null/异常 → 回落整机口径。
+      if (streamRate != null) {
+        double? stream;
+        try {
+          stream = await streamRate!();
+        } catch (_) {
+          stream = null;
+        }
+        if (stream != null) {
+          _failures = 0;
+          onSpeed(stream < 0 ? 0 : stream);
+          return;
+        }
+      }
       final curr = await counter.readRxBytes();
       if (curr == null) {
         _failures++;

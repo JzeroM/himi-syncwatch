@@ -53,6 +53,8 @@ class PlayerState : public QObject {
     // ── 顶栏 ──
     Q_PROPERTY(QString engineLabel READ engineLabel NOTIFY changed)
     Q_PROPERTY(QString networkSpeedText READ networkSpeedText NOTIFY changed)
+    // 695：媒体徽章 + 视频详细信息（Dart 预格式化 JSON，QML 解析渲染，仅非房间）
+    Q_PROPERTY(QString mediaInfoJson READ mediaInfoJson NOTIFY changed)
     Q_PROPERTY(QString videoFit READ videoFit NOTIFY changed)
     Q_PROPERTY(QString decodeMode READ decodeMode NOTIFY changed)
     Q_PROPERTY(bool glassUi READ glassUi NOTIFY changed)
@@ -243,6 +245,7 @@ public:
 
     QString engineLabel() const { return engineLabel_; }
     QString networkSpeedText() const { return networkSpeedText_; }
+    QString mediaInfoJson() const { return mediaInfoJson_; }
     QString videoFit() const { return videoFit_; }
     QString decodeMode() const { return decodeMode_; }
     bool glassUi() const { return glassUi_; }
@@ -450,6 +453,7 @@ private:
 
     QString engineLabel_;
     QString networkSpeedText_;
+    QString mediaInfoJson_;
     QString videoFit_ = QStringLiteral("contain");
     QString decodeMode_;
     bool glassUi_ = true;

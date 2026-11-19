@@ -17,6 +17,9 @@ export class NativePlayerIcons {
   /** arrowBack */
   static readonly ICON_ARROW_BACK: number = 0xE092;
 
+  /** info（695 视频详细信息） */
+  static readonly ICON_INFO: number = 0xE33C;
+
   /** speed */
   static readonly ICON_SPEED: number = 0xE5E0;
 

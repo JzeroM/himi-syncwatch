@@ -2504,6 +2504,14 @@ void main() {
           reason: '环的类型门槛让 GlassSeekBarView 入链也不画环');
     });
 
+    test('695：遥控焦点 TV 专属——手机模式 makeFocusable 不建焦点/焦点环', () {
+      // 真机回归：安卓手机模式点按控件即持焦画环（isFocusableInTouchMode
+      // + 焦点环），看起来像 TV 遥控焦点。手机模式一律不建。
+      final mk = extractFun(kotlin694, 'private fun makeFocusable(view: View, radiusDp: Int = 8)');
+      expect(mk, contains('if (!lastState.tvMode) return'),
+          reason: '单点收口：全部 6 处 makeFocusable 调用共享此门');
+    });
+
     test('焦点自愈：焦点标记判据 + 兜底链 + applyState 全路径恢复', () {
       // 694 真机实证（himi_logs focus=View）：焦点被无标记裸 View 持走 →
       // 旧判据误判「已持焦」永不补种。有效焦点 = 带 focusMarker + 可见。

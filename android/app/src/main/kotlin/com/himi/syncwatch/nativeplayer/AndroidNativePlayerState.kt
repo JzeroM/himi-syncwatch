@@ -287,6 +287,8 @@ data class AndroidNativePlayerState(
     // ── Phase 2.5 控制层布局/样式 ──
     val logoUrl: String? = null,
     val networkSpeedText: String? = null,
+    // 695：媒体徽章 + 视频详细信息（Dart 预格式化 JSON，壳解析渲染，仅非房间）
+    val mediaInfoJson: String? = null,
     val clockFormat: String = "off",
     val glassUi: Boolean = true,
     val engineLabel: String = "MPV",
@@ -509,6 +511,7 @@ data class AndroidNativePlayerState(
             currentVersionIndex = json.optInt("currentVersionIndex", 0),
             logoUrl = json.optNullableString("logoUrl"),
             networkSpeedText = json.optNullableString("networkSpeedText"),
+            mediaInfoJson = json.optNullableString("mediaInfoJson"),
             clockFormat = json.optString("clockFormat", "off"),
             glassUi = json.optBoolean("glassUi", true),
             engineLabel = json.optString("engineLabel", "MPV"),
