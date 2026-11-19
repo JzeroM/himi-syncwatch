@@ -1068,6 +1068,9 @@ class NativePlayerScreenView(
 
     // 695：媒体徽章行（进度条上方右对齐）+ 视频详细信息按钮（底栏最右）。
     private val mediaBadgeRow = LinearLayout(context)
+
+    /** 695：视频详细信息按钮（持久实例——TV 焦点链要求跨重建稳定）。 */
+    private var mediaInfoButtonView: View? = null
     /** trailing 的测量级缩放容器（等价 Flutter FittedBox(scaleDown)）。 */
     private val trailingBox = ScaleDownBox(context)
     private val bottomSpeedChip = LinearLayout(context)
@@ -1225,8 +1228,9 @@ class NativePlayerScreenView(
             chip.setTextColor(Color.WHITE)
             chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             chip.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            chip.background = glassBackground(10)
-            chip.setPadding(dp(8), dp(2), dp(8), dp(2))
+            // 圆角矩形（radius 6 + 纵向内距 3，非药丸/椭圆——695 真机回归）
+            chip.background = glassBackground(6)
+            chip.setPadding(dp(8), dp(3), dp(8), dp(3))
             mediaBadgeRow.addView(chip, llp(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, 6))
         }
         mediaBadgeRow.visibility = View.VISIBLE
@@ -2159,9 +2163,15 @@ class NativePlayerScreenView(
         trailingGroup.addView(panelToggleButton, llp(dp(32), dp(32), NPTheme.CONTROL_GAP))
 
         // 695：视频详细信息按钮（底栏最右；仅非房间，产品拍板）。
+        // **成员实例复用**（同兄弟按钮）：临时实例每次重建会丢焦点标记（TV
+        // 遥控到不了）；持久实例在 applyFocusability 时入链、重建 re-add 不变。
         if (!lastState.isRoom) {
+            val infoBtn = mediaInfoButtonView
+                ?: iconButton(NativePlayerIcons.ICON_INFO) {
+                    openPanel(PANEL_MEDIA_INFO)
+                }.also { mediaInfoButtonView = it }
             trailingGroup.addView(
-                iconButton(NativePlayerIcons.ICON_INFO) { openPanel(PANEL_MEDIA_INFO) },
+                infoBtn,
                 llp(dp(32), dp(32), NPTheme.CONTROL_GAP),
             )
         }

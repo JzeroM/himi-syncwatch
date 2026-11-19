@@ -17,6 +17,30 @@ Rectangle {
     /// 关闭请求（Esc 第一层也会经 closePanels 关本面板）。
     signal closeRequested()
 
+    // 695：右上 X 关闭按钮（真机回归：面板弹出后无法收回）
+    Rectangle {
+        id: closeBtn
+        z: 2
+        width: 28
+        height: 28
+        radius: 14
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 8
+        color: closeArea.pressed ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.08)
+        Text {
+            anchors.centerIn: parent
+            text: "✕"
+            color: "white"
+            font.pixelSize: 14
+        }
+        MouseArea {
+            id: closeArea
+            anchors.fill: parent
+            onClicked: root.closeRequested()
+        }
+    }
+
     readonly property var mediaGroups: {
         var out = []
         try {

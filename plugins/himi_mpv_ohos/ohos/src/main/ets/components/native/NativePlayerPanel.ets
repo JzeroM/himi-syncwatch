@@ -726,6 +726,8 @@ export struct NativePlayerPanel {
       return '线路';
     } else if (this.panelType === 'kernel') {
       return '播放内核';
+    } else if (this.panelType === 'mediaInfo') {
+      return '视频详细信息';
     } else if (this.panelType === 'display') {
       return '显示调节';
     } else if (this.panelType === 'decode') {

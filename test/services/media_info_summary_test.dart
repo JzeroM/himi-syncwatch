@@ -5,7 +5,7 @@ import 'package:himi_syncwatch/services/player/media_info_summary.dart';
 
 void main() {
   group('① 徽章格式化（六项全显不省略，Emby 主数据源）', () {
-    test('完整示例：[4K] [DV P5] [HEVC] [60.0 fps] [29Mbps] [20.50G]', () {
+    test('完整示例（新顺序：范围→分辨率→编解码→帧率→码率→大小）', () {
       expect(
         buildMediaBadges(const MediaBadgeSource(
           width: 3840,
@@ -16,13 +16,13 @@ void main() {
           bitRateBps: 29000000,
           fileBytes: 22011707392, // 20.50 GiB
         )),
-        ['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G'],
+        ['DV P5', '4K', 'HEVC', '60.0 fps', '29Mbps', '20.50G'],
       );
     });
 
     test('六项全显不省略（极缺兜底 —，产品拍板）', () {
       expect(buildMediaBadges(const MediaBadgeSource()),
-          ['—', 'SDR', '—', '—', '—', '—']);
+          ['SDR', '-', '-', '-', '-', '-']);
     });
 
     test('DV profile：Emby DoviProfile50/81 → DV P5 / DV P8.1', () {
@@ -121,7 +121,7 @@ void main() {
       );
       final b = badgeSourceFromEmby(item);
       expect(buildMediaBadges(b),
-          ['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G']);
+          ['DV P5', '4K', 'HEVC', '60.0 fps', '29Mbps', '20.50G']);
       final s = mediaInfoFromEmby(item, fileName: 'movie.mkv');
       expect(s.container, 'mkv');
       expect(s.videoCodecDesc, 'HEVC [Main 10]');

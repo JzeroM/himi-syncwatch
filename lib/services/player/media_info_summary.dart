@@ -73,24 +73,29 @@ class MediaBadgeSource {
   final int? fileBytes;
 }
 
-/// 徽章格式化：**六项全显不省略**（产品拍板「列出来的几项都要显示」），
-/// 数据从 Emby 获取，极缺时兜底 `—`。
+/// 徽章格式化（695 重设计，产品拍板）：顺序固定为
+/// **视频范围 → 分辨率 → 视频编解码器 → 帧率 → 比特率 → 视频大小**，
+/// **六个胶囊全部显示且内容非空**（数据复用详情页 Emby 元数据并提前预热；
+/// 极缺时兜底 `-`，不出现空白胶囊）。
 ///
-/// 示例输出：`['4K', 'DV P5', 'HEVC', '60.0 fps', '29Mbps', '20.50G']`。
+/// 示例输出：`['DV P5', '4K', 'HEVC', '60.0 fps', '29Mbps', '20.50G']`。
 List<String> buildMediaBadges(MediaBadgeSource s) {
-  return [
-    resolutionTier(s.width, s.height) ?? '—',
-    videoRangeBadge(
-      doviProfile: s.doviProfile,
-      dvProfileLabel: s.dvProfileLabel,
-      hdr10: s.hdr10,
-      hlg: s.hlg,
-    ),
-    codecShortName(s.codecName) ?? '—',
-    (s.fps != null && s.fps! > 0) ? '${s.fps!.toStringAsFixed(1)} fps' : '—',
-    s.bitRateBps > 0 ? formatMbpsBadge(s.bitRateBps) : '—',
-    (s.fileBytes != null && s.fileBytes! > 0) ? formatSizeBadge(s.fileBytes!) : '—',
-  ];
+  final range = videoRangeBadge(
+    doviProfile: s.doviProfile,
+    dvProfileLabel: s.dvProfileLabel,
+    hdr10: s.hdr10,
+    hlg: s.hlg,
+  );
+  final tier = resolutionTier(s.width, s.height) ??
+      (s.height > 0 ? '${s.height}P' : '-');
+  final codec = codecShortName(s.codecName) ?? '-';
+  final fps =
+      (s.fps != null && s.fps! > 0) ? '${s.fps!.toStringAsFixed(1)} fps' : '-';
+  final mbps = s.bitRateBps > 0 ? formatMbpsBadge(s.bitRateBps) : '-';
+  final size = (s.fileBytes != null && s.fileBytes! > 0)
+      ? formatSizeBadge(s.fileBytes!)
+      : '-';
+  return [range, tier, codec, fps, mbps, size];
 }
 
 /// 视频范围徽章：DV P5 / DV P8.1（Emby `DoviProfile50` 优先）/ HDR10 / HLG / SDR。

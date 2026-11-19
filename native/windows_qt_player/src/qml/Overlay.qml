@@ -883,6 +883,13 @@ ApplicationWindow {
     }
 
     // ── 694 M3b：弹幕弹窗 ──
+    // 695：详情面板点外关闭遮罩（声明在面板前 → 面板在上层）
+    MouseArea {
+        anchors.fill: parent
+        visible: root.mediaInfoOpen
+        onClicked: root.mediaInfoOpen = false
+    }
+
     // 695：视频详细信息面板（矩形玻璃分组卡片 + 每条一行，MediaInfoPanel）
     MediaInfoPanel {
         id: mediaInfoPanel

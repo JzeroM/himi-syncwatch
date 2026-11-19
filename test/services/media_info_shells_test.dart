@@ -82,6 +82,15 @@ void main() {
       expect(cmake, contains('BottomBar MediaInfoPanel'));
     });
 
+    test('面板可收回：右上 X 关闭按钮 + 点外遮罩（真机回归）', () {
+      expect(qtPanel, contains('695：右上 X 关闭按钮'));
+      expect(qtPanel, contains('root.closeRequested()'));
+      final overlay =
+          read('native/windows_qt_player/src/qml/Overlay.qml');
+      expect(overlay, contains('root.mediaInfoOpen = false'),
+          reason: '点外遮罩关闭');
+    });
+
     test('MediaInfoPanel：矩形玻璃分组卡片 + 每条一行', () {
       expect(qtPanel, contains('695：「视频详细信息」面板'), reason: '组件文件');
       expect(qtPanel, contains('mediaGroups'));
@@ -101,6 +110,10 @@ void main() {
       expect(kotlinView, contains('gravity = Gravity.END'), reason: '徽章靠右');
       expect(kotlinView, contains('updateMediaBadges()'),
           reason: '内容在 applyState 按推送重建（组装期数据为空）');
+      expect(kotlinView, contains('glassBackground(6)'),
+          reason: '圆角矩形胶囊（radius 6，非药丸/椭圆）');
+      expect(kotlinView, contains('mediaInfoButtonView'),
+          reason: '按钮成员实例（TV 焦点链跨重建稳定）');
       expect(kotlinView, contains('parseMediaBadges(lastState.mediaInfoJson)'));
       expect(kotlinView, contains('NativePlayerIcons.ICON_INFO'));
       expect(kotlinView, contains('openPanel(PANEL_MEDIA_INFO)'),
@@ -137,6 +150,8 @@ void main() {
           'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/NativePlayerPanel.ets');
       expect(ohosPanel, contains("panelType === 'mediaInfo'"));
       expect(ohosPanel, contains('MediaInfoContent'));
+      expect(ohosPanel, contains("return '视频详细信息'"),
+          reason: '面板标题映射（此前落默认「设置」）');
     });
   });
 }

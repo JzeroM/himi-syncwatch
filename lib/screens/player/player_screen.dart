@@ -2082,6 +2082,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     PlayerHotkeyBridge.togglePlayPause = _handleHotkeyTogglePlayPause;
     PlayerHotkeyBridge.isWindowFullscreen = () => _isWindowFullscreen;
     PlayerHotkeyBridge.exitWindowFullscreen = _exitWindowFullscreen;
+    // 695：媒体信息预热——等播放器实例就绪（`_player` 在 initState 后段
+    // 创建）再刷徽章/条目，避免 early access。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshMediaInfo(force: true));
+    });
     // 697：**进播放器立刻隐藏系统栏**（横屏/竖屏都要）。
     //
     // 此前只有 `_switchToLandscape()` 里设 `immersiveSticky`——竖屏进入
@@ -2654,7 +2659,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
             // 多版本切换数据源：全部版本 + 当前生效版本
             _currentMediaSources = details.mediaSources;
             _activeMediaSourceId = source.id.isEmpty ? null : source.id;
+            // 695：徽章/详情面板主数据源（Emby 详情页同源）。
+            _currentMediaItem = details;
           });
+          // 695：预热——详情一到立刻刷徽章/条目（不等 5s 节流节拍）
+          unawaited(_refreshMediaInfo(force: true));
           // 多版本源就绪后同步原生线路面板（Phase 2）。
           _syncNativePanelData();
           await _loadSkipSegments(details);
@@ -10974,12 +10983,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     return double.tryParse(raw);
   }
 
-  /// 695：媒体信息刷新（5s 节流）——徽章 + 详情条目同源收集；
-  /// 仅非房间模式。MDK/Erika 无值项自动省略。
-  Future<void> _refreshMediaInfo() async {
+  /// 695：媒体信息刷新（5s 节流；[force] 跳过节流——详情预热用）——
+  /// 徽章 + 详情条目同源收集；仅非房间模式。
+  Future<void> _refreshMediaInfo({bool force = false}) async {
     if (widget.roomCode != null) return;
     final now = DateTime.now();
-    if (now.difference(_lastBadgeRefresh) < const Duration(seconds: 5)) return;
+    if (!force &&
+        now.difference(_lastBadgeRefresh) < const Duration(seconds: 5)) {
+      return;
+    }
     _lastBadgeRefresh = now;
     final summary = await _collectMediaInfoSummary();
     if (!mounted) return;
