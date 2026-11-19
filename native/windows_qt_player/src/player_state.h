@@ -412,6 +412,9 @@ signals:
 private:
     /// 收到权威位置后同步弹幕时钟（死区 / 收敛 / 硬对齐）。
     void danmakuClockSync();
+
+    /// 695：软同步节流计时（≥250ms 一次，减推进抖动）。
+    QElapsedTimer dmSoftSyncTimer_;
     /// 立即对齐到当前权威位置（seek / 暂停与倍速变化）。
     void danmakuClockHardResync();
 

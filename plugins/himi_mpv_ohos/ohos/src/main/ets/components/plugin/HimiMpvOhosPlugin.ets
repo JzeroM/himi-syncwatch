@@ -1137,8 +1137,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
     lib.setOptionString('sigmoid-upscaling', 'no');
     lib.setOptionString('dither-depth', 'no');
     lib.setOptionString('deinterlace', 'no');
-    lib.setOptionString('demuxer-max-bytes', '256MiB');
-    lib.setOptionString('demuxer-max-back-bytes', '128MiB');
+    lib.setOptionString('demuxer-max-bytes', '500MiB');
+    lib.setOptionString('demuxer-max-back-bytes', '250MiB');
     lib.setOptionString('network-timeout', '30');
     // 缓冲行为组（v1.2.85，移植 ydbox PlayerPage 实测参数）：
     // - cache=yes + readahead 10s：提前读流，起播后很快进入稳态；
@@ -1207,8 +1207,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
       if (mode === 'standard') {
         lib.setOptionString('interpolation', 'yes');
         lib.setOptionString('video-sync', 'display-resample');
-        lib.setOptionString('demuxer-max-bytes', '256MiB');
-        lib.setOptionString('demuxer-max-back-bytes', '128MiB');
+        lib.setOptionString('demuxer-max-bytes', '500MiB');
+        lib.setOptionString('demuxer-max-back-bytes', '250MiB');
         lib.setOptionString('framedrop', 'vo');
       } else if (mode === 'extreme') {
         lib.setOptionString('interpolation', 'no');
@@ -1220,8 +1220,8 @@ export default class HimiMpvOhosPlugin implements FlutterPlugin, MethodCallHandl
         // performance（默认）
         lib.setOptionString('interpolation', 'no');
         lib.setOptionString('video-sync', 'audio');
-        lib.setOptionString('demuxer-max-bytes', '256MiB');
-        lib.setOptionString('demuxer-max-back-bytes', '128MiB');
+        lib.setOptionString('demuxer-max-bytes', '500MiB');
+        lib.setOptionString('demuxer-max-back-bytes', '250MiB');
         lib.setOptionString('framedrop', 'vo');
       }
       session.hwdecMode = mode;

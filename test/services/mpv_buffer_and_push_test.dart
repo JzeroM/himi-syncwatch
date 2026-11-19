@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 
 /// 695 追补守卫：
-/// - F：MPV 缓冲双滑杆（三端统一默认 256MB/60s）+ load 前统一下发；
+/// - F：MPV 缓冲双滑杆（三端统一默认 500MB/60s）+ load 前统一下发；
 /// - A：网速 1s tick 走轻量 statePatch（「跑一秒停顿一下」根因）；
 /// - E：鸿蒙详情面板可滚动（真机回归）。
 void main() {
@@ -20,10 +20,10 @@ void main() {
   final ohosPanel = read(
       'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/NativePlayerPanel.ets');
 
-  group('① F 缓冲双滑杆（默认 256MB/60s 三端统一）', () {
+  group('① F 缓冲双滑杆（默认 500MB/60s 三端统一）', () {
     test('AppSettings 默认值与钳位', () {
       const s = AppSettings();
-      expect(s.mpvMaxBufferMb, 256);
+      expect(s.mpvMaxBufferMb, 500);
       expect(s.mpvMaxBufferSecs, 60);
       final j = AppSettings.fromJson(
           const {'mpvMaxBufferMb': 99999, 'mpvMaxBufferSecs': 1});
@@ -48,8 +48,8 @@ void main() {
 
     test('鸿蒙 native 硬编码对齐 256/128MiB', () {
       expect(ohosPlugin, isNot(contains("'1024MiB'")));
-      expect(ohosPlugin, contains("'256MiB'"));
-      expect(ohosPlugin, contains("'128MiB'"));
+      expect(ohosPlugin, contains("'500MiB'"));
+      expect(ohosPlugin, contains("'250MiB'"));
     });
   });
 
@@ -67,6 +67,33 @@ void main() {
       final branch = screen.substring(i - 400, i + 50);
       expect(branch, contains('pushStatePatch'),
           reason: '1Hz 网速变化不得触发全量 _syncNativePanelData');
+    });
+  });
+
+  group('④ 弹幕自绘 + 占位常驻 + 时钟减顿挫（695 渲染换代收尾）', () {
+    test('占位门双保险 + firstFrameRendered 接线（播放中不再挂占位）', () {
+      final overlay =
+          read('native/windows_qt_player/src/qml/Overlay.qml');
+      expect(overlay,
+          contains('!(playerState.playerReady || playerState.durationMs > 0)'),
+          reason: 'playerReady（首帧置位）或有片源即隐占位');
+      expect(mainCpp, contains('MpvWindow::firstFrameRendered'),
+          reason: '首帧信号 → playerReady:true（此前信号是死的）');
+    });
+
+    test('弹幕时钟软同步节流 + 死区放宽（跑一秒停顿一下 残余）', () {
+      final state = read('native/windows_qt_player/src/player_state.cpp');
+      expect(state, contains('dmSoftSyncTimer_'), reason: '软同步 ≥250ms 节流');
+      expect(state, contains('err > 80 || err < -80'), reason: '死区 40→80');
+    });
+
+    test('自绘渲染器注册 + CMake 源清单', () {
+      expect(mainCpp, contains('qmlRegisterType<DanmakuPaintItem>'));
+      final cmake = read('native/windows_qt_player/CMakeLists.txt');
+      expect(cmake, contains('src/danmaku_paint_item.cpp'));
+      final paint =
+          read('native/windows_qt_player/src/danmaku_paint_item.cpp');
+      expect(paint, contains('DanmakuPaintItem::paint(QPainter'));
     });
   });
 

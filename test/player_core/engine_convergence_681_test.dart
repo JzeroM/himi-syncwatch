@@ -297,7 +297,10 @@ void main() {
       expect(idx, greaterThan(0));
       final block = overlay.substring(idx, idx + 1200);
       expect(block, contains('z: -1'));
-      expect(block, contains('visible: !playerState.playerReady'));
+      // 695：双保险门（playerReady 首帧置位 / durationMs>0 有片源即隐），
+      // 根治「播放中一直显示占位文字」
+      expect(block,
+          contains('!(playerState.playerReady || playerState.durationMs > 0)'));
     });
 
     test('U6 Qt 房间态 playerReady 用 Qt 真实播放态（不被空闲引擎污染）', () {

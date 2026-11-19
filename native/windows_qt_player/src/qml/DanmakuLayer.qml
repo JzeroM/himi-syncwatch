@@ -47,7 +47,9 @@ import QtQuick.Controls.Basic
 ///
 /// ## 性能设计
 ///
-/// - **弹幕池复用**：固定 `Repeater` 数量的 `Text` 节点，只改 `visible`/
+/// - **695 自绘单画布**：`DanmakuPaint`（QQuickPaintedItem + QPainter，
+///   对齐安卓 Canvas.drawText）——旧「弹幕池复用 Repeater+Text 节点」
+///   因场景图 N 节点/绑定风暴掉帧已整体退役。
 ///   `x`/`y`/`text`，**不重建节点**（重建是 QML 最贵的操作）。
 /// - 每帧只改 `x`/`y`（位置属性，不触发布局重算）。
 /// - 30fps 帧驱动（与鸿蒙 `DanmakuLayer` 一致）。
@@ -428,13 +430,28 @@ Item {
             var life = isFixed ? fixedMs : travelMs
             if (elapsed < 0 || elapsed > life) continue
             var textW = textWOf(it)
+            // 695：x/y/alpha 预计算（自绘 DanmakuPaint 只读绘制，逻辑单源）
+            var progress = elapsed / life
+            var x
+            if (it.mode === "scroll") {
+                x = root.width - progress * (root.width + textW)
+            } else {
+                x = (root.width - textW) / 2
+            }
+            var y
+            if (it.mode === "bottom") {
+                y = root.height - root.edgePadding - (lane + 1) * root.lineHeight
+            } else {
+                y = root.edgePadding + lane * root.lineHeight
+            }
             out.push({
                 text: it.text || "",
-                mode: it.mode,
-                color: it.color || "#FFFFFF",
-                lane: lane,
-                textW: textW,
-                progress: elapsed / life
+                // 695：取色映射（danmakuColorMode 单色/主题等）随自绘保留
+                color: root.effectiveColor(it.color || "#FFFFFF"),
+                x: x,
+                y: y,
+                alpha: root.danmakuOpacity
+                    * (isFixed ? root.fixedFade(progress) : 1.0)
             })
             if (out.length >= poolSize) break
         }
@@ -448,54 +465,15 @@ Item {
         onTriggered: root.tick()
     }
 
-    // ── 渲染：固定池 + 只改属性（不重建节点）──
-    Repeater {
-        model: root.poolSize
-        delegate: Text {
-            required property int index
-            readonly property var item:
-                index < root.frameItems.length ? root.frameItems[index] : null
-            readonly property bool isFixed:
-                item !== null && (item.mode === "top" || item.mode === "bottom")
-
-            visible: item !== null
-            text: item !== null ? item.text : ""
-            font.pixelSize: root.fontSize
-            font.weight: Font.Medium
-            font.family: "Microsoft YaHei"
-            // 695：原生字形缓存渲染（弹幕滚动重绘更省，对齐安卓 Canvas 字形路径）
-            renderType: Text.NativeRendering
-            color: item !== null ? root.effectiveColor(item.color) : "transparent"
-
-            // 滚动：progress=0 前沿贴右缘外，progress=1 完全离开左缘
-            // 顶/底：水平居中
-            x: {
-                if (item === null) return 0
-                if (item.mode === "scroll") {
-                    return root.width - item.progress * (root.width + item.textW)
-                }
-                return (root.width - item.textW) / 2
-            }
-            // 顶：edgePad + lane*rowH；底：H - edgePad - (lane+1)*rowH
-            y: {
-                if (item === null) return 0
-                if (item.mode === "top") {
-                    return root.edgePadding + item.lane * root.lineHeight
-                }
-                if (item.mode === "bottom") {
-                    return root.height - root.edgePadding
-                        - (item.lane + 1) * root.lineHeight
-                }
-                return root.edgePadding + item.lane * root.lineHeight
-            }
-
-            // 描边宽度 0 → 关闭；否则用 outlineColor（默认黑）。
-            style: root.outlineWidth > 0 ? Text.Outline : Text.Normal
-            styleColor: root.cssColor(root.outlineColor)
-
-            // 顶/底淡入淡出；滚动不做淡变（进出屏幕边缘本就自然）
-            opacity: root.danmakuOpacity * (isFixed
-                ? root.fixedFade(item ? item.progress : 1.0) : 1.0)
-        }
+    // ── 渲染：695 自绘单画布（DanmakuPaint = QQuickPaintedItem + QPainter，
+    // 对齐安卓 DanmakuLayerView.kt 的 Canvas.drawText 模式）——
+    // 旧 Repeater + Text 池（场景图 N 节点 + 每帧 N×绑定重求值 + N 对象
+    // 分配）是 Windows 弹幕掉帧根因，整体退役。tick/车道/投影时钟不变 ──
+    DanmakuPaint {
+        anchors.fill: parent
+        items: root.frameItems
+        fontSize: root.fontSize
+        outlineWidth: root.outlineWidth
+        outlineColor: root.cssColor(root.outlineColor)
     }
 }

@@ -123,7 +123,9 @@ void main() {
       expect(winStateH, contains('QElapsedTimer'));
       expect(winStateCpp, contains('dmAnchorTimer_.nsecsElapsed()'));
       expect(winStateCpp, contains('err > 400 || err < -400'));
-      expect(winStateCpp, contains('err > 40 || err < -40'));
+      // 695：死区 40→80 + 软同步节流（减推进抖动「跑一秒停顿一下」）
+      expect(winStateCpp, contains('err > 80 || err < -80'));
+      expect(winStateCpp, contains('dmSoftSyncTimer_'));
       expect(winStateCpp, contains('0.05'));
     });
 

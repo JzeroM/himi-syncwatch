@@ -417,6 +417,15 @@ void PlayerState::danmakuClockSync()
         return;
     }
 
+    // 695：软同步节流（≥250ms 一次）——time-pos 观测节拍不均时，逐次
+    // 重锚+微调斜率会造成推进抖动（「跑一秒停顿一下」残余）。投影时钟
+    //（dmAnchorTimer_ 单调推进）在节流窗口内继续走，天然平滑。
+    if (dmSoftSyncTimer_.isValid()
+        && dmSoftSyncTimer_.elapsed() < 250) {
+        return;
+    }
+    dmSoftSyncTimer_.restart();
+
     const qint64 err = positionMs_ - danmakuPositionMs();
     dmErrorMs_ = static_cast<int>(err);
     if (err > 400 || err < -400) {
@@ -428,7 +437,7 @@ void PlayerState::danmakuClockSync()
     dmAnchorPosMs_ = danmakuPositionMs();
     dmAnchorTimer_.restart();
     dmBaseRate_ = rate;
-    if (err > 40 || err < -40) {
+    if (err > 80 || err < -80) {  // 695：死区放宽（40→80），减少斜率微调
         double adj = static_cast<double>(err) / 600.0;
         if (adj > 0.05) adj = 0.05;
         if (adj < -0.05) adj = -0.05;

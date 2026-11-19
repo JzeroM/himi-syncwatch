@@ -156,9 +156,17 @@ void main() {
   });
 
   group('4. 性能设计', () {
-    test('4.1 弹幕池复用（固定 Repeater，不重建节点）', () {
-      expect(codeOnly(layer), contains('Repeater {'));
-      expect(codeOnly(layer), contains('model: root.poolSize'));
+    test('4.1 自绘单画布（695 渲染方式换代：Repeater+Text 池退役）', () {
+      // 弹幕掉帧根治：DanmakuPaint（QQuickPaintedItem+QPainter）每帧一次
+      // paint() 画完全部活跃条目（对齐安卓 Canvas.drawText），零场景图
+      // 节点、零绑定求值、零每帧 JS 对象分配。
+      expect(codeOnly(layer), contains('DanmakuPaint {'));
+      expect(codeOnly(layer), isNot(contains('Repeater {')),
+          reason: '旧 Text 池（场景图 N 节点）是掉帧根因，整体退役');
+      final cpp =
+          read('native/windows_qt_player/src/danmaku_paint_item.cpp');
+      expect(cpp, contains('DanmakuPaintItem::paint(QPainter'));
+      expect(cpp, contains('drawText'));
     });
 
     test('4.2 30fps 帧驱动（与鸿蒙一致）', () {

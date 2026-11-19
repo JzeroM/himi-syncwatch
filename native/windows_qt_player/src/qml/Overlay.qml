@@ -237,7 +237,9 @@ ApplicationWindow {
         anchors.fill: parent
         // 681：无内容时显示。`playerReady` 由 Dart 侧 `_prepared && !_disposed`
         // 决定（删空资源 / 尚未起播时为 false）。
-        visible: !playerState.playerReady
+        // 695：双保险——playerReady（首帧信号置位）或 durationMs>0（有片源）
+        // 任一即隐，根治「播放中一直显示占位文字」
+        visible: !(playerState.playerReady || playerState.durationMs > 0)
         color: "#000000"
         z: -1
 

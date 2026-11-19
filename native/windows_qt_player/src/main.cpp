@@ -28,6 +28,7 @@
 #include <cstdio>     // stderr（控制台日志）
 
 #include "mpv_window.h"
+#include "danmaku_paint_item.h"
 #include "key_router.h"
 #include "pipe_server.h"
 #include "player_state.h"
@@ -220,6 +221,10 @@ int main(int argc, char* argv[]) {
     // 【673】封面磁盘缓存必须在 load 前装上（Image 网络源走 NAM）
     static DiskCacheNamFactory namFactory;
     engine.setNetworkAccessManagerFactory(&namFactory);
+    // 695：弹幕自绘渲染（QQuickPaintedItem 单画布，对齐安卓 Canvas 自绘——
+    // 治 QML Text 场景图 N 节点/绑定风暴导致的掉帧）。
+    qmlRegisterType<DanmakuPaintItem>("HimiPlayer", 1, 0, "DanmakuPaint");
+
     engine.rootContext()->setContextProperty("playerState", &state);
     // 694：构建指纹（弹窗角标，真机截图即诊断——终结「还是不行」的
     // 版本歧义）。
@@ -762,6 +767,15 @@ int main(int argc, char* argv[]) {
                          patch.insert(QStringLiteral("durationMs"), dur);
                          state.applyJson(patch);
                      });
+    // 695：首帧即就绪（占位「请从资源面板选择要播放的内容」常驻根治）——
+    // playerReady 不再等 Dart 推送节奏，Qt 侧 mpv 首帧信号权威置位。
+    QObject::connect(&mpv, &MpvWindow::firstFrameRendered, &state,
+                     [&state]() {
+                         QJsonObject patch;
+                         patch.insert(QStringLiteral("playerReady"), true);
+                         state.applyJson(patch);
+                     });
+
     QObject::connect(&mpv, &MpvWindow::pausedChanged, &state,
                      [&](bool paused) {
                          QJsonObject patch;

@@ -33,6 +33,7 @@ qt_standard_project_setup()
 
 qt_add_executable(himi_qt_player
     src/main.cpp
+    src/danmaku_paint_item.cpp
     src/key_router.cpp
     src/mpv_window.cpp
     src/pipe_server.cpp

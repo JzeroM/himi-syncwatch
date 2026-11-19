@@ -98,8 +98,9 @@ void main() {
 
     test('3.4 Qt 渲染器按模式取色 + 描边', () {
       final q = read('native/windows_qt_player/src/qml/DanmakuLayer.qml');
+      // 695：自绘渲染后——取色映射在 tick 预计算，描边参数传 DanmakuPaint
       expect(q, contains('effectiveColor('));
-      expect(q, contains('root.outlineWidth > 0'));
+      expect(q, contains('outlineWidth: root.outlineWidth'));
       expect(q, contains('root.cssColor(root.outlineColor)'));
     });
 

@@ -240,7 +240,7 @@ List<Widget> _mpvChildren(
       context: context,
       tvMode: settings.tvMode,
       title: '最大缓冲大小',
-      subtitle: '抗网速波动的缓存上限（越大越费内存），默认 256 MB',
+      subtitle: '抗网速波动的缓存上限（越大越费内存），默认 500 MB',
       sliderKey: 'mpvMaxBufferMb',
       value: settings.mpvMaxBufferMb.toDouble(),
       min: 32,

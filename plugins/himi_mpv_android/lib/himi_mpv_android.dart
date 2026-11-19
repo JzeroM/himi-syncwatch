@@ -580,10 +580,10 @@ class HimiMpvAndroidSession implements MpvSession {
                   : 'auto')),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
-      // 695：创建期默认 256MB/128MB/60s（三端统一）；Dart 在 load 前按
+      // 695：创建期默认 500MB/250MB/60s（三端统一）；Dart 在 load 前按
       // 设置（缓冲双滑杆）覆盖写入，此为窗口期兜底。
-      'demuxer-max-bytes': '${256 * 1024 * 1024}',
-      'demuxer-max-back-bytes': '${128 * 1024 * 1024}',
+      'demuxer-max-bytes': '${500 * 1024 * 1024}',
+      'demuxer-max-back-bytes': '${250 * 1024 * 1024}',
       'cache-secs': '60',
       'sub-ass': 'yes',
       'sub-visibility': 'yes',

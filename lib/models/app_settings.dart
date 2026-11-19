@@ -208,7 +208,7 @@ class AppSettings {
   /// 手动选择，用于 texture 档对照实验与用户自主逃生）。
   final bool videoOutputUserSet;
 
-  /// 695：MPV 最大缓冲大小（MB，三端统一默认 256）→ `demuxer-max-bytes`
+  /// 695：MPV 最大缓冲大小（MB，三端统一默认 500）→ `demuxer-max-bytes`
   ///（`demuxer-max-back-bytes` 取半联动）。设置 → 播放器配置 → MPV。
   final int mpvMaxBufferMb;
 
@@ -513,7 +513,7 @@ class AppSettings {
     this.tvModeUserSet = false,
     this.videoOutput = 'surfaceView',
     this.videoOutputUserSet = false,
-    this.mpvMaxBufferMb = 256,
+    this.mpvMaxBufferMb = 500,
     this.mpvMaxBufferSecs = 60,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
@@ -1071,7 +1071,7 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       mpvMaxBufferMb:
-          ((json['mpvMaxBufferMb'] as num?) ?? 256).toInt().clamp(32, 2048),
+          ((json['mpvMaxBufferMb'] as num?) ?? 500).toInt().clamp(32, 2048),
       mpvMaxBufferSecs:
           ((json['mpvMaxBufferSecs'] as num?) ?? 60).toInt().clamp(5, 600),
       // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
