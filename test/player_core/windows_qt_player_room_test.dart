@@ -263,11 +263,17 @@ void main() {
       final dbl = _extract(gesturesQml, 'onDoubleClicked');
       expect(dbl, contains('if (!playerState.canControl) return'));
       expect(shortcutsQml, contains('if (!playerState.canControl) return'));
-      // 空格与左右键共三处门
+      // 695：空格门禁迁 C++ KeyRouter（QML Shortcut 对 Space 无效）；
+      // QML 侧剩左右键两处门。
       final gates = RegExp(r'if \(!playerState\.canControl\) return')
           .allMatches(shortcutsQml)
           .length;
-      expect(gates, greaterThanOrEqualTo(3));
+      expect(gates, greaterThanOrEqualTo(2));
+      expect(
+        File('native/windows_qt_player/src/key_router.cpp').readAsStringSync(),
+        contains('state_->canControl()'),
+        reason: '695：Space 观众禁用门禁在 C++ KeyRouter',
+      );
     });
 
     test('D5 右键片头片尾走 segmentEnabled 门', () {
@@ -314,18 +320,16 @@ void main() {
       expect(bottomBar, contains('mpvWindow.hostFullscreen'));
     });
 
-    test('E2 686：Esc 完全禁用（过滤器与信号链全部移除）', () {
-      // 【结论反转】677 时这里是「两处 QML Shortcut 删除，改 C++ 统一
-      // 拦截」；686 用户明确要求「Esc 不做任何动作」，于是 C++ 的
-      // EscapeFilter、`escapePressed` 信号、Overlay 的三层语义连接
-      // 全部删除。
+    test('E2 695：Esc 恢复——C++ KeyRouter 统一转发，且不 Qt.quit()', () {
+      // 【结论再反转】686 用户要求「Esc 不做任何动作」；695 用户要求
+      // 「ESC 控制返回」：单人=Qt 返回控件同款（关 Qt 回详情页）、房间=
+      // 解散/离开确认、全屏=先退全屏。
       //
-      // 原因（真机）：
-      //   - 房间模式按 Esc 弹「解散/离开房间」确认，不符合预期
-      //   - 单人模式 `if (!playerState.isRoom) Qt.quit()` 本地立即关窗，
-      //     与同时发出的 `requestExit` 竞争
+      // 686 的真凶不是 Esc 本身，而是旧实现 `requestExit + Qt.quit()`
+      //（本地立即关窗与 requestExit 竞态）——695 只发 requestExit
+      //（Dart 侧 687 起已正确分流），不再 Qt.quit()。
       //
-      // 判定前剔除注释（注释里会提到旧符号，说明为什么删）。
+      // 判定前剔除注释（注释里会提到旧符号，说明为什么改）。
       String codeOnly(String s) => s
           .split('\n')
           .where((l) {
@@ -334,15 +338,18 @@ void main() {
           })
           .join('\n');
 
+      // 仍不走 QML Shortcut（Space 同理：Shortcut 对焦点场景无效）
       expect(codeOnly(mainQml), isNot(contains('sequence: "Escape"')));
       expect(codeOnly(overlayQml), isNot(contains('sequence: "Escape"')));
-      // C++ 侧不再拦截
-      expect(codeOnly(mpvH), isNot(contains('escapePressed')));
-      expect(codeOnly(mainCpp), isNot(contains('installEventFilter')));
-      expect(codeOnly(mainCpp), isNot(contains('Qt::Key_Escape')));
+      // C++ KeyRouter 恢复按键转发链
+      expect(mpvH, contains('escapePressed'));
+      expect(mainCpp, contains('installEventFilter'));
+      // 686 真凶根治：全链路不得 Qt.quit()
+      expect(codeOnly(overlayQml), isNot(contains('Qt.quit()')));
+      expect(codeOnly(mainQml), isNot(contains('Qt.quit()')));
     });
 
-    test('E3 686：Esc 不再有任何语义（收面板/退全屏/退出全部取消）', () {
+    test('E3 695：Esc 三层阶梯在 Overlay（收面板 → 退全屏 → requestExit）', () {
       String codeOnly(String s) => s
           .split('\n')
           .where((l) {
@@ -351,10 +358,12 @@ void main() {
           })
           .join('\n');
 
-      // 旧三层语义已整段删除
-      expect(codeOnly(overlayQml), isNot(contains('onEscapePressed')));
-      // 退出只保留显式入口：单人点关闭按钮、房间点面板窗 X
-      expect(codeOnly(overlayQml), isNot(contains('Qt.quit()')));
+      expect(codeOnly(overlayQml), contains('onEscapePressed'));
+      final i = overlayQml.indexOf('function onEscapePressed()');
+      final body = overlayQml.substring(i, overlayQml.indexOf('}', i) + 200);
+      expect(body, contains('closePanels()'), reason: '第一层：收面板');
+      expect(body, contains('toggleHostFullscreen()'), reason: '第二层：退全屏');
+      expect(body, contains('"requestExit"'), reason: '第三层：返回');
     });
 
     test('E4 退全屏显式回并排矩形（不落回 Qt 记忆的旧位置）', () {

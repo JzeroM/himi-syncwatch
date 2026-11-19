@@ -12,6 +12,7 @@ import 'package:fvp/mdk.dart' as mdk;
 import 'package:himi_syncwatch/player_core/player_core_bridge.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 import 'package:himi_syncwatch/services/player/player_engine.dart';
+import 'package:himi_syncwatch/services/player/player_hotkey_bridge.dart';
 import 'package:himi_syncwatch/services/player/mdk_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_player_adapter.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
@@ -2065,6 +2066,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    // 695：Windows 全局键（Space/ESC）桥——注册本页回调供 app 根部的
+    // WindowsGlobalHotkeys 消费（Space=暂停/播放含权限/同步；全屏检测+退全屏）。
+    PlayerHotkeyBridge.togglePlayPause = _handleHotkeyTogglePlayPause;
+    PlayerHotkeyBridge.isWindowFullscreen = () => _isWindowFullscreen;
+    PlayerHotkeyBridge.exitWindowFullscreen = _exitWindowFullscreen;
     // 697：**进播放器立刻隐藏系统栏**（横屏/竖屏都要）。
     //
     // 此前只有 `_switchToLandscape()` 里设 `immersiveSticky`——竖屏进入
@@ -9141,6 +9147,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   @override
   void dispose() {
+    // 695：注销全局键桥（只清自己注册的，防误清新页面的注册）。
+    if (identical(PlayerHotkeyBridge.togglePlayPause, _handleHotkeyTogglePlayPause)) {
+      PlayerHotkeyBridge.togglePlayPause = null;
+    }
+    PlayerHotkeyBridge.isWindowFullscreen = null;
+    PlayerHotkeyBridge.exitWindowFullscreen = null;
     // 640：RTM 清理参数必须在 dispose **开头**捕获——此时 `ref` 仍有效。
     //
     // 真机回归「观众退房后房主人数完全不变」：旧实现在 dispose 末尾的

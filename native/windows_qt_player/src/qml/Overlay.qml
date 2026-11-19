@@ -196,13 +196,26 @@ ApplicationWindow {
     // ── 播放快捷键（与宿主共用组件）──
     PlayerShortcuts { }
 
-    // 686：Esc **完全禁用**（用户明确要求「Esc 不做任何动作」）。
-    //
-    // 677 时这里有 `Connections { target: mpvWindow; onEscapePressed }`
-    // 三层语义（收面板 → 退全屏 → requestExit + Qt.quit()）。C++ 的
-    // EscapeFilter 已移除，信号不再发射，这段连接一并删除。
-    //
-    // 退出方式：单人点窗口关闭按钮，房间点面板窗 X（有确认框）。
+    // 695：Esc 三层阶梯（KeyRouter 窗口级转发 `escapePressed`，此处**单点**
+    // 连接——mpvWindow 是两窗共用上下文属性，两处连接会双重触发）：
+    //   收面板 → 退全屏 → requestExit（单人=关 Qt 回详情页；房间=解散/离开确认）。
+    // 686 曾「Esc 完全禁用」（真凶：旧宿主窗 Esc 直接 requestExit+Qt.quit()，
+    // 全屏时会关掉播放器）——现全屏先退全屏，阶梯语义根治该问题。
+    Connections {
+        target: mpvWindow
+        function onEscapePressed() {
+            if (root.panelOpen || root.adjustOpen || root.danmakuPanelOpen
+                    || segmentMenu.visible) {
+                root.closePanels()
+                return
+            }
+            if (mpvWindow.hostFullscreen) {
+                mpvWindow.toggleHostFullscreen()
+                return
+            }
+            pipeServer.sendCommand({"type": "requestExit"})
+        }
+    }
 
     // ── 681：未播放占位（三端统一）──
     //

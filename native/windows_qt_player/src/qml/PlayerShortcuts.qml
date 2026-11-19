@@ -10,12 +10,12 @@ Item {
     id: root
     anchors.fill: parent
 
-    Shortcut { sequence: "Space"; onActivated: {
-        // 677：房间观众不得键盘播放/暂停
-        if (!playerState.canControl) return
-        mpvWindow.togglePause()
-        pipeServer.sendCommand({"type": "togglePlay"})
-    } }
+    // 695：Space 移入 C++ `KeyRouter`（窗口事件过滤器）——真机回归
+    // 「空格暂停/播放现状无效」：QML Shortcut 被焦点控件 shortcut-override
+    // 吞掉/双窗作用域不稳，收不到键。canControl 门禁（房间观众禁用）与
+    // togglePlay 记账在 KeyRouter 内完成。
+    //
+    // 本组件只保留不与焦点控件冲突的按键（←/→/↑/↓/F/F11）。
     Shortcut { sequence: "Left"; onActivated: {
         // 677：房间观众不得键盘 seek
         if (!playerState.canControl) return
@@ -40,6 +40,7 @@ Item {
     Shortcut { sequence: "F"; onActivated: mpvWindow.toggleHostFullscreen() }
     // 677：F11 与 F 并存（Windows 用户习惯）
     Shortcut { sequence: "F11"; onActivated: mpvWindow.toggleHostFullscreen() }
-    // 686：Esc 完全禁用——C++ 侧 EscapeFilter / escapePressed 已删除，
-    // 两窗 QML 也都没有 Escape Shortcut。按 Esc 不做任何动作。
+    // 695：Esc 由 C++ `KeyRouter` 窗口级转发（escapePressed 信号），
+    // 三层阶梯单点连接在 Overlay.qml：收面板 → 退全屏 → requestExit
+    //（单人=关 Qt 回详情页；房间=解散/离开确认）。
 }

@@ -1354,7 +1354,13 @@ void main() {
     });
 
     test('快捷键两窗共用（焦点任一窗都有效）', () {
-      expect(shortcuts, contains('mpvWindow.togglePause'));
+      // 695：Space/Esc 上收到 C++ KeyRouter（两窗各装一份事件过滤器）；
+      // QML PlayerShortcuts 保留 ←/→/↑/↓/F/F11，两窗仍共用。
+      expect(
+          read('$dir/src/key_router.cpp'), contains('mpv_->togglePause()'),
+          reason: '695：Space 在 C++ KeyRouter（QML Shortcut 对 Space 无效）');
+      expect(mainCpp, contains('host->installEventFilter(keyRouter)'));
+      expect(mainCpp, contains('overlay->installEventFilter(keyRouter)'));
       expect(mainQmlSrc, contains('PlayerShortcuts'));
       expect(overlayQml, contains('PlayerShortcuts'));
     });

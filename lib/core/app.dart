@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/trakt_deep_link_listener.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_remote_shell.dart';
+import 'package:himi_syncwatch/widgets/windows_global_hotkeys.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 class HimiSyncApp extends ConsumerWidget {
@@ -43,7 +44,11 @@ class HimiSyncApp extends ConsumerWidget {
             // iOS 不再挂 premium 专用根层 AdaptiveLiquidGlassLayer。
             final modeSubtree =
                 tvMode ? TvRemoteShell(child: subtree) : subtree;
-            return TraktDeepLinkListener(child: modeSubtree);
+            // 695：Windows 全局键（Space=暂停/播放、ESC=退全屏/返回/房间
+            // 解散确认）——挂根部让任意 Flutter 页面都生效。
+            return TraktDeepLinkListener(
+              child: WindowsGlobalHotkeys(child: modeSubtree),
+            );
           },
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(

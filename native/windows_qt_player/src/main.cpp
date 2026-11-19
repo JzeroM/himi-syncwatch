@@ -28,6 +28,7 @@
 #include <cstdio>     // stderr（控制台日志）
 
 #include "mpv_window.h"
+#include "key_router.h"
 #include "pipe_server.h"
 #include "player_state.h"
 
@@ -331,6 +332,13 @@ int main(int argc, char* argv[]) {
                         GWLP_HWNDPARENT,
                         reinterpret_cast<LONG_PTR>(
                             reinterpret_cast<HWND>(host->winId())));
+
+    // 695：窗口级键盘路由（Space=暂停/播放、Esc=阶梯返回）。装在两窗上：
+    // 焦点在哪个窗口，按键就在哪个窗口生效（「锁定的窗口」语义）。
+    // QML Shortcut 对 Space 无效（真机回归），统一走事件过滤器。
+    auto* keyRouter = new KeyRouter(&state, &pipe, &mpv, &app);
+    host->installEventFilter(keyRouter);
+    overlay->installEventFilter(keyRouter);
 
     // 位置同步：悬浮层恒贴住宿主客户区（拖动/缩放/最小化/全屏）。
     // 50ms 轮询 + 变化才动（无抖动），宿主活跃时 raise 双保险。

@@ -69,6 +69,10 @@ public:
     // 发给 Flutter 做记账（弹幕同步等），两边都写幂等无副作用。
     Q_INVOKABLE void setPaused(bool paused);
     Q_INVOKABLE void togglePause();
+
+    /// 695：KeyRouter（窗口事件过滤器）收到 Esc 后调用——只发信号，
+    /// 语义在 QML 阶梯实现（Overlay.qml 单点连接防双重处理）。
+    void notifyEscapePressed() { emit escapePressed(); }
     Q_INVOKABLE void setVolume(double volume);   ///< 0.0 ~ 1.0
     Q_INVOKABLE void setSpeed(double speed);
     Q_INVOKABLE void seekTo(qint64 positionMs);
@@ -243,6 +247,10 @@ public:
 signals:
     /// 播放位置变化（供 QML 进度条绑定，约 20Hz）。
     void positionChanged(qint64 positionMs, qint64 durationMs);
+
+    /// 695：Esc 按键（KeyRouter 窗口级转发）→ Overlay.qml 单点连接的
+    /// 三层阶梯：收面板 → 退全屏 → requestExit。
+    void escapePressed();
 
     /// 暂停状态变化（用户按空格 / 点了按钮）。
     void pausedChanged(bool paused);

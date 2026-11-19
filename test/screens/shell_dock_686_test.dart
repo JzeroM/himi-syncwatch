@@ -56,24 +56,33 @@ void main() {
   // A. Esc 完全禁用
   // ═══════════════════════════════════════════════════════════════
 
-  group('A Esc 完全禁用', () {
-    test('A1 C++ 不再安装 EscapeFilter', () {
+  group('A Esc 窗口级路由（695：反转 686「完全禁用」）', () {
+    // 【结论再反转】686 用户要求「Esc 不做任何动作」；695 用户要求
+    // 「ESC 控制返回」（单人=Qt 返回控件同款；房间=解散/离开确认；全屏=
+    // 先退全屏）。686 真凶是旧实现 `requestExit + Qt.quit()` 竞态，不是
+    // Esc 本身——现由 C++ KeyRouter 窗口级转发，QML 阶梯无 Qt.quit()。
+
+    test('A1 C++ KeyRouter 安装事件过滤器（Space/Esc 窗口级路由）', () {
       final code = codeOnly(mainCpp);
-      expect(code, isNot(contains('EscapeFilter')));
-      expect(code, isNot(contains('installEventFilter')));
-      expect(code, isNot(contains('Qt::Key_Escape')));
-      expect(code, isNot(contains('notifyEscape')));
+      expect(code, contains('installEventFilter'),
+          reason: '695：按键统一走窗口事件过滤器（QML Shortcut 对 Space 无效）');
+      expect(code, isNot(contains('Qt.quit()')));
     });
 
-    test('A2 MpvWindow 不再有 escapePressed / notifyEscape', () {
+    test('A2 MpvWindow 暴露 escapePressed / notifyEscapePressed', () {
       final code = codeOnly(mpvH);
-      expect(code, isNot(contains('escapePressed')));
-      expect(code, isNot(contains('notifyEscape')));
+      expect(code, contains('escapePressed'));
+      expect(code, contains('notifyEscape'));
     });
 
-    test('A3 Overlay.qml 不再连接 onEscapePressed', () {
+    test('A3 Overlay.qml 连接 onEscapePressed 三层阶梯', () {
       final code = codeOnly(overlayQml);
-      expect(code, isNot(contains('onEscapePressed')));
+      expect(code, contains('onEscapePressed'));
+      final i = overlayQml.indexOf('function onEscapePressed()');
+      final body = overlayQml.substring(i, overlayQml.indexOf('}', i) + 200);
+      expect(body, contains('closePanels()'), reason: '第一层：收面板');
+      expect(body, contains('toggleHostFullscreen()'), reason: '第二层：退全屏');
+      expect(body, contains('"requestExit"'), reason: '第三层：返回');
     });
 
     test('A4 两窗 QML 都没有 Escape Shortcut', () {
@@ -81,8 +90,9 @@ void main() {
       expect(codeOnly(shortcutsQml), isNot(contains('sequence: "Escape"')));
     });
 
-    test('A5 Esc 不再触发退出（无 requestExit 绑在 Esc 上）', () {
-      // 整个 Overlay 的 Esc 分支已删除，requestExit 只剩其它入口
+    test('A5 Esc 退出链路无 Qt.quit()（686 真凶根治）', () {
+      // 695：Esc 第三层是 `requestExit`（Dart 侧 687 起正确分流），本地
+      // 不再 Qt.quit()——旧实现本地立即关窗与 requestExit 竞态。
       expect(codeOnly(overlayQml), isNot(contains('Qt.quit()')));
     });
   });

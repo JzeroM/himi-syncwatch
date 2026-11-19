@@ -37,11 +37,8 @@ ApplicationWindow {
     // 双击暂停/横滑 seek/点击唤出控件仍然有效。
     VideoGestures { }
 
-    // 686：Esc **完全禁用**——C++ 的 EscapeFilter 与 `escapePressed`
-    // 信号均已删除，本窗也没有 Escape Shortcut。按 Esc 不做任何动作。
-    //
-    // 【真凶】旧实现这里是 `requestExit + Qt.quit()`，而 Overlay 才有
-    // 「收面板→退全屏→退出」三层。焦点落在宿主窗（点标题栏/视频区）
-    // 时按 Esc，全屏状态下会**直接关掉播放器**（用户要求「房间模式
-    // 全屏别出问题」，这条必须先堵）。
+    // 695：Esc 由 C++ `KeyRouter` 窗口级转发（escapePressed 信号），
+    // 三层阶梯（收面板 → 退全屏 → requestExit）单点连接在 Overlay.qml。
+    // 686 曾完全禁用 Esc（真凶：本窗旧实现 requestExit+Qt.quit()，全屏时
+    // 会直接关掉播放器）——现全屏先退全屏，阶梯语义根治该问题。
 }
