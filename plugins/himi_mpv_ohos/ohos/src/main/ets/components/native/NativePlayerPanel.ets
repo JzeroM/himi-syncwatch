@@ -356,7 +356,10 @@ export struct NativePlayerPanel {
   /** 695：视频详细信息体——分组=矩形玻璃卡片；每条信息纵向独占一行。 */
   @Builder
   MediaInfoContent() {
-    Column() {
+    // 695：可滚动（真机回归「面板不能滚动」）——对齐 EpisodeContent 的
+    // 滚动范式，分组卡片多时纵向滚。
+    Scroll() {
+      Column() {
       ForEach(this.parseMediaGroups(), (g: MediaInfoGroupG): void => {
         Column() {
           Text(g.title)
@@ -389,8 +392,11 @@ export struct NativePlayerPanel {
         .alignItems(HorizontalAlign.Start)
       }, (g: MediaInfoGroupG): string => g.title)
     }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .scrollable(ScrollDirection.Vertical)
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
   }
 
   private parseMediaGroups(): MediaInfoGroupG[] {

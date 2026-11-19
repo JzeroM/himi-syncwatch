@@ -2435,6 +2435,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final decoders =
         DecodeModeService.resolveDecoders(_effectiveDecodeMode(settings.decodeMode));
     _player.videoDecoders = decoders;
+    // 695：缓冲双滑杆（设置→播放器配置→MPV；三端统一默认 256MB/60s）——
+    // load 前写入（demuxer 选项在媒体打开时生效），覆盖各端 native 硬编码。
+    _player.setProperty(
+        'demuxer-max-bytes', '${settings.mpvMaxBufferMb * 1024 * 1024}');
+    _player.setProperty('demuxer-max-back-bytes',
+        '${(settings.mpvMaxBufferMb ~/ 2) * 1024 * 1024}');
+    _player.setProperty('cache-secs', '${settings.mpvMaxBufferSecs}');
     final audioDecoders =
         DecodeModeService.resolveAudioDecoders(settings.decodeMode);
     _player.audioDecoders = audioDecoders;
@@ -11833,7 +11840,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         final text = bps == null ? null : NetworkSpeedMeter.formatMBs(bps);
         if (text != _lastNativeNetworkText) {
           _lastNativeNetworkText = text;
-          _syncNativePanelData();
+          // 695：网速每秒都变——Qt 走轻量 patch（全量 _syncNativePanelData
+          // 会重建整份剧集/弹幕数据，1Hz GUI 卡顿「跑一秒停顿一下」根因）；
+          // 其余引擎维持全量（原生面板刷新频率低、无卡顿反馈）。
+          final qt = MpvSessionPlatform.activeQtAdapter;
+          if (defaultTargetPlatform == TargetPlatform.windows &&
+              qt != null &&
+              qt.isAlive) {
+            qt.pushStatePatch({'networkSpeedText': text});
+          } else {
+            _syncNativePanelData();
+          }
         }
       },
     )..start();

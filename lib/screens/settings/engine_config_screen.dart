@@ -234,6 +234,36 @@ List<Widget> _mpvChildren(
         'Windows 走原生顶层窗口 + vo=gpu-next，支持 HDR 直出',
       ),
     ),
+    // 695：缓冲双滑杆（三端统一默认 256MB/60s；TV 遥控：整行聚焦 +
+    // 左右键 ±step 调值，settingsTvSliderRow 既有范式）。
+    settingsTvSliderRow(
+      context: context,
+      tvMode: settings.tvMode,
+      title: '最大缓冲大小',
+      subtitle: '抗网速波动的缓存上限（越大越费内存），默认 256 MB',
+      sliderKey: 'mpvMaxBufferMb',
+      value: settings.mpvMaxBufferMb.toDouble(),
+      min: 32,
+      max: 2048,
+      divisions: 63,
+      label: '${settings.mpvMaxBufferMb} MB',
+      step: 32,
+      onChanged: (v) => notifier.update(mpvMaxBufferMb: v.round()),
+    ),
+    settingsTvSliderRow(
+      context: context,
+      tvMode: settings.tvMode,
+      title: '最大缓冲时长',
+      subtitle: '提前缓冲的最长时间，秒，默认 60 s',
+      sliderKey: 'mpvMaxBufferSecs',
+      value: settings.mpvMaxBufferSecs.toDouble(),
+      min: 5,
+      max: 600,
+      divisions: 119,
+      label: '${settings.mpvMaxBufferSecs} 秒',
+      step: 5,
+      onChanged: (v) => notifier.update(mpvMaxBufferSecs: v.round()),
+    ),
     // 694：解码方式与视频路径从设置页移除——解码模式改为播放器顶栏胶囊
     // （SW/HW/HW+），视频路径 MPV 全平台恒 Surface（按解码模式自动路由）。
     // 655：渲染器手动选择（仅 Android Surface 路径有意义）。

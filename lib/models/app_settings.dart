@@ -208,6 +208,13 @@ class AppSettings {
   /// 手动选择，用于 texture 档对照实验与用户自主逃生）。
   final bool videoOutputUserSet;
 
+  /// 695：MPV 最大缓冲大小（MB，三端统一默认 256）→ `demuxer-max-bytes`
+  ///（`demuxer-max-back-bytes` 取半联动）。设置 → 播放器配置 → MPV。
+  final int mpvMaxBufferMb;
+
+  /// 695：MPV 最大缓冲时长（秒，三端统一默认 60）→ `cache-secs`。
+  final int mpvMaxBufferSecs;
+
   /// MPV 专属视频路径：'surface' = 原生 Surface 直出；'texture' = Flutter 纹理。
   /// 默认值统一存 'surface'，Windows 未手动设置时按 'texture' 生效。
   final String mpvVideoOutput;
@@ -506,6 +513,8 @@ class AppSettings {
     this.tvModeUserSet = false,
     this.videoOutput = 'surfaceView',
     this.videoOutputUserSet = false,
+    this.mpvMaxBufferMb = 256,
+    this.mpvMaxBufferSecs = 60,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
     this.mpvRenderer = defaultMpvRenderer,
@@ -632,6 +641,8 @@ class AppSettings {
     bool? tvModeUserSet,
     String? videoOutput,
     bool? videoOutputUserSet,
+    int? mpvMaxBufferMb,
+    int? mpvMaxBufferSecs,
     String? mpvVideoOutput,
     bool? mpvVideoOutputUserSet,
     String? mpvRenderer,
@@ -717,6 +728,8 @@ class AppSettings {
       tvModeUserSet: tvModeUserSet ?? this.tvModeUserSet,
       videoOutput: videoOutput ?? this.videoOutput,
       videoOutputUserSet: videoOutputUserSet ?? this.videoOutputUserSet,
+      mpvMaxBufferMb: mpvMaxBufferMb ?? this.mpvMaxBufferMb,
+      mpvMaxBufferSecs: mpvMaxBufferSecs ?? this.mpvMaxBufferSecs,
       mpvVideoOutput: mpvVideoOutput ?? this.mpvVideoOutput,
       mpvVideoOutputUserSet:
           mpvVideoOutputUserSet ?? this.mpvVideoOutputUserSet,
@@ -824,6 +837,8 @@ class AppSettings {
         'tvModeUserSet': tvModeUserSet,
         'videoOutput': videoOutput,
         'videoOutputUserSet': videoOutputUserSet,
+        'mpvMaxBufferMb': mpvMaxBufferMb,
+        'mpvMaxBufferSecs': mpvMaxBufferSecs,
         'mpvVideoOutput': mpvVideoOutput,
         'mpvVideoOutputUserSet': mpvVideoOutputUserSet,
         'mpvRenderer': mpvRenderer,
@@ -1055,6 +1070,10 @@ class AppSettings {
           : 'surfaceView',
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
+      mpvMaxBufferMb:
+          ((json['mpvMaxBufferMb'] as num?) ?? 256).toInt().clamp(32, 2048),
+      mpvMaxBufferSecs:
+          ((json['mpvMaxBufferSecs'] as num?) ?? 60).toInt().clamp(5, 600),
       // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
       //
       // 655：`mpvVideoOutput` / `mpvVideoOutputUserSet` /

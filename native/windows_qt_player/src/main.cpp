@@ -597,7 +597,13 @@ int main(int argc, char* argv[]) {
                                          QStringLiteral("subtitle")) + 1);
                                  state.applyJson(patch);
                              });
-                         } else if (type == QLatin1String("setPaused")) {
+                         } else if (type == QLatin1String("statePatch")) {
+                            // 695：轻量增量状态（网速文本等）——直接并入
+                            // PlayerState，不触发全量解析（全量推送上千弹幕
+                            // 每秒重建 = 「跑一秒停顿一下」根因）。
+                            state.applyJson(
+                                cmd.value(QLatin1String("patch")).toObject());
+                        } else if (type == QLatin1String("setPaused")) {
                              mpv.setPaused(
                                  cmd.value(QLatin1String("paused")).toBool());
                          } else if (type == QLatin1String("seekTo")) {

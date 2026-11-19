@@ -441,6 +441,16 @@ class QtPlayerAdapter implements PlayerAdapter {
     );
   }
 
+  /// 695：轻量状态 patch（如网速文本）——不走全量 pushNativeState（千级
+  /// 弹幕/剧集重建 = 每秒 GUI 卡顿「跑一秒停顿一下」根因）。
+  void pushStatePatch(Map<String, Object?> patch) {
+    if (_disposed) return;
+    _pipe.sendCommandRaw({
+      'type': 'statePatch',
+      'patch': patch,
+    });
+  }
+
   void pushNativeState(Map<String, Object?> stateJson, {String? playUrl}) {
     if (_disposed) return;
     _pipe.pushState(stateJson, playUrl: playUrl);
