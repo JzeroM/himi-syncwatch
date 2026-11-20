@@ -21,6 +21,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
   late final TextEditingController _key;
   late final TextEditingController _apiBase;
   late final TextEditingController _imageBase;
+  late final TextEditingController _omdbKey;
+  late final TextEditingController _simklKey;
   final FocusNode _qrFocusNode = FocusNode(debugLabel: 'tmdbQrConfigEntry');
   Animation<double>? _routeAnimation;
   bool _obscure = true;
@@ -33,6 +35,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     _key = TextEditingController(text: s.tmdbApiKey);
     _apiBase = TextEditingController(text: s.tmdbApiBase);
     _imageBase = TextEditingController(text: s.tmdbImageBase);
+    _omdbKey = TextEditingController(text: s.omdbApiKey);
+    _simklKey = TextEditingController(text: s.simklApiKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(settingsProvider).tvMode) {
         _qrFocusNode.requestFocus();
@@ -66,6 +70,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     _key.dispose();
     _apiBase.dispose();
     _imageBase.dispose();
+    _omdbKey.dispose();
+    _simklKey.dispose();
     _qrFocusNode.dispose();
     super.dispose();
   }
@@ -75,12 +81,16 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     String? tmdbApiBase,
     String? tmdbImageBase,
     String? tmdbWatchRegion,
+    String? omdbApiKey,
+    String? simklApiKey,
   }) {
     ref.read(settingsProvider.notifier).update(
           tmdbApiKey: tmdbApiKey,
           tmdbApiBase: tmdbApiBase,
           tmdbImageBase: tmdbImageBase,
           tmdbWatchRegion: tmdbWatchRegion,
+          omdbApiKey: omdbApiKey,
+          simklApiKey: simklApiKey,
         );
   }
 
@@ -114,6 +124,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     if (_key.text != s.tmdbApiKey) _key.text = s.tmdbApiKey;
     if (_apiBase.text != s.tmdbApiBase) _apiBase.text = s.tmdbApiBase;
     if (_imageBase.text != s.tmdbImageBase) _imageBase.text = s.tmdbImageBase;
+    if (_omdbKey.text != s.omdbApiKey) _omdbKey.text = s.omdbApiKey;
+    if (_simklKey.text != s.simklApiKey) _simklKey.text = s.simklApiKey;
   }
 
   Future<void> _clearConfig() async {
@@ -277,6 +289,59 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
             },
             value: s.tmdbWatchRegion,
             onSelected: (value) => _update(tmdbWatchRegion: value),
+          ),
+        ),
+        const Divider(height: 1),
+        // ── 多平台评分数据源（可选，698）：轮播/详情页评分行的徽章数据 ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+          child: Text(
+            '多平台评分（可选）：首页轮播与详情页的评分行展示 IMDb / 烂番茄 / '
+            'Metacritic / Simkl 徽章。留空则对应徽章自动隐藏，不影响其他功能。',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.white54,
+              height: 1.5,
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: tvExcludeEditable(
+            tvMode: s.tvMode,
+            child: TextField(
+              key: const ValueKey('omdbApiKeyField'),
+              controller: _omdbKey,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'OMDb API Key（可选）',
+                hintText: 'www.omdbapi.com 的免费 key',
+                helperText: '一枚 key 提供 IMDb / 烂番茄影评 / Metacritic 三枚徽章',
+              ),
+              onChanged: (v) => _update(omdbApiKey: v),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: tvExcludeEditable(
+            tvMode: s.tvMode,
+            child: TextField(
+              key: const ValueKey('simklApiKeyField'),
+              controller: _simklKey,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Simkl API Key（可选）',
+                hintText: 'simkl.com 开发者 key',
+                helperText: '提供 Simkl 徽章',
+              ),
+              onChanged: (v) => _update(simklApiKey: v),
+            ),
           ),
         ),
         const Divider(height: 1),

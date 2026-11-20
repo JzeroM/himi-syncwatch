@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -171,7 +172,8 @@ class _HomeListState extends ConsumerState<_HomeList> {
     }
 
     final showCarousel = showHero && carouselEnabled;
-    final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
+    // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
+    final heroHeight = HomeHeroCarousel.heroHeightOf(context);
     final headerCount =
         (showHero && (hero != null || heroLoading || sectionsLoading)) ? 1 : 0;
     final weeklyIndex = sections.indexWhere((s) => s.key == 'trending_week');
@@ -195,6 +197,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
                     controller: _heroController,
                     height: heroHeight,
                     imageBuilder: _heroImage,
+                    ratingsService: ref.watch(heroRatingsServiceProvider),
                     onPageChanged: (value) =>
                         setState(() => _heroIndex = value),
                     onTap: (item) {

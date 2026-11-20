@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/emby_playback_settings.dart';
+import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/services/playback_rules.dart';
@@ -12,9 +13,12 @@ import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/track_migration.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
+import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
+import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/native_player_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
@@ -1978,7 +1982,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return CustomScrollView(
       slivers: [
         SliverAppBar(
-          expandedHeight: tv ? 220 : 320,
+          // 698：非 TV 海报高度与首页轮播同源（屏高 × 0.55，钳位 300~640）；
+          // TV 保持 220（540 逻辑高屏降高让位正文，见 TV 横幅守卫）。
+          expandedHeight: tv ? 220 : HomeHeroCarousel.heroHeightOf(context),
           pinned: true,
           // 透明 AppBar：非 TV 时清晰海报底部渐隐后，露出正文虚化氛围层，
           // 两层同源图片在接缝处柔化过渡，无硬边。
@@ -2119,6 +2125,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ],
                         ),
                       ],
+                      // 多平台评分行（698）：与首页轮播同款「品牌图标 + 分数」，
+                      // 缺哪枚隐藏哪枚；异步补位（种子 TMDB 分首帧即出）。
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: HeroRatingsLoader(
+                          query: HeroRatingQuery.fromMediaItem(item),
+                          service: ref.watch(heroRatingsServiceProvider),
+                          iconSize: 15,
+                          alignment: WrapAlignment.center,
+                          textStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            shadows: DetailScreen.heroTextShadows,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

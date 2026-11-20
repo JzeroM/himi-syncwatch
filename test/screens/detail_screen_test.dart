@@ -20,6 +20,8 @@ import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
+import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 import '../helpers/test_fakes.dart';
@@ -1239,13 +1241,48 @@ void main() {
     );
     await _pumpDetail(tester, item: item, emby: FakeEmbyService(item: item));
 
-    expect(find.text('6.2'), findsOneWidget, reason: '评分');
+    // 评分双显（对齐参考截图）：meta 行 ★6.2 + 评分行 TMDB 徽章 6.2 并存。
+    expect(find.text('6.2'), findsNWidgets(2), reason: '评分（meta 行 + TMDB 徽章）');
     expect(find.text('2026'), findsOneWidget, reason: '年份');
     expect(find.text('1 h 0m'), findsOneWidget, reason: '时长');
     expect(find.text('4K'), findsOneWidget, reason: '分辨率简称');
     expect(find.text('HDR10'), findsWidgets, reason: '视频范围（头部徽章 + 媒体信息卡）');
     expect(find.text('1.00 G'), findsWidgets, reason: '视频大小（头部 + 媒体信息卡）');
     expect(find.text('TV-MA'), findsNothing, reason: '官方分级已从附加信息行移除');
+  });
+
+  testWidgets('详情页评分行（698）：TMDB 种子徽章渲染', (tester) async {
+    // 有 communityRating：评分行出 TMDB 徽章（种子分，本地即得）。
+    // 注：与 meta 行 ★ 双显（对齐参考截图）；详情页含永续动画，独立单 pump。
+    final rated = MediaItem(
+      id: 'm1',
+      name: '测试影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+      communityRating: 8.3,
+    );
+    await _pumpDetail(tester, item: rated, emby: FakeEmbyService(item: rated));
+    expect(find.text('8.3'), findsNWidgets(2), reason: 'TMDB 种子徽章 + meta 行');
+  });
+
+  testWidgets('详情页评分行（698）：无任何评分时徽章隐藏', (tester) async {
+    final unrated = MediaItem(
+      id: 'm2',
+      name: '无评分影片',
+      type: 'Movie',
+      posterUrl: _posterUrl,
+    );
+    await _pumpDetail(
+        tester, item: unrated, emby: FakeEmbyService(item: unrated));
+    expect(find.byType(HeroRatingsLoader), findsOneWidget, reason: 'loader 在但渲染为空');
+    expect(
+      find.descendant(
+        of: find.byType(HeroRatingsLoader),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+      reason: '无评分 → 徽章行零文本',
+    );
   });
 
   testWidgets('顶部附加信息：杜比视界缩写为 DV P5，防过长', (tester) async {
@@ -2634,10 +2671,12 @@ void main() {
       expect(bar.expandedHeight, 220, reason: 'TV 540 逻辑高下横幅降高让位正文');
     });
 
-    testWidgets('非 TV 横幅 expandedHeight=320', (tester) async {
+    testWidgets('非 TV 横幅 expandedHeight=heroHeightOf（698 高度单源）', (tester) async {
       await _pumpDetail(tester, tv: false);
       final bar = tester.widget<SliverAppBar>(find.byType(SliverAppBar));
-      expect(bar.expandedHeight, 320, reason: '非 TV 保持原横幅高度');
+      // 测试窗默认 800×600：clamp(600×0.55, 300, 640) = 330。
+      expect(bar.expandedHeight, HomeHeroCarousel.heroHeightOf(tester.element(find.byType(SliverAppBar))),
+          reason: '非 TV 横幅高度与首页轮播同源（屏高 × 0.55，钳位 300~640）');
     });
 
     testWidgets('TV 浮层标题 16、简介正文 14（默认隐藏）', (tester) async {

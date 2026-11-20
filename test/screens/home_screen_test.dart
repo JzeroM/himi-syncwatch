@@ -986,6 +986,47 @@ void main() {
     expect(find.text('动画电影'), findsWidgets);
   });
 
+  testWidgets('栏序（698）：「继续观看」在「媒体库」上方', (tester) async {
+    final auth = FakeEmbyAuthService(
+      serverIds: ['s1'],
+      sessions: {
+        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
+      },
+    );
+    final emby = FakeEmbyService(
+      libraries: const [
+        LibraryFolder(
+          id: 'lb1',
+          name: '动画电影',
+          collectionType: 'movies',
+          posterUrl: '',
+        ),
+      ],
+      items: [MediaItem(id: 'm1', name: '影片1', type: 'Movie')],
+      resumeItems: [
+        MediaItem(
+          id: 'r1',
+          name: '续播电影',
+          type: 'Movie',
+          playbackPositionMs: 169000,
+          playedPercentage: 20,
+        ),
+      ],
+    );
+    await _pumpScreen(tester, auth: auth, emby: emby);
+
+    expect(find.text('继续观看'), findsOneWidget);
+    expect(find.text('媒体库'), findsOneWidget);
+
+    final resumeTop = tester.getTopLeft(find.text('继续观看'));
+    final libraryTop = tester.getTopLeft(find.text('媒体库'));
+    expect(
+      resumeTop.dy,
+      lessThan(libraryTop.dy),
+      reason: '698 用户拍板：继续观看栏移到媒体库行上面',
+    );
+  });
+
   testWidgets('TV 焦点框不被裁：首页横条列表全部 Clip.none', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],

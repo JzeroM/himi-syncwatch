@@ -208,7 +208,7 @@ final tmdbHeroItemsProvider = FutureProvider<List<TmdbHeroEntry>>((ref) async {
         includeItemTypes: 'Movie,Series',
         limit: 40,
         fields:
-            'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Genres,ProviderIds',
+            'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Genres,ProviderIds,Overview',
         sortBy: 'DateLastContentAdded',
         sortOrder: 'Descending',
       );

@@ -12,6 +12,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_refresh_hotkey.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
@@ -267,7 +268,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             limit: 20,
             includeItemTypes: 'Movie,Series',
             fields:
-                'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,Genres,UserData',
+                'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,Genres,UserData,Overview,ProviderIds',
             // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
             // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
             // 时间，新集不会变——表现为"更新了还排在后面"
@@ -407,7 +408,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showHero = homeCarouselEnabled && _heroItems.isNotEmpty;
     final heroIndex =
         _heroItems.isEmpty ? 0 : _heroIndex.clamp(0, _heroItems.length - 1);
-    final heroHeight = MediaQuery.sizeOf(context).height * 0.42;
+    // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
+    final heroHeight = HomeHeroCarousel.heroHeightOf(context);
 
     // 是否有可展示媒体内容：库/分类/续播/轮播任一非空。仅计数到位不算内容。
     final hasContent = _categories.isNotEmpty ||
@@ -575,6 +577,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         items: _heroItems,
         controller: _heroController,
         height: heroHeight,
+        ratingsService: ref.watch(heroRatingsServiceProvider),
         onPageChanged: (i) =>
             setState(() => _heroIndex = i),
         onTap: (item) {
@@ -586,17 +589,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
     var i = index - (showHero ? 1 : 0);
-    if (_libraries.isNotEmpty) {
-      if (i == 0) {
-        return _LibraryBar(
-          libraries: _libraries,
-          onOpen: (lib) => context.push(
-            '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
-          ),
-        );
-      }
-      i--;
-    }
+    // 698：「继续观看」提到「媒体库」上方（用户拍板调序）。
     if (resumeVisible.isNotEmpty) {
       if (i == 0) {
         return _ContinueWatchingBar(
@@ -614,6 +607,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onItemLongPress: (item, rect) =>
               showResumeCardMenu(
                   context, ref, item, rect),
+        );
+      }
+      i--;
+    }
+    if (_libraries.isNotEmpty) {
+      if (i == 0) {
+        return _LibraryBar(
+          libraries: _libraries,
+          onOpen: (lib) => context.push(
+            '/category/${lib.id}?name=${Uri.encodeComponent(lib.name)}&type=${lib.collectionType}',
+          ),
         );
       }
       i--;

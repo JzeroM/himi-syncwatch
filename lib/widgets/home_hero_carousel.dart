@@ -3,8 +3,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/utils/motion.dart';
+import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/services/hero_ratings_service.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
+import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 
 typedef HomeHeroImageBuilder = Widget Function(
   String url, {
@@ -22,6 +25,8 @@ class HomeHeroItem {
     this.year,
     this.rating,
     this.genres = const [],
+    this.overview,
+    this.ratingQuery,
     this.payload,
   });
 
@@ -31,6 +36,13 @@ class HomeHeroItem {
   final String? year;
   final double? rating;
   final List<String> genres;
+
+  /// 剧情简介（轮播底部 2 行截断展示；空则不渲染）。
+  final String? overview;
+
+  /// 多平台评分查询参数（null = 不渲染徽章行）。
+  final HeroRatingQuery? ratingQuery;
+
   final Object? payload;
 
   factory HomeHeroItem.fromMediaItem(MediaItem item, {Object? payload}) {
@@ -41,6 +53,8 @@ class HomeHeroItem {
       year: item.year,
       rating: item.communityRating,
       genres: item.genres.take(3).toList(),
+      overview: item.overview,
+      ratingQuery: HeroRatingQuery.fromMediaItem(item),
       payload: payload ?? item,
     );
   }
@@ -88,6 +102,7 @@ class HomeHeroCarousel extends StatefulWidget {
     this.interval = const Duration(seconds: 5),
     this.onUserInteract,
     this.imageBuilder = embyHeroImageBuilder,
+    this.ratingsService,
   });
 
   final List<HomeHeroItem> items;
@@ -97,11 +112,29 @@ class HomeHeroCarousel extends StatefulWidget {
   final void Function(HomeHeroItem item)? onTap;
   final HomeHeroImageBuilder imageBuilder;
 
+  /// 多平台评分服务（null = 不渲染徽章行）。
+  final HeroRatingsSource? ratingsService;
+
   /// 自动切换间隔（默认 5 秒）。
   final Duration interval;
 
   /// 用户开始拖动时回调（用于暂停外层动画等）。
   final VoidCallback? onUserInteract;
+
+  /// 轮播/详情页海报高度单源（698）：屏高 × [heroHeightRatio]，钳位
+  /// [heroHeightMin]~[heroHeightMax]（超大窗不糊成巨幅、小窗不塌成条）。
+  /// 服务器首页 / TMDB 首页 / 详情页（非 TV）三处消费，改一处全局生效。
+  static const double heroHeightRatio = 0.55;
+  static const double heroHeightMin = 300;
+  static const double heroHeightMax = 640;
+
+  /// 高度计算（纯函数，便于测试）：[screenHeight] × 0.55，钳位 300~640。
+  static double heroHeightFor(double screenHeight) =>
+      (screenHeight * heroHeightRatio).clamp(heroHeightMin, heroHeightMax);
+
+  /// 高度计算（取 MediaQuery 屏高）。
+  static double heroHeightOf(BuildContext context) =>
+      heroHeightFor(MediaQuery.sizeOf(context).height);
 
   /// 清晰图底部渐隐（v1.2.15）：底部渐隐到透明，露出下层同源虚化海报，
   /// 消除「清晰图 → 虚化图」的内容硬切（详情页 SliverAppBar 同款处理）。
@@ -220,6 +253,7 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
                   item: items[index],
                   imageBuilder: widget.imageBuilder,
                   onTap: widget.onTap,
+                  ratingsService: widget.ratingsService,
                 );
                 if (Motion.reduced(context)) return slide;
                 return AnimatedBuilder(
@@ -260,11 +294,13 @@ class _HeroSlide extends StatelessWidget {
     required this.item,
     required this.imageBuilder,
     this.onTap,
+    this.ratingsService,
   });
 
   final HomeHeroItem item;
   final HomeHeroImageBuilder imageBuilder;
   final void Function(HomeHeroItem item)? onTap;
+  final HeroRatingsSource? ratingsService;
 
   @override
   Widget build(BuildContext context) {
@@ -273,6 +309,8 @@ class _HeroSlide extends StatelessWidget {
     final rating = item.rating;
     final year = item.year;
     final genres = item.genres;
+    final overview = item.overview?.trim();
+    final query = item.ratingQuery;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -347,6 +385,38 @@ class _HeroSlide extends StatelessWidget {
                 if (rating != null || year != null || genres.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _MetaRow(rating: rating, year: year, genres: genres),
+                ],
+                if (overview != null && overview.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  // 简介：最多 2 行，省略号截断（698；对齐参考截图）。
+                  Text(
+                    overview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      height: 1.4,
+                      shadows: HomeHeroCarousel.lightTextShadows,
+                    ),
+                  ),
+                ],
+                if (query != null && ratingsService != null) ...[
+                  const SizedBox(height: 8),
+                  // 多平台评分徽章行（698）：品牌图标 + 分数，缺哪枚隐藏哪枚。
+                  HeroRatingsLoader(
+                    query: query,
+                    service: ratingsService!,
+                    iconSize: 15,
+                    alignment: WrapAlignment.center,
+                    textStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      shadows: HomeHeroCarousel.lightTextShadows,
+                    ),
+                  ),
                 ],
               ],
             ),

@@ -208,6 +208,35 @@ class TraktClient {
     return show is Map ? Map<String, dynamic>.from(show) : null;
   }
 
+  /// 影片/剧集评分（`/{movies|shows}/{id}/ratings`，0–10）。
+  ///
+  /// id 优先 IMDB id（`tt…`），否则 `tmdb-{id}`；双 id 皆缺或未命中返回 null。
+  /// Trakt 端点接受两种 id 形态，无需先解析 trakt id。
+  Future<double?> getRating({
+    String? imdbId,
+    String? tmdbId,
+    required bool isMovie,
+  }) async {
+    final imdb = imdbId?.trim();
+    String? id;
+    if (imdb != null && imdb.isNotEmpty) {
+      id = imdb;
+    } else {
+      final tmdb = tmdbId?.trim();
+      if (tmdb != null && tmdb.isNotEmpty) id = 'tmdb-$tmdb';
+    }
+    if (id == null) return null;
+    final kind = isMovie ? 'movies' : 'shows';
+    final response = await _request('GET', '/$kind/$id/ratings');
+    final data = _mapBody(response);
+    if (response.statusCode == 200) {
+      final rating = data['rating'];
+      return rating is num ? rating.toDouble() : null;
+    }
+    if (response.statusCode == 404) return null;
+    throw _exception(response, data);
+  }
+
   Future<Map<String, dynamic>?> getEpisode({
     required int showId,
     required int season,

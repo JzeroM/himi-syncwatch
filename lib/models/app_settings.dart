@@ -179,6 +179,12 @@ class AppSettings {
   /// TMDB watch region（流媒体平台可用区域），默认 US。
   final String tmdbWatchRegion;
 
+  /// OMDb API Key（可选；评分徽章 IMDb/烂番茄影评/Metacritic 三枚数据源）。
+  final String omdbApiKey;
+
+  /// Simkl API Key（可选；评分徽章 Simkl 数据源）。
+  final String simklApiKey;
+
   final bool traktAutoSync;
 
   final int traktSyncIntervalMinutes;
@@ -504,6 +510,8 @@ class AppSettings {
     this.tmdbApiBase = 'https://api.tmdb.org',
     this.tmdbImageBase = 'https://wsrv.nl/?url=https://image.tmdb.org',
     this.tmdbWatchRegion = 'US',
+    this.omdbApiKey = '',
+    this.simklApiKey = '',
     this.traktAutoSync = true,
     this.traktSyncIntervalMinutes = defaultTraktSyncIntervalMinutes,
     this.traktDisabledServerIds = '',
@@ -632,6 +640,8 @@ class AppSettings {
     String? tmdbApiBase,
     String? tmdbImageBase,
     String? tmdbWatchRegion,
+    String? omdbApiKey,
+    String? simklApiKey,
     bool? traktAutoSync,
     int? traktSyncIntervalMinutes,
     String? traktDisabledServerIds,
@@ -717,6 +727,8 @@ class AppSettings {
       tmdbApiBase: tmdbApiBase ?? this.tmdbApiBase,
       tmdbImageBase: tmdbImageBase ?? this.tmdbImageBase,
       tmdbWatchRegion: tmdbWatchRegion ?? this.tmdbWatchRegion,
+      omdbApiKey: omdbApiKey ?? this.omdbApiKey,
+      simklApiKey: simklApiKey ?? this.simklApiKey,
       traktAutoSync: traktAutoSync ?? this.traktAutoSync,
       traktSyncIntervalMinutes:
           traktSyncIntervalMinutes ?? this.traktSyncIntervalMinutes,
@@ -828,6 +840,8 @@ class AppSettings {
         'tmdbApiBase': tmdbApiBase,
         'tmdbImageBase': tmdbImageBase,
         'tmdbWatchRegion': tmdbWatchRegion,
+        'omdbApiKey': omdbApiKey,
+        'simklApiKey': simklApiKey,
         'traktAutoSync': traktAutoSync,
         'traktSyncIntervalMinutes': traktSyncIntervalMinutes,
         'traktDisabledServerIds': traktDisabledServerIds,
@@ -1041,6 +1055,8 @@ class AppSettings {
       tmdbWatchRegion: tmdbWatchRegions.contains(json['tmdbWatchRegion'])
           ? json['tmdbWatchRegion'] as String
           : 'US',
+      omdbApiKey: json['omdbApiKey'] as String? ?? '',
+      simklApiKey: json['simklApiKey'] as String? ?? '',
       traktAutoSync: json['traktAutoSync'] as bool? ?? true,
       traktSyncIntervalMinutes: normalizeTraktSyncInterval(
         json['traktSyncIntervalMinutes'],

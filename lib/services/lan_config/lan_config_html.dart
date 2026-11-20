@@ -87,6 +87,10 @@ String buildLanConfigHtml({
   <input id="tmdb_api_base" type="url" placeholder="https://api.tmdb.org" autocomplete="url">
   <label>图片代理地址（可选，留空保持当前）</label>
   <input id="tmdb_image_base" type="url" placeholder="https://wsrv.nl/?url=https://image.tmdb.org" autocomplete="url">
+  <label>多平台评分 OMDb Key（可选，留空保持当前）</label>
+  <input id="omdb_key" type="password" autocomplete="off" placeholder="www.omdbapi.com 免费 key">
+  <label>多平台评分 Simkl Key（可选，留空保持当前）</label>
+  <input id="simkl_key" type="password" autocomplete="off" placeholder="simkl.com 开发者 key">
   <label>流媒体平台区域</label>
   <select id="tmdb_region">
     <option value="">保持当前</option>
@@ -174,7 +178,9 @@ function submitTmdb() {
     apiKey: document.getElementById('tmdb_key').value.trim(),
     apiBase: document.getElementById('tmdb_api_base').value.trim(),
     imageBase: document.getElementById('tmdb_image_base').value.trim(),
-    region: document.getElementById('tmdb_region').value
+    region: document.getElementById('tmdb_region').value,
+    omdbKey: document.getElementById('omdb_key').value.trim(),
+    simklKey: document.getElementById('simkl_key').value.trim()
   }, 'tmdb_btn', 'tmdb_msg');
 }
 function submitDanmaku() {
