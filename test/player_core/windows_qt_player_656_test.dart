@@ -181,9 +181,14 @@ void main() {
 
     test('状态只在字段真的变化时发信号（20Hz 推送下关键）', () {
       expect(stateCpp, contains('bool assign(T& target, const T& value)'));
-      // P1：dirty 块内先同步弹幕时钟再 emit（语义仍是「只在变化时发」）。
-      expect(stateCpp, contains('if (dirty) {'));
-      expect(stateCpp, contains('emit changed();'));
+      // P1：dirty 时先同步弹幕时钟再 emit（语义仍是「只在变化时发」）。
+      // 696：定向 emit——位置字段走 positionTick（~20Hz 不拖重型绑定）、
+      // mediaInfoJson 走 mediaInfoChanged（JSON.parse 绑定只随内容真变），
+      // 其余走 changed。
+      expect(stateCpp, contains('if (dirty || posDirty) danmakuClockSync();'));
+      expect(stateCpp, contains('if (posDirty) emit positionTick();'));
+      expect(stateCpp, contains('if (mediaDirty) emit mediaInfoChanged();'));
+      expect(stateCpp, contains('if (dirty) emit changed();'));
     });
   });
 

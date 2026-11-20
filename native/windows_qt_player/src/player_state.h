@@ -23,7 +23,13 @@ class PlayerState : public QObject {
     Q_OBJECT
 
     // ── 播放 ──
-    Q_PROPERTY(qint64 positionMs READ positionMs NOTIFY changed)
+    // 【696：NOTIFY 拆分】position/duration/buffered 由 mpv 事件以 ~20Hz
+    // 更新。若挂在 `changed` 上，每次位置更新都会让**所有** `changed`
+    // 绑定重求值——其中 BottomBar.mediaBadges / MediaInfoPanel.mediaGroups
+    // 是 `JSON.parse(mediaInfoJson)`（KB 级对象图），20Hz 解析 = 每秒
+    // 数千对象的 GC 垃圾 → 周期性回收停顿（「跑一秒停顿一下」真凶）。
+    // 拆出 `positionTick` 后只有进度条/时间标签等廉价绑定跟随。
+    Q_PROPERTY(qint64 positionMs READ positionMs NOTIFY positionTick)
 
     /// 弹幕专用插值位置（P1）：锚点 + 单调时钟 + 死区/平滑收敛。
     ///
@@ -36,9 +42,9 @@ class PlayerState : public QObject {
     Q_PROPERTY(int danmakuClockErrorMs READ danmakuClockErrorMs NOTIFY changed)
     /// 硬对齐次数（seek / 卡顿恢复）——调试面板用。
     Q_PROPERTY(int danmakuHardResyncs READ danmakuHardResyncs NOTIFY changed)
-    Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY changed)
+    Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY positionTick)
     /// 697：已缓冲毫秒数（调试面板显示）。
-    Q_PROPERTY(qint64 bufferedMs READ bufferedMs NOTIFY changed)
+    Q_PROPERTY(qint64 bufferedMs READ bufferedMs NOTIFY positionTick)
     Q_PROPERTY(bool paused READ paused NOTIFY changed)
     Q_PROPERTY(double volume READ volume NOTIFY changed)
     Q_PROPERTY(double speed READ speed NOTIFY changed)
@@ -54,7 +60,12 @@ class PlayerState : public QObject {
     Q_PROPERTY(QString engineLabel READ engineLabel NOTIFY changed)
     Q_PROPERTY(QString networkSpeedText READ networkSpeedText NOTIFY changed)
     // 695：媒体徽章 + 视频详细信息（Dart 预格式化 JSON，QML 解析渲染，仅非房间）
-    Q_PROPERTY(QString mediaInfoJson READ mediaInfoJson NOTIFY changed)
+    // 【696】独立 NOTIFY：mediaInfoJson 是 KB 级 JSON，BottomBar/MediaInfoPanel
+    // 各有一条 `JSON.parse(mediaInfoJson)` 绑定。挂 `changed` 时 20Hz 位置
+    // 更新 + 1Hz 网速 patch 都会触发重解析（每秒数十次 KB 级对象图重建 =
+    // GC 垃圾，「跑一秒停顿一下」真凶）；独立信号后只在内容真变时解析。
+    Q_PROPERTY(QString mediaInfoJson READ mediaInfoJson NOTIFY
+                   mediaInfoChanged)
     Q_PROPERTY(QString videoFit READ videoFit NOTIFY changed)
     Q_PROPERTY(QString decodeMode READ decodeMode NOTIFY changed)
     Q_PROPERTY(bool glassUi READ glassUi NOTIFY changed)
@@ -98,6 +109,10 @@ class PlayerState : public QObject {
 
     // ── 弹幕渲染（665，ASS 旁路喂 mpv）──
     Q_PROPERTY(QVariantList danmakuItems READ danmakuItemsVariant NOTIFY danmakuChanged)
+    /// 696：弹幕数据代（reset 时递增）——QML 据此清空飞行/待准入/行号缓存，
+    /// 换集/屏蔽规则变化后旧条目不再残留（真机：换集后旧弹幕按旧时间戳
+    /// 在新集时间轴上重新上屏）。
+    Q_PROPERTY(int danmakuEpoch READ danmakuEpoch NOTIFY danmakuChanged)
 
     // ── 694 M3：弹幕弹窗状态（绑定文案 / 搜索结果 / 搜索中 / 错误）──
     Q_PROPERTY(QString danmakuBinding READ danmakuBinding NOTIFY changed)
@@ -302,6 +317,7 @@ public:
         QString episodeTitle;
     };
     const QList<Danmaku>& danmakuItems() const { return danmakuItems_; }
+    int danmakuEpoch() const { return danmakuEpoch_; }
     QString danmakuBinding() const { return danmakuBinding_; }
     const QList<SearchHit>& danmakuSearchResults() const {
         return danmakuSearchResults_;
@@ -396,6 +412,13 @@ public:
 signals:
     void changed();
 
+    /// 696：位置三字段专用通知（~20Hz）——与 `changed` 拆分，避免位置
+    /// 抖动把重型绑定（JSON.parse 等）拖进 20Hz 重求值风暴。
+    void positionTick();
+
+    /// 696：媒体信息 JSON 专用通知（仅内容真变时发）。
+    void mediaInfoChanged();
+
     /// 【独立信号】调试文本 2s 刷新一次；若复用 `changed` 会让所有
     /// Q_PROPERTY 的绑定每秒全量重算（白白重绘整个控件层）。
     void debugTextChanged();
@@ -430,7 +453,7 @@ private:
     void setEpisodes(const QJsonArray& arr);
     void setTracks(const QJsonArray& arr);
     void setVersions(const QJsonArray& arr);
-    void setDanmakuItems(const QJsonArray& arr);
+    void setDanmakuItems(const QJsonArray& arr, bool reset = false);
     void setDanmakuSearchResults(const QJsonArray& arr);
 
     qint64 positionMs_ = 0;
@@ -526,6 +549,8 @@ private:
     QList<Version> versions_;
     int currentVersionIndex_ = 0;
     QList<Danmaku> danmakuItems_;
+    /// 696：弹幕数据代（reset 时递增）——QML 据此清空飞行/待准入缓存。
+    int danmakuEpoch_ = 0;
     QList<SearchHit> danmakuSearchResults_;
     QString danmakuBinding_;
     bool danmakuSearching_ = false;

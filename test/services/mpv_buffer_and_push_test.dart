@@ -97,6 +97,44 @@ void main() {
     });
   });
 
+  group('⑤ 驱动链减负（696：跑一秒停顿一下 GC 根治）', () {
+    test('tick 每帧零分配：投影挪进 paint()（安卓 Canvas 同构）', () {
+      final layer = read('native/windows_qt_player/src/qml/DanmakuLayer.qml');
+      // 每帧只写一个 qint64；x/y/alpha/渐隐全在 C++ 现算。
+      expect(layer, contains('paintLayer.positionMs = pos'),
+          reason: '每帧唯一写入——不再 out.push N 个 JS 对象 + QVariantList 深转换');
+      expect(layer, isNot(contains('frameItems = out')),
+          reason: '每帧 N 对象分配 = GC 垃圾，周期性回收停顿');
+      final paint =
+          read('native/windows_qt_player/src/danmaku_paint_item.cpp');
+      expect(paint, contains('positionMs_ - timeMs'),
+          reason: '投影公式在 paint() 内按 positionMs 现算');
+    });
+
+    test('NOTIFY 拆分：位置 20Hz 与 mediaInfoJson 不再拖重型绑定', () {
+      final h = read('native/windows_qt_player/src/player_state.h');
+      expect(h,
+          contains('Q_PROPERTY(qint64 positionMs READ positionMs NOTIFY positionTick)'));
+      expect(h,
+          contains('Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY positionTick)'));
+      expect(h,
+          contains('Q_PROPERTY(qint64 bufferedMs READ bufferedMs NOTIFY positionTick)'));
+      expect(h, contains('NOTIFY\n                   mediaInfoChanged'),
+          reason: 'mediaInfoJson 独立信号——JSON.parse 绑定只随内容真变重算');
+      final cpp = read('native/windows_qt_player/src/player_state.cpp');
+      expect(cpp, contains('if (posDirty) emit positionTick();'));
+      expect(cpp, contains('if (mediaDirty) emit mediaInfoChanged();'));
+    });
+
+    test('弹幕增量推送 + reset 全量重建（不再 500ms 整窗重推）', () {
+      expect(screen, contains('_qtDanmakuPushedKeys'));
+      expect(screen, contains('if (sig == _lastQtDanmakuSig) return;'));
+      final cpp = read('native/windows_qt_player/src/player_state.cpp');
+      expect(cpp, contains('if (same && !reset) return;'),
+          reason: '批次相等短路（reset 必须放行——epoch 递增不能漏）');
+    });
+  });
+
   group('③ E 鸿蒙详情面板可滚动（真机回归）', () {
     test('MediaInfoContent 包 Scroll 纵向滚动', () {
       final i = ohosPanel.indexOf('MediaInfoContent() {');

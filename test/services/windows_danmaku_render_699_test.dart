@@ -131,8 +131,33 @@ void main() {
       final cpp = read('native/windows_qt_player/src/player_state.cpp');
       final idx = cpp.indexOf('void PlayerState::setDanmakuItems');
       expect(idx, greaterThan(0));
-      final body = cpp.substring(idx, idx + 1200);
-      expect(body, contains('if (same) return;'));
+      final body = cpp.substring(idx, idx + 1600);
+      // 696：批次语义（增量推送只发没见过的条目）——短路保留，但 reset
+      // 时必须放行（换集后内容可能巧合相同，epoch 递增 + QML 清缓存不能漏）。
+      expect(body, contains('if (same && !reset) return;'));
+    });
+
+    test('2.8.3 增量推送（696）：只发没见过的 key + reset 全量重建', () {
+      final screen = read('lib/screens/player/player_screen.dart');
+      expect(screen, contains('_qtDanmakuPushedKeys'),
+          reason: '已推 key 去重——不再整窗 500ms 全量重推');
+      expect(screen, contains("'danmakuReset': true"),
+          reason: '换集/屏蔽规则变化 → Qt 清缓存 + 全量重建');
+      expect(screen, contains('mpv.danmakuGeneration'),
+          reason: '换集检测（弹幕数据代）');
+      // 回跳 seek：只清已推集合并重发（QML 飞行缓存保留 → 行号不跳）
+      expect(screen, contains('posMs + 1000 < _qtDanmakuLastPosMs'));
+    });
+
+    test('2.8.4 Qt 侧 epoch 递增 + QML 据此清缓存（旧集弹幕不串场）', () {
+      final h = read('native/windows_qt_player/src/player_state.h');
+      expect(h, contains('Q_PROPERTY(int danmakuEpoch'));
+      expect(h, contains('int danmakuEpoch_ = 0;'));
+      final cpp = read('native/windows_qt_player/src/player_state.cpp');
+      expect(cpp, contains('++danmakuEpoch_'));
+      final layer = read('native/windows_qt_player/src/qml/DanmakuLayer.qml');
+      expect(layer, contains('stateRef.danmakuEpoch'),
+          reason: 'QML 消费数据代——reset 后清空飞行/待准入/行号缓存');
     });
   });
 

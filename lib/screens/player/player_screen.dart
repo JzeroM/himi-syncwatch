@@ -4579,6 +4579,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 699：上一次轻量弹幕推送的内容签名（去重，避免 500ms 白推）。
   String _lastQtDanmakuSig = '';
 
+  /// 696：Qt 弹幕增量推送状态——只发没见过的条目（key = timeMs:text），
+  /// 换源/屏蔽规则/大跨度 seek 时清空重发（reset）。
+  final Set<String> _qtDanmakuPushedKeys = <String>{};
+  int _qtDanmakuGen = -1;
+  String _qtDanmakuFilterSig = '';
+  int _qtDanmakuLastPosMs = 0;
+
   /// 694 M3：弹幕弹窗共用控制器（Flutter sheet / QML / Android 面板）。
   DanmakuSearchController? _dmPanelController;
   String _dmPanelSignature = '';
@@ -4602,6 +4609,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 与 [_syncNativePanelData] 的区别：这里**不重建**剧集/版本/轨道列表，
   /// 只把当前弹幕窗口 + 统计塞进一份最小快照，成本与播放位置成正比而非
   /// 与剧集数量成正比。
+  ///
+  /// 696：**增量推送**——只发没见过的条目（key = timeMs:text 去重），不再
+  /// 整窗每 500ms 全量重推（QVariantList 全量重建 + QML 全量 reindex =
+  /// 「一顿一顿」的 2Hz GC 节律源）。换集/屏蔽规则变化 → reset 全量重发
+  /// + QML 清缓存（旧集弹幕不串场）；回跳 seek → 只清已推集合并重发
+  /// （QML 飞行缓存保留，行号不跳）。
   void _pushQtDanmakuTick() {
     final mpv = _player;
     final qt = MpvSessionPlatform.activeQtAdapter;
@@ -4611,17 +4624,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final posMs = qt.position;
     final window = mpv.buildDanmakuWindowFor(posMs);
     final stats = mpv.danmakuStats;
-    // 【必须按「内容是否变化」去重，不能按「是否为空」提前 return】
-    // 窗口从非空变空（弹幕全过期 / 关弹幕）时也要推一次空列表，
-    // 否则 Qt 侧会保留上一批弹幕节点继续显示。
-    final sig = '${window.length}|${window.isEmpty ? '' : window.first.timeMs}'
-        '|${window.isEmpty ? '' : window.last.timeMs}'
-        '|${stats.total}|${stats.onscreen}|${stats.blocked}';
-    if (sig == _lastQtDanmakuSig) return;
-    _lastQtDanmakuSig = sig;
+    final filterSig = mpv.danmakuFilterSig;
+    // reset（换源/换屏蔽规则）→ Qt 侧清缓存；回跳 seek → 只重发（行号稳定）。
+    final reset = mpv.danmakuGeneration != _qtDanmakuGen ||
+        filterSig != _qtDanmakuFilterSig;
+    if (reset || posMs + 1000 < _qtDanmakuLastPosMs) {
+      _qtDanmakuPushedKeys.clear();
+    }
+    _qtDanmakuGen = mpv.danmakuGeneration;
+    _qtDanmakuFilterSig = filterSig;
+    _qtDanmakuLastPosMs = posMs;
+    // 集合粗上限：清空无害（重复条目 QML reindex 去重、过期条目
+    // syncFlying 自然淘汰）。
+    if (_qtDanmakuPushedKeys.length > 4000) _qtDanmakuPushedKeys.clear();
+    final fresh = <NativeDanmakuItem>[];
+    for (final e in window) {
+      if (_qtDanmakuPushedKeys.add('${e.timeMs}:${e.text}')) fresh.add(e);
+    }
+    if (fresh.isEmpty && !reset) {
+      // 条目无新增：只推统计（「在屏」等仍要跟手），全都没变才跳过。
+      final sig = '${stats.total}|${stats.onscreen}|${stats.blocked}';
+      if (sig == _lastQtDanmakuSig) return;
+      _lastQtDanmakuSig = sig;
+      qt.pushStatePatch(
+        <String, Object?>{
+          'danmakuTotal': stats.total,
+          'danmakuBlocked': stats.blocked,
+          'danmakuOnscreen': stats.onscreen,
+        },
+      );
+      return;
+    }
+    _lastQtDanmakuSig = '${stats.total}|${stats.onscreen}|${stats.blocked}';
     qt.pushNativeState(
       <String, Object?>{
-        'danmakuItems': window.map((e) => e.toJson()).toList(growable: false),
+        if (reset) 'danmakuReset': true,
+        'danmakuItems': fresh.map((e) => e.toJson()).toList(growable: false),
         'danmakuTotal': stats.total,
         'danmakuBlocked': stats.blocked,
         'danmakuOnscreen': stats.onscreen,

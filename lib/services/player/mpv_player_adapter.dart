@@ -1362,9 +1362,20 @@ class MpvPlayerAdapter implements PlayerAdapter, AsyncDisposablePlayer {
   /// 弹幕全量列表（PlayerScreen 解析后注入；原生 UI 的弹幕渲染数据源）。
   List<DanmakuComment> _nativeDanmakuComments = const [];
 
+  /// 696：弹幕数据代——换集/重拉弹幕时递增。Qt 增量推送据此判定
+  /// `danmakuReset`（全量重发 + QML 清缓存），防旧集弹幕串场。
+  int _danmakuGeneration = 0;
+  int get danmakuGeneration => _danmakuGeneration;
+
+  /// 696：屏蔽规则签名（变化 → Qt 增量推送走 reset 全量重建）。
+  String get danmakuFilterSig => '${_nativeUiExtras.danmakuBlockTop}'
+      '|${_nativeUiExtras.danmakuBlockBottom}'
+      '|${_nativeUiExtras.danmakuBlockWords.join('\u0001')}';
+
   /// 注入弹幕全量（原生 UI 打开期间由 [_buildDanmakuWindow] 切窗推送）。
   set nativeDanmakuComments(List<DanmakuComment> comments) {
     _nativeDanmakuComments = comments;
+    _danmakuGeneration++; // 696：新弹幕源 → Qt 增量推送走 reset 全量重建
     _pushNativeUiState();
   }
 

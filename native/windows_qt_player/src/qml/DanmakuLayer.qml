@@ -168,22 +168,34 @@ Item {
     readonly property int effectiveBottomRows:
         Math.max(1, Math.min(bottomRows, autoRows))
 
+    /// 696：集合维护节流（ms）——准入/过期/派道/静态条目维护的最小间隔。
+    ///
+    /// 【为什么可以节流】条目位置是 `(pos - timeMs)` 的**纯函数**，与何时
+    /// 准入无关；维护节拍只决定条目何时进入可见列表，而准入提前量是
+    /// keepAheadMs=35s，250ms 的维护延迟完全无感。
+    readonly property int maintainGapMs: 250
+
     // ── 内部状态（对应安卓 flying / laneOf）──
     //
-    // 【为什么用普通对象而非 QML property】`flying`/`laneOf` 是每帧变化的
-    // 中间状态，渲染只依赖 `frameItems`。若声明成 property，每次 tick 赋值
-    // 都会触发 QML 属性通知 → 30fps 下产生大量无效绑定重算。放在普通对象
-    // 里（`_state.xxx` 内部修改不触发通知）可完全避开。
+    // 【为什么用普通对象而非 QML property】`flying`/`laneOf` 是低频变化的
+    // 中间状态，渲染只依赖 `paintItems`（静态条目，低频重建）。若声明成
+    // property，每次赋值都会触发 QML 属性通知 → 帧循环里产生大量无效
+    // 绑定重算。放在普通对象里（`_state.xxx` 内部修改不触发通知）可避开。
     readonly property var _state: ({
         flying: [],     // 飞行缓存：已入屏的弹幕（跨帧保留到生命周期结束）
         laneOf: ({}),   // 行号绑定：timeMs:text → lane（-1 = 满槽丢弃）
         laneSig: "",    // 当前轨道容量签名
         sorted: [],     // 694：时间升序缓存（集合变化才重排）
         laneTravel: -1,  // 694：上次派道用的 travelMs（倍速变化才重派）
-        incoming: []  // 695：待准入缓存（reindex 填，tick 准入；替代逐帧全表扫描）
+        incoming: [],  // 695：待准入缓存（reindex 填，tick 准入；替代逐帧全表扫描）
+        epoch: -1,  // 696：上次消费的 danmakuEpoch（reset 时清缓存判据）
+        lastMaintainPos: 0,  // 696：上次维护时的播放位置（节流判据）
+        dirty: true   // 696：数据/样式变化 → 下一帧强制维护
     })
-    /// 当前帧要渲染的弹幕（含 lane 与 progress）。
-    property var frameItems: []
+    /// 静态渲染条目（696：仅集合/车道/取色变化时重建，每秒最多几次）——
+    /// {text, color, mode, timeMs, lane, textW}。x/y/alpha/渐隐由
+    /// DanmakuPaint.paint() 按 positionMs 现算。
+    property var paintItems: []
 
     /// 轨道容量签名（行数/字号变化 → 必须整表重排）。
     readonly property string laneSig: effectiveScrollRows + "|"
@@ -193,11 +205,48 @@ Item {
         // 行容量变化（转屏/改行数/改字号）→ 清空行号绑定，强制重排
         _state.laneOf = ({})
         _state.flying = []
+        _state.dirty = true
         tick()
     }
     onDanmakuItemsChanged: {
         // 695：数据变化才重索引（200ms 快照节拍，安卓「内容没变不刷」同款）
+        // 696：数据代变化（reset：换集/屏蔽规则/回跳 seek）→ 清空飞行/
+        // 待准入/行号缓存——否则旧条目按旧时间戳在新时间轴上重新上屏
+        //（真机：换集后旧弹幕串场）。
+        var ep = stateRef ? stateRef.danmakuEpoch : 0
+        if (ep !== _state.epoch) {
+            _state.epoch = ep
+            _state.flying = []
+            _state.incoming = []
+            _state.laneOf = ({})
+            _state.sorted = []
+        }
+        _state.dirty = true
         root.reindex()
+        tick()
+    }
+    // 696：取色烘焙在静态条目里 → 变化即标脏重算（maintain 无条件重建，
+    // 这里只需保证下一帧跑一次 maintain）。
+    onColorModeChanged: {
+        _state.dirty = true
+        tick()
+    }
+    onCustomColorChanged: {
+        _state.dirty = true
+        tick()
+    }
+    // 696：关→开弹幕/透明度归零恢复/倍速变化 → 立即维护（否则 paintItems
+    // 停留在清空态或旧车道，弹幕消失/跳行）。
+    onDanmakuEnabledChanged: {
+        _state.dirty = true
+        tick()
+    }
+    onDanmakuOpacityChanged: {
+        _state.dirty = true
+        tick()
+    }
+    onSpeedChanged: {
+        _state.dirty = true
         tick()
     }
     Component.onCompleted: tick()
@@ -383,29 +432,47 @@ Item {
     }
 
     /// 固定弹幕淡入淡出（首尾各 10% 生命周期，对应安卓 `fixedFade`）。
+    /// 696：公式已下沉 DanmakuPaintItem::fixedFade（投影在 paint() 现算），
+    /// 此处保留 QML 镜像仅供语义对照/单测锚定，运行时不再调用。
     function fixedFade(progress) {
         if (progress < 0.1) return progress / 0.1
         if (progress > 0.9) return (1.0 - progress) / 0.1
         return 1.0
     }
 
-    /// 单帧更新：同步飞行缓存 → 分配行号 → 计算渲染项。
+    /// 单帧更新（696：每帧只写一次 positionMs，零 JS 对象分配）——
+    /// 准入/过期/派道/静态条目按 maintainGapMs 节流走 maintain()；
+    /// x/y/alpha 投影全部在 DanmakuPaint.paint() 内现算。
     function tick() {
+        var pos = currentPos()
+        // 696：维护节流——位置是纯函数自变量，维护节拍只决定条目何时
+        // 进入可见列表（提前量 keepAheadMs=35s，250ms 延迟无感）。
+        if (_state.dirty
+                || Math.abs(pos - _state.lastMaintainPos) >= maintainGapMs) {
+            _state.lastMaintainPos = pos
+            _state.dirty = false
+            maintain(pos)
+        }
+        paintLayer.positionMs = pos
+    }
+
+    /// 集合维护：准入 → 过期修剪 → 排序/派道（集合或倍速变化才重算）→
+    /// 静态条目重建。仅在数据变化/节流到点时调用。
+    function maintain(pos) {
         if (!danmakuEnabled || danmakuOpacity <= 0) {
-            if (frameItems.length > 0) frameItems = []
+            if (paintItems.length > 0) paintItems = []
             return
         }
         // 695：空短路（安卓「无活跃弹幕不重绘」同款）
         if (_state.flying.length === 0 && _state.incoming.length === 0) {
-            if (frameItems.length > 0) frameItems = []
+            if (paintItems.length > 0) paintItems = []
             return
         }
-        var pos = currentPos()
         var spd = Math.max(0.25, Math.min(4.0, speed))
         var travelMs = scrollBaseMs / spd
 
         // 694：排序/派道缓存——只有「飞行集变化」或 travelMs（倍速）
-        // 变化才重算；tick 每帧只算 x 进度。旧实现每帧 slice().sort +
+        // 变化才重算；每帧只写 positionMs。旧实现每帧 slice().sort +
         // assignLanes 全量重跑，帧预算紧时弹幕一卡一卡。
         var setChanged = syncFlying(pos, travelMs)
         if (setChanged || _state.sorted.length !== _state.flying.length
@@ -417,45 +484,35 @@ Item {
             })
             assignLanes(_state.sorted, travelMs)
         }
-        var all = _state.sorted
+        // 696：**无条件**重建静态条目（O(在飞)、≤4Hz，setItems 侧还有
+        // 内容相等短路）——条件重建会在「关→开弹幕」（paintItems 已清空但
+        // 集合未变）等路径漏建，弹幕整屏消失。
+        rebuildPaintItems()
+    }
 
+    /// 696：静态条目重建（集合/车道/取色变化时）——只存文本、颜色、
+    /// 模式、时间、行号、文本宽；投影在 C++ 侧按 positionMs 现算。
+    /// 公式与旧 tick 逐字等价：scroll 左移 `width - progress*(width+textW)`，
+    /// 顶/底居中 `(width-textW)/2`；bottom 贴底 `height-edge-(lane+1)*lineH`。
+    function rebuildPaintItems() {
+        var all = _state.sorted
         var lanes = _state.laneOf
         var out = []
         for (var i = 0; i < all.length; i++) {
             var it = all[i]
             var lane = lanes[it._key]
             if (lane === undefined || lane < 0) continue
-            var elapsed = pos - it.timeMs
-            var isFixed = it.mode === "top" || it.mode === "bottom"
-            var life = isFixed ? fixedMs : travelMs
-            if (elapsed < 0 || elapsed > life) continue
-            var textW = textWOf(it)
-            // 695：x/y/alpha 预计算（自绘 DanmakuPaint 只读绘制，逻辑单源）
-            var progress = elapsed / life
-            var x
-            if (it.mode === "scroll") {
-                x = root.width - progress * (root.width + textW)
-            } else {
-                x = (root.width - textW) / 2
-            }
-            var y
-            if (it.mode === "bottom") {
-                y = root.height - root.edgePadding - (lane + 1) * root.lineHeight
-            } else {
-                y = root.edgePadding + lane * root.lineHeight
-            }
             out.push({
                 text: it.text || "",
                 // 695：取色映射（danmakuColorMode 单色/主题等）随自绘保留
                 color: root.effectiveColor(it.color || "#FFFFFF"),
-                x: x,
-                y: y,
-                alpha: root.danmakuOpacity
-                    * (isFixed ? root.fixedFade(progress) : 1.0)
+                mode: it.mode,
+                timeMs: it.timeMs,
+                lane: lane,
+                textW: textWOf(it)
             })
-            if (out.length >= poolSize) break
         }
-        frameItems = out
+        paintItems = out
     }
 
     /// 帧驱动：vsync 对齐（FrameAnimation，Qt 6.3+，本仓 Qt 6.8.3）。
@@ -468,12 +525,20 @@ Item {
     // ── 渲染：695 自绘单画布（DanmakuPaint = QQuickPaintedItem + QPainter，
     // 对齐安卓 DanmakuLayerView.kt 的 Canvas.drawText 模式）——
     // 旧 Repeater + Text 池（场景图 N 节点 + 每帧 N×绑定重求值 + N 对象
-    // 分配）是 Windows 弹幕掉帧根因，整体退役。tick/车道/投影时钟不变 ──
+    // 分配）是 Windows 弹幕掉帧根因，整体退役。
+    // 696：投影也下沉到 paint()——每帧仅写 positionMs（一个 qint64），
+    // 静态条目 paintItems 仅集合/车道/取色变化时重建 ──
     DanmakuPaint {
+        id: paintLayer
         anchors.fill: parent
-        items: root.frameItems
+        items: root.paintItems
         fontSize: root.fontSize
         outlineWidth: root.outlineWidth
         outlineColor: root.cssColor(root.outlineColor)
+        travelMs: root.scrollBaseMs / Math.max(0.25, Math.min(4.0, root.speed))
+        contentOpacity: root.danmakuOpacity
+        edgePadding: root.edgePadding
+        lineHeight: root.lineHeight
+        poolCap: root.poolSize
     }
 }

@@ -24,6 +24,10 @@ import 'qt_player_adapter.dart';
 /// QML 直驱本地 mpv（mpvWindow.*），到这里的通知只是记账。
 class QtPlayerSession {
   QtPlayerSession._(this.adapter, this._template);
+  //
+  // 【696】`_template` 不含 danmakuItems——弹幕走 `_pushQtDanmakuTick`
+  // 增量通道单一信源；模板里的快照窗口是陈旧数据，切集重放会把旧集弹幕
+  // 按旧时间戳塞进新集时间轴（串场）。
 
   /// 当前活跃会话（Qt 窗口存活期间唯一）。
   static QtPlayerSession? active;
@@ -71,7 +75,8 @@ class QtPlayerSession {
       // 671：旧会话让位 → 旧的隐身播放页退场（调用方微任务判定自替换）
       old.onReplaced?.call();
     }
-    final session = QtPlayerSession._(adapter, Map.of(template));
+    final session =
+        QtPlayerSession._(adapter, Map.of(template)..remove('danmakuItems'));
     active = session;
     adapter.onNativeUiCommand = session._handleCommand;
     adapter.onProcessExited = () {

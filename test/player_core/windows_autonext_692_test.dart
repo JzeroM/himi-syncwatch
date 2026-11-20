@@ -267,10 +267,11 @@ void main() {
       final src = read('native/windows_qt_player/src/player_state.cpp');
       final idx = src.indexOf('dirty |= assign(skipPrompt_, sp)');
       expect(idx, greaterThan(0));
-      final after = src.substring(idx, idx + 300);
-      // P1：dirty 时先同步弹幕时钟再发信号（块内仍是 emit changed()）。
-      expect(after, contains('if (dirty) {'));
-      expect(after, contains('emit changed();'));
+      final after = src.substring(idx, idx + 500);
+      // P1：dirty 时先同步弹幕时钟再发信号。
+      // 696：定向 emit（posDirty→positionTick / mediaDirty→mediaInfoChanged /
+      // dirty→changed）；skipPrompt 属 dirty 组，changed 仍照发。
+      expect(after, contains('if (dirty) emit changed();'));
     });
 
     test('D4 QML 绑定依赖 skipPrompt 属性通知', () {

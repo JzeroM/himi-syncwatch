@@ -144,9 +144,14 @@ void main() {
     });
 
     test('3.6 顶/底淡入淡出（首尾各 10%）', () {
+      // 696：投影下沉 C++ paint() 后，渐隐公式单源在 DanmakuPaintItem
       expect(codeOnly(layer), contains('fixedFade'));
       expect(codeOnly(layer), contains('progress < 0.1'));
       expect(codeOnly(layer), contains('progress > 0.9'));
+      final cpp =
+          read('native/windows_qt_player/src/danmaku_paint_item.cpp');
+      expect(cpp, contains('DanmakuPaintItem::fixedFade'));
+      expect(cpp, contains('progress < 0.1'));
     });
 
     test('3.7 按时间升序分配（冲突表必须按时间序推进）', () {

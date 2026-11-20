@@ -117,6 +117,9 @@ void PlayerState::patchValue(const QString& key, const QVariant& value) {
     }
     localKeys_.insert(key);  // 675 A：本地置顶
     danmakuClockSync();      // 本地乐观改动（seek/暂停/倍速）也要重对齐
+    // 696：本地乐观改动低频（用户操作），双信号都发——positionMs 等字段的
+    // 绑定走 positionTick，其余走 changed。
+    emit positionTick();
     emit changed();
 }
 
@@ -130,11 +133,16 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     if (json.isEmpty()) return;
 
     bool dirty = false;
+    // 696：NOTIFY 分组——位置字段 ~20Hz 更新，拆出 positionTick；mediaInfoJson
+    // 是 KB 级 JSON（两条 JSON.parse 绑定），拆出 mediaInfoChanged。两者都
+    // 不再进 `changed`，20Hz/1Hz 更新就拖不动重型绑定（GC 停顿根治）。
+    bool posDirty = false;
+    bool mediaDirty = false;
 
     // ── 播放 ──
-    dirty |= assign(positionMs_, readInt64(json, "positionMs", positionMs_));
-    dirty |= assign(durationMs_, readInt64(json, "durationMs", durationMs_));
-    dirty |= assign(bufferedMs_, readInt64(json, "bufferedMs", bufferedMs_));
+    posDirty |= assign(positionMs_, readInt64(json, "positionMs", positionMs_));
+    posDirty |= assign(durationMs_, readInt64(json, "durationMs", durationMs_));
+    posDirty |= assign(bufferedMs_, readInt64(json, "bufferedMs", bufferedMs_));
     dirty |= assign(paused_, readBool(json, "paused", paused_));
     dirty |= assign(volume_, readDouble(json, "volume", volume_));
     dirty |= assign(speed_, readDouble(json, "speed", speed_));
@@ -150,8 +158,8 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
     dirty |= assign(engineLabel_, readString(json, "engineLabel", engineLabel_));
     dirty |= assign(networkSpeedText_,
                     readString(json, "networkSpeedText", networkSpeedText_));
-    dirty |= assign(mediaInfoJson_,
-                    readString(json, "mediaInfoJson", mediaInfoJson_));
+    mediaDirty |= assign(mediaInfoJson_,
+                         readString(json, "mediaInfoJson", mediaInfoJson_));
     dirty |= assign(videoFit_, readString(json, "videoFit", videoFit_));
     dirty |= assign(decodeMode_, readString(json, "decodeMode", decodeMode_));
     dirty |= assign(glassUi_, readBool(json, "glassUi", glassUi_));
@@ -261,7 +269,11 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
 
     // ── 弹幕/片段（665）──
     const QJsonValue danm = json.value(QLatin1String("danmakuItems"));
-    if (danm.isArray()) setDanmakuItems(danm.toArray());
+    // 696：增量合并 + reset 语义——常规推送只追加新条目（省 QML 全量重排）；
+    // 换集/屏蔽规则变化时 Dart 推 `danmakuReset: true` 全量重建。
+    const bool danmReset =
+        json.value(QLatin1String("danmakuReset")).toBool(false);
+    if (danm.isArray()) setDanmakuItems(danm.toArray(), danmReset);
     // 694 M3：弹幕弹窗状态
     dirty |= assign(danmakuBinding_,
                     readString(json, "danmakuBinding", danmakuBinding_));
@@ -355,10 +367,14 @@ void PlayerState::applyJson(const QJsonObject& jsonIn, bool remote) {
         dirty |= assign(skipPrompt_, sp);
     }
 
-    if (dirty) {
-        danmakuClockSync();
-        emit changed();
-    }
+    // 696：定向 emit——位置字段走 positionTick（~20Hz 但只拖进度条等廉价
+    // 绑定），mediaInfoJson 走 mediaInfoChanged（两条 JSON.parse 绑定只随
+    // 内容真变重算），其余走 changed。三信号拆开后 20Hz/1Hz 更新不再拖动
+    // 重型绑定（「跑一秒停顿一下」的 GC 风暴根治）。
+    if (dirty || posDirty) danmakuClockSync();
+    if (posDirty) emit positionTick();
+    if (mediaDirty) emit mediaInfoChanged();
+    if (dirty) emit changed();
 }
 
 // ── 弹幕时钟（P1）──────────────────────────────────────────────
@@ -549,7 +565,11 @@ void PlayerState::setVersions(const QJsonArray& arr) {
     emit versionsChanged();
 }
 
-void PlayerState::setDanmakuItems(const QJsonArray& arr) {
+void PlayerState::setDanmakuItems(const QJsonArray& arr, bool reset) {
+    // 696：批次语义——Dart 增量推送「没见过的条目」，QML reindex 按 key
+    // 幂等去重后并入飞行/待准入缓存。整窗每 500ms 全量重推是「一顿一顿」
+    // 的 2Hz GC 节律源（QVariantList 重建 + QML 对象转换 + reindex 全表）。
+    // reset（换集/屏蔽规则/回跳 seek）→ epoch 递增，QML 清缓存 + 全量重播。
     QList<Danmaku> next;
     next.reserve(arr.size());
     for (const QJsonValue& v : arr) {
@@ -562,6 +582,7 @@ void PlayerState::setDanmakuItems(const QJsonArray& arr) {
         d.color = readString(o, "color", QStringLiteral("#FFFFFF"));
         if (!d.text.isEmpty()) next.append(d);
     }
+    if (reset) ++danmakuEpoch_;
     bool same = next.size() == danmakuItems_.size();
     if (same) {
         for (int i = 0; i < next.size(); ++i) {
@@ -574,7 +595,7 @@ void PlayerState::setDanmakuItems(const QJsonArray& arr) {
             }
         }
     }
-    if (same) return;
+    if (same && !reset) return;
     danmakuItems_ = next;
     emit danmakuChanged();
 }
