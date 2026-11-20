@@ -1461,6 +1461,14 @@ testWidgets('外观子页：分类页每行海报数滑块默认自动，改值�
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(
+      focusWithin(find.byKey(const ValueKey('ratingsTestConnectionTile'))),
+      isTrue,
+      reason: '方向键应能继续下移到测试评分数据源（698）',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(
       focusWithin(find.byKey(const ValueKey('tmdbTestConnectionTile'))),
       isTrue,
       reason: '方向键应能继续下移到测试连接',

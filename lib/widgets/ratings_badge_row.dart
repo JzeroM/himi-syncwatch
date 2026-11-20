@@ -37,11 +37,7 @@ const Map<RatingPlatform, _BadgeStyle> _badgeStyles = {
     Color(0xff00e054),
   ),
   RatingPlatform.trakt: _BadgeStyle.brand(SimpleIcons.trakt, Color(0xff9f42c6)),
-  // Simkl / Metacritic 品牌色为黑，暗底转白。
-  RatingPlatform.simkl: _BadgeStyle.brand(
-    SimpleIcons.simkl,
-    Color(0xfff2f2f2),
-  ),
+  // Metacritic 品牌色为黑，暗底转白。
   RatingPlatform.metacritic: _BadgeStyle.brand(
     SimpleIcons.metacritic,
     Color(0xfff2f2f2),
@@ -152,6 +148,9 @@ class HeroRatingsLoader extends StatefulWidget {
 class _HeroRatingsLoaderState extends State<HeroRatingsLoader> {
   List<HeroRatingBadge> _badges = const [];
 
+  /// 请求序号令牌：换条目后旧响晚到不得覆写新条目徽章（698 竞态）。
+  int _seq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -162,16 +161,20 @@ class _HeroRatingsLoaderState extends State<HeroRatingsLoader> {
   @override
   void didUpdateWidget(covariant HeroRatingsLoader oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 条目变化或 service 实例变化（配 key 后 provider 重建）都需重拉。
     if (oldWidget.query.cacheKey != widget.query.cacheKey ||
-        oldWidget.query.tmdbScore != widget.query.tmdbScore) {
+        oldWidget.query.tmdbScore != widget.query.tmdbScore ||
+        !identical(oldWidget.service, widget.service)) {
       _badges = widget.query.seedBadges;
       _load();
     }
   }
 
   Future<void> _load() async {
+    final seq = ++_seq;
     final badges = await widget.service.fetch(widget.query);
-    if (!mounted) return;
+    // 竞态防护：期间换过条目/服务（seq 不同）则丢弃本次结果。
+    if (!mounted || seq != _seq) return;
     setState(() => _badges = badges);
   }
 

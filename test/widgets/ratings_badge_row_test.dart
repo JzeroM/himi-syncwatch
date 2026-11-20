@@ -30,7 +30,7 @@ void main() {
       expect(find.byType(Icon), findsNWidgets(4));
     });
 
-    testWidgets('八枚平台徽章全渲染（豆瓣/Trakt/Simkl/Letterboxd 含在内）', (tester) async {
+    testWidgets('全平台徽章渲染（豆瓣/Trakt/Letterboxd 含在内，Simkl 已移除）', (tester) async {
       await tester.pumpWidget(wrap(const RatingsBadgeRow(badges: [
         HeroRatingBadge(RatingPlatform.douban, '8.9'),
         HeroRatingBadge(RatingPlatform.tmdb, '7.4'),
@@ -39,16 +39,14 @@ void main() {
         HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '85%'),
         HeroRatingBadge(RatingPlatform.letterboxd, '7.6'),
         HeroRatingBadge(RatingPlatform.trakt, '75%'),
-        HeroRatingBadge(RatingPlatform.simkl, '6.4'),
         HeroRatingBadge(RatingPlatform.metacritic, '67'),
       ])));
 
       expect(find.text('8.9'), findsOneWidget);
       expect(find.text('75%'), findsOneWidget);
-      expect(find.text('6.4'), findsOneWidget);
       expect(find.text('🍿'), findsOneWidget);
-      // 8 个品牌 Icon（emoji 不计）。
-      expect(find.byType(Icon), findsNWidgets(8));
+      // 7 个品牌 Icon（🍿 emoji 不计）。
+      expect(find.byType(Icon), findsNWidgets(7));
     });
 
     testWidgets('烂番茄观众分用 emoji 徽章', (tester) async {
@@ -135,6 +133,69 @@ void main() {
       )));
       await tester.pump();
       expect(service.calls, 2);
+    });
+
+    testWidgets('竞态令牌（698）：旧响晚到不得覆写新条目徽章', (tester) async {
+      // 第一响挂起（旧条目），第二响即回（新条目）。
+      final slow = Completer<List<HeroRatingBadge>>();
+      var first = true;
+      final service = _FakeService(() {
+        if (first) {
+          first = false;
+          return slow.future;
+        }
+        return Future.value(const [
+          HeroRatingBadge(RatingPlatform.imdb, '8.8'),
+        ]);
+      });
+
+      await tester.pumpWidget(wrap(HeroRatingsLoader(
+        query: const HeroRatingQuery(tmdbScore: 7.4),
+        service: service,
+      )));
+      await tester.pump();
+      expect(find.text('7.4'), findsOneWidget);
+
+      // 换条目：新响 8.8 立即到达。
+      await tester.pumpWidget(wrap(HeroRatingsLoader(
+        query: const HeroRatingQuery(tmdbScore: 6.0),
+        service: service,
+      )));
+      await tester.pump();
+      expect(find.text('8.8'), findsOneWidget);
+
+      // 旧响晚到（6.6）：必须被丢弃，不得覆写。
+      slow.complete(const [
+        HeroRatingBadge(RatingPlatform.imdb, '6.6'),
+      ]);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('6.6'), findsNothing, reason: '旧响不得串场');
+      expect(find.text('8.8'), findsOneWidget);
+    });
+
+    testWidgets('service 实例变化（配 key 后 provider 重建）立即重拉', (tester) async {
+      // 旧 service：空数据（模拟未配 key）。
+      final stale = _FakeService(() async => const <HeroRatingBadge>[]);
+      await tester.pumpWidget(wrap(HeroRatingsLoader(
+        query: const HeroRatingQuery(tmdbScore: 7.4),
+        service: stale,
+      )));
+      await tester.pump();
+      expect(find.text('7.6'), findsNothing);
+
+      // 同 query 换新 service（key 配好）：应立即补亮。
+      final fresh = _FakeService(
+        () async => const [HeroRatingBadge(RatingPlatform.imdb, '7.6')],
+      );
+      await tester.pumpWidget(wrap(HeroRatingsLoader(
+        query: const HeroRatingQuery(tmdbScore: 7.4),
+        service: fresh,
+      )));
+      await tester.pump();
+      await tester.pump();
+      expect(fresh.calls, 1);
+      expect(find.text('7.6'), findsOneWidget);
     });
   });
 }

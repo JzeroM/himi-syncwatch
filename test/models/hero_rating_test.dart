@@ -16,12 +16,11 @@ void main() {
       expect(formatRatingScore(RatingPlatform.metacritic, 67.6), '68');
     });
 
-    test('十分制平台（TMDB/IMDb/豆瓣/Letterboxd/Simkl）→ 1 位小数', () {
+    test('十分制平台（TMDB/IMDb/豆瓣/Letterboxd）→ 1 位小数', () {
       expect(formatRatingScore(RatingPlatform.tmdb, 7.4), '7.4');
       expect(formatRatingScore(RatingPlatform.imdb, 7.6), '7.6');
       expect(formatRatingScore(RatingPlatform.douban, 8.9), '8.9');
       expect(formatRatingScore(RatingPlatform.letterboxd, 7.6), '7.6');
-      expect(formatRatingScore(RatingPlatform.simkl, 6.4), '6.4');
       expect(formatRatingScore(RatingPlatform.tmdb, 8), '8.0');
     });
   });

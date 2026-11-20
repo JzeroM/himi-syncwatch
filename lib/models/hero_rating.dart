@@ -3,7 +3,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 /// 多平台评分徽章（首页轮播 / 详情页评分行）。
 ///
 /// 显示顺序 = 枚举声明顺序（与参考截图一致：豆瓣 → TMDB → IMDb → 烂番茄
-/// 影评/观众 → Letterboxd → Trakt → Simkl，Metacritic 收尾）。
+/// 影评/观众 → Letterboxd → Trakt，Metacritic 收尾）。
 /// 豆瓣数据源待接入，接入前 [RatingPlatform.douban] 永不产出徽章。
 enum RatingPlatform {
   douban('豆瓣'),
@@ -13,7 +13,6 @@ enum RatingPlatform {
   rottenTomatoesAudience('烂番茄观众'),
   letterboxd('Letterboxd'),
   trakt('Trakt'),
-  simkl('Simkl'),
   metacritic('Metacritic');
 
   const RatingPlatform(this.label);
@@ -45,7 +44,7 @@ class HeroRatingBadge {
 /// 分数 → 显示文本。
 ///
 /// [score] 语义按平台不同：烂番茄影评/观众、Trakt、Metacritic 传 0–100；
-/// 其余（豆瓣 / IMDb / TMDB / Letterboxd / Simkl）传 0–10。
+/// 其余（豆瓣 / IMDb / TMDB / Letterboxd）传 0–10。
 String formatRatingScore(RatingPlatform platform, double score) {
   switch (platform) {
     case RatingPlatform.rottenTomatoesCritic:

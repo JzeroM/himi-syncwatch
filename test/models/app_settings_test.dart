@@ -1360,25 +1360,26 @@ void main() {
     });
   });
 
-  group('多平台评分 key（698 OMDb/Simkl，可选）', () {
+  group('多平台评分 key（698 OMDb/MDBList，可选）', () {
     test('旧数据缺字段回退空串（无 key 不出徽章）', () {
       expect(AppSettings.fromJson(const {}).omdbApiKey, '');
-      expect(AppSettings.fromJson(const {}).simklApiKey, '');
+      expect(AppSettings.fromJson(const {}).mdblistApiKey, '');
       expect(const AppSettings().omdbApiKey, '');
-      expect(const AppSettings().simklApiKey, '');
+      expect(const AppSettings().mdblistApiKey, '');
     });
 
     test('toJson/fromJson 往返保留', () {
-      const settings = AppSettings(omdbApiKey: 'omdb-k', simklApiKey: 'simkl-k');
+      const settings =
+          AppSettings(omdbApiKey: 'omdb-k', mdblistApiKey: 'mdb-k');
       final round = AppSettings.fromJson(settings.toJson());
       expect(round.omdbApiKey, 'omdb-k');
-      expect(round.simklApiKey, 'simkl-k');
+      expect(round.mdblistApiKey, 'mdb-k');
     });
 
     test('copyWith 更新与 null 保持', () {
-      const base = AppSettings(omdbApiKey: 'a', simklApiKey: 'b');
+      const base = AppSettings(omdbApiKey: 'a', mdblistApiKey: 'b');
       expect(base.copyWith(omdbApiKey: 'x').omdbApiKey, 'x');
-      expect(base.copyWith(omdbApiKey: 'x').simklApiKey, 'b');
+      expect(base.copyWith(omdbApiKey: 'x').mdblistApiKey, 'b');
       // null = 不改（与 settings_provider.update 语义一致）。
       expect(base.copyWith().omdbApiKey, 'a');
     });
