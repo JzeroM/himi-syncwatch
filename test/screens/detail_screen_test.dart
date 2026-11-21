@@ -194,8 +194,8 @@ void main() {
         of: find.byType(FlexibleSpaceBar),
         matching: find.byType(EmbyImage),
       ),
-      findsNWidgets(2),
-      reason: '698 N9-B 模糊坡双层：σ12 中糊垫底 + 清晰层（cover 满幅）',
+      findsOneWidget,
+      reason: '698 N11：过渡回退 v1.6.14 原版——单层清晰图（cover 满幅）',
     );
     expect(find.text('测试影片'), findsWidgets);
   });
@@ -250,8 +250,8 @@ void main() {
           of: find.byType(FlexibleSpaceBar),
           matching: find.byType(EmbyImage),
         ),
-        findsNWidgets(2),
-        reason: '698 N9-B 模糊坡双层：σ12 中糊垫底 + 清晰层（cover 满幅）',
+        findsOneWidget,
+        reason: '698 N11：过渡回退 v1.6.14 原版——单层清晰图（cover 满幅）',
       );
     });
 
@@ -3638,8 +3638,8 @@ void main() {
         of: find.byType(FlexibleSpaceBar),
         matching: find.byType(EmbyImage),
       );
-      expect(heroImages, findsNWidgets(2),
-          reason: '698 N9-B 模糊坡双层：σ12 中糊垫底 + 清晰层（cover 满幅）');
+      expect(heroImages, findsOneWidget,
+          reason: '698 N11：过渡回退 v1.6.14 原版——单层清晰图（cover 满幅）');
       final img = tester.widget<EmbyImage>(heroImages.first);
       expect(img.fit, BoxFit.cover, reason: 'cover 满幅（居中裁切）');
     });
@@ -3657,8 +3657,8 @@ void main() {
         of: find.byType(FlexibleSpaceBar),
         matching: find.byType(EmbyImage),
       );
-      expect(heroImages, findsNWidgets(2),
-          reason: '698 N9-B 模糊坡双层：σ12 中糊垫底 + 清晰层');
+      expect(heroImages, findsOneWidget,
+          reason: '698 N11：过渡回退 v1.6.14 原版——单层清晰图');
       final img = tester.widget<EmbyImage>(heroImages.first);
       expect(img.fit, BoxFit.cover);
       expect(img.url, contains('Backdrop'), reason: '优先横版背景图');

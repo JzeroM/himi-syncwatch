@@ -159,16 +159,16 @@ class HomeHeroCarousel extends StatefulWidget {
     return detailHeightFor(size.width, size.height);
   }
 
-  /// 清晰图底部渐隐（v1.2.15；N9-B 模糊坡）：0.72 起渐隐到透明——渐隐区
-  /// 揭开下层**同裁切 σ12 中糊副本**（接缝层上半），观感是「清晰 → 渐进
-  /// 软化」的模糊坡而非消失；σ12 往下再渐入 σ36 全局糊（接缝镜像层），
-  /// 分界线上下模糊量处处连续（N9 消线）。
+  /// 清晰图底部渐隐（v1.2.15）：底部渐隐到透明，露出下层同源虚化海报，
+  /// 消除「清晰图 → 虚化图」的内容硬切（详情页 SliverAppBar 同款处理）。
+  /// 698 N11：回退到 Releases v1.6.14 原版观感（0.62 起长渐隐柔和溶解，
+  /// 撤 N7/N9 的收窄与模糊坡——三层混叠发闷，不如原版自然）。
   @visibleForTesting
   static const LinearGradient imageFadeGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Colors.white, Colors.white, Colors.transparent],
-    stops: [0.0, 0.72, 1.0],
+    stops: [0.0, 0.62, 1.0],
   );
 
   /// 可读性压暗罩（v1.2.17）：文字区维持 0x99（60%）可读性，但**底边必须
@@ -554,16 +554,6 @@ class HomeHeroBackground extends StatelessWidget {
   final double heroHeight;
   final HomeHeroImageBuilder imageBuilder;
 
-  /// 铺底重糊量（全局氛围层）。
-  @visibleForTesting
-  static const double backdropBlurSigma = 36;
-
-  /// 接缝带糊量（698 N9-B/C 模糊坡）：分界线**上**是同裁切 σ12 中糊副本
-  ///（清晰图渐隐接棒）、线**下**是 σ12 镜像延续（渐隐交棒 σ36 全局糊）——
-  /// 线两侧模糊量均为 σ12、处处连续，分界线在构造上不可见。
-  /// 详情页 hero/镜像带同用（跨文件共享）。
-  static const double seamBlurSigma = 12;
-
   static const LinearGradient seamFadeGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
@@ -588,9 +578,7 @@ class HomeHeroBackground extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(
-                sigmaX: HomeHeroBackground.backdropBlurSigma,
-                sigmaY: HomeHeroBackground.backdropBlurSigma),
+            imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
             child: Transform.scale(
               scale: 1.35,
               child: KeyedSubtree(
@@ -614,9 +602,7 @@ class HomeHeroBackground extends StatelessWidget {
               shaderCallback: (rect) => seamFadeGradient.createShader(rect),
               blendMode: BlendMode.dstIn,
               child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(
-                    sigmaX: HomeHeroBackground.seamBlurSigma,
-                    sigmaY: HomeHeroBackground.seamBlurSigma),
+                imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [

@@ -1690,48 +1690,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             ),
           ),
         ),
-        // 698 N9-C：分界线下镜像延续带——hero 图 σ12 镜像续接（翻转轴
-        // 落在分界线，线两侧内容连续同糊），向下渐隐交棒 σ36 全局糊，
-        // 线下方同样有模糊渐变（消线的一半）。
-        Builder(builder: (context) {
-          final heroH = HomeHeroCarousel.detailHeightOf(context);
-          return Positioned(
-            top: heroH,
-            left: 0,
-            right: 0,
-            height: heroH,
-            child: ShaderMask(
-              shaderCallback: (rect) => const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white,
-                  Colors.white,
-                  Colors.transparent,
-                  Colors.transparent,
-                ],
-                stops: [0.0, 0.45, 0.85, 1.0],
-              ).createShader(rect),
-              blendMode: BlendMode.dstIn,
-              child: Transform.flip(
-                flipY: true,
-                child: ImageFiltered(
-                  imageFilter: ui.ImageFilter.blur(
-                    sigmaX: HomeHeroBackground.seamBlurSigma,
-                    sigmaY: HomeHeroBackground.seamBlurSigma,
-                  ),
-                  child: EmbyImage(
-                    url: url,
-                    fit: BoxFit.cover,
-                    cacheWidth: 200,
-                    placeholder: const SizedBox.shrink(),
-                    errorWidget: const SizedBox.shrink(),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
         // 压暗罩：顶部略暗衔接 AppBar 底部蒙层；底部渐入应用底色，保证
         // 版本/剧集列表等正文可读。
         DecoratedBox(
@@ -2056,10 +2014,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
                   // 满幅大图（N7-A 构图回归，SenPlayer 同款）：横版背景图
-                  // cover 满幅（无 backdrop 用封面兜底）。698 N9-B 模糊坡：
-                  // σ12 同裁切中糊副本垫底，清晰图 0.72 起渐隐接棒中糊
-                  //（σ0→σ12 渐进软化），线下镜像带续 σ12→σ36（N9-C）——
-                  // 分界线上下模糊量处处连续，无台阶无线。
+                  // cover 满幅（无 backdrop 用封面兜底）。698 N11：过渡回退
+                  // Releases v1.6.14 原版观感——0.55 起长渐隐柔和溶解进
+                  // 同源虚化氛围层（撤 N9 σ12 模糊坡双层，回单层清晰图）。
                   // 698 N5-A/N7-D：hero 槽宁大勿糊（q90、cap 3000）+ 同宽解码。
                   Builder(builder: (context) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -2068,45 +2025,26 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     if (heroUrl == null || heroUrl.isEmpty) {
                       return const SizedBox.shrink();
                     }
-                    final heroImageUrl = embyImageUrlForSlot(
-                            heroUrl, EmbyImageSlot.hero, width, dpr) ??
-                        heroUrl;
-                    final cacheW =
-                        embyImageSlotWidth(EmbyImageSlot.hero, width, dpr);
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // σ12 中糊副本（同裁切）：渐隐区的「中间景深」。
-                        ImageFiltered(
-                          imageFilter: ui.ImageFilter.blur(
-                            sigmaX: HomeHeroBackground.seamBlurSigma,
-                            sigmaY: HomeHeroBackground.seamBlurSigma,
-                          ),
-                          child: EmbyImage(
-                            url: heroImageUrl,
-                            fit: BoxFit.cover,
-                            cacheWidth: cacheW,
-                          ),
-                        ),
-                        ShaderMask(
-                          shaderCallback: (rect) => const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.white,
-                              Colors.white,
-                              Colors.transparent,
-                            ],
-                            stops: [0.0, 0.72, 1.0],
-                          ).createShader(rect),
-                          blendMode: BlendMode.dstIn,
-                          child: EmbyImage(
-                            url: heroImageUrl,
-                            fit: BoxFit.cover,
-                            cacheWidth: cacheW,
-                          ),
-                        ),
-                      ],
+                    return ShaderMask(
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [0.0, 0.55, 1.0],
+                      ).createShader(rect),
+                      blendMode: BlendMode.dstIn,
+                      child: EmbyImage(
+                        url: embyImageUrlForSlot(
+                                heroUrl, EmbyImageSlot.hero, width, dpr) ??
+                            heroUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth:
+                            embyImageSlotWidth(EmbyImageSlot.hero, width, dpr),
+                      ),
                     );
                   }),
                   // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
