@@ -11,6 +11,7 @@ import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/services/playback_rules.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/track_migration.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
@@ -2013,24 +2014,36 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
                   // 清晰海报：底部渐隐到透明，无缝融入正文虚化氛围层
-                  // （两层底图同源，接缝处自然溶解，无硬边也无色相跳变）
-                  ShaderMask(
-                    shaderCallback: (rect) => const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white,
-                        Colors.white,
-                        Colors.transparent,
-                      ],
-                      stops: [0.0, 0.55, 1.0],
-                    ).createShader(rect),
-                    blendMode: BlendMode.dstIn,
-                    child: EmbyImage(
-                      url: item.backdropUrl ?? item.posterUrl,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+                  // （两层底图同源，接缝处自然溶解，无硬边也无色相跳变）。
+                  // 698 N4-2：设备感知目标宽升清（模型层 400px 小图直接放大
+                  // 会糊）+ 同宽解码（清晰与快加载同源）。
+                  Builder(builder: (context) {
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    final targetW = embyImageTargetWidth(
+                      MediaQuery.sizeOf(context).width,
+                      dpr,
+                    );
+                    final heroUrl =
+                        item.backdropUrl ?? item.posterUrl;
+                    return ShaderMask(
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [0.0, 0.55, 1.0],
+                      ).createShader(rect),
+                      blendMode: BlendMode.dstIn,
+                      child: EmbyImage(
+                        url: embyImageUrlFor(heroUrl, targetW) ?? heroUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth: targetW,
+                      ),
+                    );
+                  }),
                   // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
                   // 在接缝处叠加出暗带/分割线；文字区由投影兜底对比度。
                   const DecoratedBox(
@@ -2053,7 +2066,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       // 不加 logo；图 404/加载失败回退文字片名）
                       if (!widget.roomMode && item.logoUrl != null)
                         EmbyImage(
-                          url: item.logoUrl,
+                          // 698 N4-5：Logo 原图常为数 MB 透明 PNG，按显示需要
+                          // 追加尺寸提示（MB → 几十 KB）+ 同宽解码。
+                          url: embyImageUrlFor(
+                                  item.logoUrl,
+                                  (MediaQuery.sizeOf(context).width *
+                                          MediaQuery.devicePixelRatioOf(context))
+                                      .clamp(300, 640)
+                                      .toInt(),
+                                  quality: 90) ??
+                              item.logoUrl,
                           height: tv ? 44 : 60,
                           fit: BoxFit.contain,
                           // logo 多为大尺寸透明 PNG，按显示需要限解码宽

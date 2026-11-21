@@ -268,7 +268,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             limit: 20,
             includeItemTypes: 'Movie,Series',
             fields:
-                'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,IndexNumber,Genres,UserData,Overview,ProviderIds',
+                'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,CriticRating,CustomRating,IndexNumber,Genres,UserData,Overview,ProviderIds',
             // DateLastContentAdded：剧集有新集数入库时 Series 的该字段会
             // 更新，更新过的剧集能浮到最前；DateCreated 是系列首次入库
             // 时间，新集不会变——表现为"更新了还排在后面"
@@ -342,7 +342,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final seen = <String>{};
     for (final category in categories) {
       for (final item in category.items) {
-        if (item.backdropWideUrl == null || item.backdropWideUrl!.isEmpty) {
+        // 698 N1：轮播只获取电影封面（Primary 海报），按海报有无取候选。
+        if (item.posterUrl == null || item.posterUrl!.isEmpty) {
           continue;
         }
         if (seen.add(item.id)) pool.add(item);

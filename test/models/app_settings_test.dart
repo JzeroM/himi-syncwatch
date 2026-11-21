@@ -1360,26 +1360,21 @@ void main() {
     });
   });
 
-  group('多平台评分 key（698 OMDb/MDBList，可选）', () {
-    test('旧数据缺字段回退空串（无 key 不出徽章）', () {
+  group('多平台评分 key（698 OMDb，可选覆盖内置 key）', () {
+    test('旧数据缺字段回退空串（空 = 用内置 key）', () {
       expect(AppSettings.fromJson(const {}).omdbApiKey, '');
-      expect(AppSettings.fromJson(const {}).mdblistApiKey, '');
       expect(const AppSettings().omdbApiKey, '');
-      expect(const AppSettings().mdblistApiKey, '');
     });
 
     test('toJson/fromJson 往返保留', () {
-      const settings =
-          AppSettings(omdbApiKey: 'omdb-k', mdblistApiKey: 'mdb-k');
+      const settings = AppSettings(omdbApiKey: 'omdb-k');
       final round = AppSettings.fromJson(settings.toJson());
       expect(round.omdbApiKey, 'omdb-k');
-      expect(round.mdblistApiKey, 'mdb-k');
     });
 
     test('copyWith 更新与 null 保持', () {
-      const base = AppSettings(omdbApiKey: 'a', mdblistApiKey: 'b');
+      const base = AppSettings(omdbApiKey: 'a');
       expect(base.copyWith(omdbApiKey: 'x').omdbApiKey, 'x');
-      expect(base.copyWith(omdbApiKey: 'x').mdblistApiKey, 'b');
       // null = 不改（与 settings_provider.update 语义一致）。
       expect(base.copyWith().omdbApiKey, 'a');
     });

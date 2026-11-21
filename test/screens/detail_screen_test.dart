@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/media_state_override_provider.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
@@ -50,6 +51,7 @@ Future<ProviderContainer> _pumpDetail(
           tv ? const AppSettings(tvMode: true) : const AppSettings())),
       embyServiceProvider
           .overrideWith((ref) => emby ?? FakeEmbyService(item: targetItem)),
+      heroRatingsServiceProvider.overrideWithValue(fakeHeroRatingsService()),
     ],
   );
   addTearDown(container.dispose);
@@ -2779,8 +2781,11 @@ void main() {
       logoUrl: logoUrl,
     );
 
-    Finder logoImage() =>
-        find.byWidgetPredicate((w) => w is EmbyImage && w.url == logoUrl);
+    Finder logoImage() => find.byWidgetPredicate(
+        // 698 N4-5：Logo URL 会被按显示宽重写（追加 maxWidth/quality），
+        // 按路径匹配而非精确 URL。
+        (w) => w is EmbyImage &&
+            (w.url ?? '').startsWith('https://emby.test/Items/m1/Images/Logo'));
 
     testWidgets('有 logo：hero 渲染 Logo 图（替换文字片名位置）', (tester) async {
       await _pumpDetail(tester, item: movieWithLogo);

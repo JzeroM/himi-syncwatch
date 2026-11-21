@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
@@ -47,6 +48,7 @@ TmdbAvailability _entry(int id) => TmdbAvailability(
         name: '影片$id',
         type: 'Movie',
         backdropWideUrl: 'https://s1/backdrop/$id.jpg?maxWidth=1600&quality=90',
+        posterUrl: 'https://s1/poster/$id.jpg?maxHeight=400&tag=$id',
         logoUrl: 'https://s1/logo/$id.png',
         year: '2024',
         communityRating: 8.5,
@@ -91,6 +93,7 @@ Future<void> _pump(
         settingsProvider.overrideWith(
           (ref) => FakeSettingsNotifier(settings),
         ),
+        heroRatingsServiceProvider.overrideWithValue(fakeHeroRatingsService()),
         tmdbHomeProvider.overrideWith((ref) => Stream.value(data)),
         tmdbHeroItemsProvider.overrideWith(
           (ref) async => [
@@ -349,12 +352,12 @@ void main() {
     expect(
       carousel.items.every(
         (item) =>
-            item.imageUrl!.contains('maxWidth=1600') &&
-            item.imageUrl!.contains('quality=90') &&
+            item.imageUrl!.contains('maxHeight=400') &&
+            item.imageUrl!.contains('poster') &&
             !item.imageUrl!.contains('image.tmdb.org'),
       ),
       isTrue,
-      reason: 'TMDB 顶部轮播使用服务器 1600 宽/质量 90 背景',
+      reason: '698 N1：TMDB 顶部轮播使用电影封面（Primary 海报）',
     );
     final first = carousel.items.first;
     expect(first.title, '影片1');

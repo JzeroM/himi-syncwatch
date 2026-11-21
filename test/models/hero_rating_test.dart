@@ -26,39 +26,63 @@ void main() {
   });
 
   group('HeroRatingQuery（698）', () {
-    test('fromMediaItem 抽取 imdb/tmdb id、型别与 TMDB 分', () {
+    test('fromMediaItem 抽取 imdb/tmdb/douban id、型别与本地分（698）', () {
       final item = MediaItem(
         id: 'm1',
         name: '影片',
         type: 'Movie',
+        year: '2026',
         communityRating: 7.4,
-        providerIds: const {'Imdb': 'tt0133093', 'Tmdb': '603'},
+        criticRating: 88,
+        customRating: '豆瓣 8.9',
+        providerIds: const {
+          'Imdb': 'tt0133093',
+          'Tmdb': '603',
+          'Douban': '3541415',
+        },
       );
       final query = HeroRatingQuery.fromMediaItem(item);
       expect(query.imdbId, 'tt0133093');
       expect(query.tmdbId, '603');
+      expect(query.doubanId, '3541415');
+      expect(query.title, '影片');
+      expect(query.year, '2026');
       expect(query.isMovie, isTrue);
       expect(query.tmdbScore, 7.4);
+      expect(query.criticScore, 88);
+      expect(query.doubanScore, 8.9);
     });
 
-    test('seedBadges：有 TMDB 分出 1 枚种子徽章，无分为空', () {
-      const withScore = HeroRatingQuery(tmdbScore: 7.4);
-      expect(withScore.seedBadges.length, 1);
-      expect(withScore.seedBadges.single.platform, RatingPlatform.tmdb);
-      expect(withScore.seedBadges.single.display, '7.4');
+    test('seedBadges：本地分有哪枚出哪枚（TMDB/🍅/豆瓣，698 ①）', () {
+      const full = HeroRatingQuery(
+        tmdbScore: 7.4,
+        criticScore: 88,
+        doubanScore: 8.9,
+      );
+      expect(full.seedBadges.map((b) => b.platform), [
+        RatingPlatform.tmdb,
+        RatingPlatform.rottenTomatoesCritic,
+        RatingPlatform.douban,
+      ]);
+      expect(full.seedBadges.map((b) => b.display), ['7.4', '88%', '8.9']);
+
+      const tmdbOnly = HeroRatingQuery(tmdbScore: 7.4);
+      expect(tmdbOnly.seedBadges.single.platform, RatingPlatform.tmdb);
 
       const noScore = HeroRatingQuery();
       expect(noScore.seedBadges, isEmpty);
       // 非正分也不出徽章（Emby 脏数据防御）。
-      const zeroScore = HeroRatingQuery(tmdbScore: 0);
+      const zeroScore = HeroRatingQuery(tmdbScore: 0, criticScore: 0, doubanScore: 0);
       expect(zeroScore.seedBadges, isEmpty);
     });
 
-    test('cacheKey：IMDb id 优先，其次 TMDB id，双缺为 null', () {
-      const both = HeroRatingQuery(imdbId: 'tt1', tmdbId: '2');
-      expect(both.cacheKey, 'imdb:tt1');
-      const tmdbOnly = HeroRatingQuery(tmdbId: '2');
+    test('cacheKey：IMDb → TMDB → 豆瓣 id 三级，全缺为 null', () {
+      const all = HeroRatingQuery(imdbId: 'tt1', tmdbId: '2', doubanId: '3');
+      expect(all.cacheKey, 'imdb:tt1');
+      const tmdbOnly = HeroRatingQuery(tmdbId: '2', doubanId: '3');
       expect(tmdbOnly.cacheKey, 'tmdb:2');
+      const doubanOnly = HeroRatingQuery(doubanId: '3');
+      expect(doubanOnly.cacheKey, 'douban:3');
       const none = HeroRatingQuery();
       expect(none.cacheKey, isNull);
       // 空白 id 视同缺失。

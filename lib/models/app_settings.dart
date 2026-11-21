@@ -179,11 +179,9 @@ class AppSettings {
   /// TMDB watch region（流媒体平台可用区域），默认 US。
   final String tmdbWatchRegion;
 
-  /// OMDb API Key（可选；评分徽章 IMDb/烂番茄影评/Metacritic 三枚数据源）。
+  /// OMDb API Key（可选；评分徽章 IMDb/烂番茄影评/Metacritic 数据源）。
+  /// 留空使用内置免费 key（698 N3）。
   final String omdbApiKey;
-
-  /// MDBList API Key（可选；评分徽章烂番茄观众（🍿）数据源）。
-  final String mdblistApiKey;
 
   final bool traktAutoSync;
 
@@ -511,7 +509,6 @@ class AppSettings {
     this.tmdbImageBase = 'https://wsrv.nl/?url=https://image.tmdb.org',
     this.tmdbWatchRegion = 'US',
     this.omdbApiKey = '',
-    this.mdblistApiKey = '',
     this.traktAutoSync = true,
     this.traktSyncIntervalMinutes = defaultTraktSyncIntervalMinutes,
     this.traktDisabledServerIds = '',
@@ -641,7 +638,6 @@ class AppSettings {
     String? tmdbImageBase,
     String? tmdbWatchRegion,
     String? omdbApiKey,
-    String? mdblistApiKey,
     bool? traktAutoSync,
     int? traktSyncIntervalMinutes,
     String? traktDisabledServerIds,
@@ -728,7 +724,6 @@ class AppSettings {
       tmdbImageBase: tmdbImageBase ?? this.tmdbImageBase,
       tmdbWatchRegion: tmdbWatchRegion ?? this.tmdbWatchRegion,
       omdbApiKey: omdbApiKey ?? this.omdbApiKey,
-      mdblistApiKey: mdblistApiKey ?? this.mdblistApiKey,
       traktAutoSync: traktAutoSync ?? this.traktAutoSync,
       traktSyncIntervalMinutes:
           traktSyncIntervalMinutes ?? this.traktSyncIntervalMinutes,
@@ -841,7 +836,6 @@ class AppSettings {
         'tmdbImageBase': tmdbImageBase,
         'tmdbWatchRegion': tmdbWatchRegion,
         'omdbApiKey': omdbApiKey,
-        'mdblistApiKey': mdblistApiKey,
         'traktAutoSync': traktAutoSync,
         'traktSyncIntervalMinutes': traktSyncIntervalMinutes,
         'traktDisabledServerIds': traktDisabledServerIds,
@@ -1056,7 +1050,6 @@ class AppSettings {
           ? json['tmdbWatchRegion'] as String
           : 'US',
       omdbApiKey: json['omdbApiKey'] as String? ?? '',
-      mdblistApiKey: json['mdblistApiKey'] as String? ?? '',
       traktAutoSync: json['traktAutoSync'] as bool? ?? true,
       traktSyncIntervalMinutes: normalizeTraktSyncInterval(
         json['traktSyncIntervalMinutes'],

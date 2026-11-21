@@ -208,13 +208,14 @@ final tmdbHeroItemsProvider = FutureProvider<List<TmdbHeroEntry>>((ref) async {
         includeItemTypes: 'Movie,Series',
         limit: 40,
         fields:
-            'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Genres,ProviderIds,Overview',
+            'ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,CriticRating,CustomRating,Genres,ProviderIds,Overview',
         sortBy: 'DateLastContentAdded',
         sortOrder: 'Descending',
       );
       return [
         for (final item in items)
-          if (item.backdropWideUrl?.isNotEmpty == true)
+          // 698 N1：轮播只获取电影封面（Primary 海报），按海报有无取候选。
+          if (item.posterUrl?.isNotEmpty == true)
             TmdbHeroEntry(item: item, server: server),
       ];
     } catch (_) {

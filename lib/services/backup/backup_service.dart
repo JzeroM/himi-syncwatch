@@ -147,7 +147,6 @@ class BackupService {
           'imageBase': settings.tmdbImageBase,
           'watchRegion': settings.tmdbWatchRegion,
           'omdbApiKey': settings.omdbApiKey,
-          'mdblistApiKey': settings.mdblistApiKey,
         },
         'danmaku': <String, Object?>{
           'apiUrl': settings.danmakuApiUrl,
@@ -337,7 +336,6 @@ class BackupService {
           tmdbImageBase: tmdb?['imageBase'] as String?,
           tmdbWatchRegion: tmdb?['watchRegion'] as String?,
           omdbApiKey: tmdb?['omdbApiKey'] as String?,
-          mdblistApiKey: tmdb?['mdblistApiKey'] as String?,
           danmakuApiUrl: danmaku?['apiUrl'] as String?,
           danmakuBlockWords: danmaku?['blockWords'] as String?,
           danmakuServersJson: danmaku?['servers'] as String?,

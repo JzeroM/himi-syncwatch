@@ -77,84 +77,171 @@ void main() {
     });
   });
 
-  group('parseMdblistAudience（698 爆米花指数 🍿）', () {
-    test('ratings 对象形态：tomatoesaudience 数值', () {
-      final body = jsonEncode({
-        'ratings': {'tomatoesaudience': 91},
-      });
-      expect(HeroRatingsService.parseMdblistAudience(body), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '91%'),
-      ]);
-    });
-
-    test('ratings 对象形态：嵌套 {score: 91} 与 0–10 制换算', () {
-      final body = jsonEncode({
-        'ratings': {
-          'tomatoesaudience': {'score': 91, 'votes': 100},
-          'imdb': 8.8,
+  group('OMDb 内置 key（698 N3）', () {
+    test('用户 key 为空 → 用内置 key 发请求', () async {
+      final urls = <String>[];
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          urls.add(url.toString());
+          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
         },
-      });
-      expect(HeroRatingsService.parseMdblistAudience(body), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '91%'),
-      ]);
-
-      // 0–10 制（9.1）→ 91%。
-      final tenScale = jsonEncode({
-        'ratings': {'tomatoesaudience': 9.1},
-      });
-      expect(HeroRatingsService.parseMdblistAudience(tenScale), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '91%'),
-      ]);
-    });
-
-    test('ratings 数组形态：source+type=audience（大小写/空格容错）', () {
-      final body = jsonEncode([
-        {'source': 'imdb', 'value': 8.8, 'score': 88},
-        {
-          'source': 'Rotten Tomatoes',
-          'type': 'audience',
-          'value': 9.1,
-          'score': 91,
-        },
-        {
-          'source': 'Rotten Tomatoes',
-          'type': 'critic',
-          'value': 8.7,
-          'score': 87,
-        },
-      ]);
-      // 优先 score（91%）；critic 行不混入。
-      expect(HeroRatingsService.parseMdblistAudience(body), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '91%'),
-      ]);
-    });
-
-    test('数组形态：popcornmeter / audience 键名变体', () {
-      final body = jsonEncode([
-        {'source': 'popcornmeter', 'value': 85},
-        {'name': 'audience_score', 'value': 88},
-      ]);
-      // 第一条命中即返回（85%）。
-      expect(HeroRatingsService.parseMdblistAudience(body), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '85%'),
-      ]);
-    });
-
-    test('百分号文本值 / 无观众分 / 脏数据', () {
-      final withPercent = jsonEncode({
-        'ratings': {'tomatoesaudience': '84%'},
-      });
-      expect(HeroRatingsService.parseMdblistAudience(withPercent), [
-        const HeroRatingBadge(RatingPlatform.rottenTomatoesAudience, '84%'),
-      ]);
-
-      expect(
-        HeroRatingsService.parseMdblistAudience(jsonEncode({'ratings': {}})),
-        isEmpty,
       );
+      await service.fetch(const HeroRatingQuery(imdbId: 'tt1'));
+      expect(urls.any((u) => u.contains(HeroRatingsService.builtInOmdbKey)),
+          isTrue);
+    });
+
+    test('用户 key 非空 → 覆盖内置 key', () async {
+      final urls = <String>[];
+      final service = HeroRatingsService(
+        omdbApiKey: 'my-own-key',
+        httpGet: (url, {headers = const {}}) async {
+          urls.add(url.toString());
+          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+        },
+      );
+      await service.fetch(const HeroRatingQuery(imdbId: 'tt1'));
+      expect(urls.any((u) => u.contains('my-own-key')), isTrue);
       expect(
-        () => HeroRatingsService.parseMdblistAudience('not-json'),
-        throwsA(isA<FormatException>()),
+        urls.any((u) => u.contains(HeroRatingsService.builtInOmdbKey)),
+        isFalse,
+      );
+    });
+  });
+
+  group('豆瓣爬页（698 ② 免 key）', () {
+    test('subject 页 JSON-LD 抽豆瓣分', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          expect(url.toString(), contains('movie.douban.com/subject/3541415'));
+          return '<script type="application/ld+json">'
+              '{"aggregateRating":{"ratingValue":"9.4"}}</script>';
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.douban, '9.4'),
+      ));
+    });
+
+    test('meta 降级：v:average 取分', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          return '<meta property="v:average" content="8.9">';
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.douban, '8.9'),
+      ));
+    });
+
+    test('搜索兜底：subject 候选 + 相似度匹配（宁缺勿错）', () async {
+      final urls = <String>[];
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          urls.add(url.toString());
+          if (url.host == 'search.douban.com') {
+            return '<a href="https://movie.douban.com/subject/111/">搏击俱乐部</a>'
+                '<a href="https://movie.douban.com/subject/222/">搏击俱乐部2</a>';
+          }
+          // subject 页。
+          return '<script type="application/ld+json">'
+              '{"aggregateRating":{"ratingValue":"8.8"}}</script>';
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(title: '搏击俱乐部', tmdbId: '603'),
+      );
+      expect(urls.first, contains('search.douban.com'));
+      expect(urls.last, contains('subject/111'));
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.douban, '8.8'),
+      ));
+    });
+
+    test('搜索匹配不确定（相似度低）→ 不上徽章', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          return '<a href="https://movie.douban.com/subject/111/">完全不相干的片子</a>';
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(title: '搏击俱乐部', tmdbId: '603'),
+      );
+      expect(badges, isEmpty);
+    });
+
+    test('已有服务端刮削种子分 → 不爬页（省流量）', () async {
+      var httpCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          httpCalls++;
+          return '';
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', doubanScore: 8.9),
+      );
+      expect(httpCalls, 0);
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.douban, '8.9'),
+      ));
+    });
+  });
+
+  group('Letterboxd 爬页（698 ② 免 key）', () {
+    test('/imdb/{tt}/ 路由取分，5 分制 ×2', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host.contains('letterboxd')) {
+            expect(url.toString(), contains('letterboxd.com/imdb/tt0133093'));
+            return '<script type="application/ld+json">'
+                '{"aggregateRating":{"ratingValue":"4.2"}}</script>';
+          }
+          return '{}'; // OMDb 等其他源空响应。
+        },
+      );
+      final badges = await service
+          .fetch(const HeroRatingQuery(imdbId: 'tt0133093'));
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.letterboxd, '8.4'),
+      ));
+    });
+
+    test('无 tt id 时走 /tmdb/{id}/ 路由', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host.contains('letterboxd')) {
+            expect(url.toString(), contains('letterboxd.com/tmdb/603'));
+            return '<meta name="twitter:data2" content="4.4 average">';
+          }
+          return '{}';
+        },
+      );
+      final badges = await service.fetch(const HeroRatingQuery(tmdbId: '603'));
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.letterboxd, '8.8'),
+      ));
+    });
+
+    test('缺 id / 解析不出 → 静默空', () async {
+      var httpCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          httpCalls++;
+          return '<html>no rating</html>';
+        },
+      );
+      expect(await service.fetch(const HeroRatingQuery()), isEmpty);
+      expect(httpCalls, 0);
+      expect(
+        await service.fetch(const HeroRatingQuery(imdbId: 'tt1')),
+        isEmpty,
       );
     });
   });
@@ -162,27 +249,11 @@ void main() {
   group('HeroRatingsService.fetch（按源缓存与降级）', () {
     const query = HeroRatingQuery(imdbId: 'tt0133093', tmdbScore: 7.4);
 
-    test('未配 key 的源跳过：仅种子徽章，零 HTTP', () async {
-      var httpCalls = 0;
+    test('同条目二次 fetch 命中缓存（每源 HTTP 只打一次）', () async {
+      final calls = <String, int>{};
       final service = HeroRatingsService(
         httpGet: (url, {headers = const {}}) async {
-          httpCalls++;
-          return '{}';
-        },
-      );
-      final badges = await service.fetch(query);
-      expect(badges, [
-        const HeroRatingBadge(RatingPlatform.tmdb, '7.4'),
-      ]);
-      expect(httpCalls, 0);
-    });
-
-    test('同条目二次 fetch 命中缓存（HTTP 只打一次）', () async {
-      var httpCalls = 0;
-      final service = HeroRatingsService(
-        omdbApiKey: 'k',
-        httpGet: (url, {headers = const {}}) async {
-          httpCalls++;
+          calls[url.host] = (calls[url.host] ?? 0) + 1;
           return jsonEncode({
             'Response': 'True',
             'imdbRating': '7.6',
@@ -191,7 +262,8 @@ void main() {
       );
       final first = await service.fetch(query);
       final second = await service.fetch(query);
-      expect(httpCalls, 1);
+      expect(calls['www.omdbapi.com'], 1);
+      expect(calls['letterboxd.com'], 1);
       expect(first, second);
       expect(first.map((b) => b.display), contains('7.6'));
     });
@@ -200,21 +272,22 @@ void main() {
       var omdbCalls = 0;
       var failOmdb = true;
       final service = HeroRatingsService(
-        omdbApiKey: 'k',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           throw StateError('trakt down');
         },
         httpGet: (url, {headers = const {}}) async {
-          omdbCalls++;
-          if (failOmdb) throw StateError('net down');
-          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+          if (url.host.contains('omdbapi')) {
+            omdbCalls++;
+            if (failOmdb) throw StateError('net down');
+            return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+          }
+          return '<html>no rating</html>';
         },
       );
       // 第一次：omdb+trakt 失败 → 只剩种子，失败源不缓存。
       final first = await service.fetch(query);
       expect(first.single.platform, RatingPlatform.tmdb);
-      expect(omdbCalls, 1);
-      // 第二次：omdb 重试成功（trakt 仍抛但不阻塞），IMDb 补位。
+      // 第二次：omdb 重试成功，IMDb 补位。
       failOmdb = false;
       final second = await service.fetch(query);
       expect(omdbCalls, 2);
@@ -222,59 +295,51 @@ void main() {
         second.map((b) => b.platform),
         containsAll([RatingPlatform.tmdb, RatingPlatform.imdb]),
       );
-      // 第三次：omdb 成功已缓存（trakt 桥非 HTTP，不计数）。
+      // 第三次：omdb 成功已缓存。
       await service.fetch(query);
       expect(omdbCalls, 2);
     });
 
-    test('部分失败只重试失败源，成功源不重复打（按源缓存）', () async {
+    test('部分失败只重试失败源（按源缓存）', () async {
       var omdbCalls = 0;
-      var mdblistCalls = 0;
-      var failMdblist = true;
+      var doubanCalls = 0;
+      var failDouban = true;
       final service = HeroRatingsService(
-        omdbApiKey: 'k',
-        mdblistApiKey: 'm',
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) {
             omdbCalls++;
             return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
           }
-          mdblistCalls++;
-          if (failMdblist) throw StateError('mdb down');
-          return jsonEncode({
-            'ratings': {'tomatoesaudience': 91},
-          });
+          if (url.host == 'movie.douban.com') {
+            doubanCalls++;
+            if (failDouban) throw StateError('douban down');
+            return '<meta property="v:average" content="8.9">';
+          }
+          return '<html>no rating</html>';
         },
       );
       const fullQuery = HeroRatingQuery(
         imdbId: 'tt0133093',
-        tmdbId: '603',
+        doubanId: '3541415',
         tmdbScore: 7.4,
       );
-      // 第一次：omdb 成功、mdblist 失败。
+      // 第一次：omdb 成功、douban 失败。
       final first = await service.fetch(fullQuery);
       expect(omdbCalls, 1);
-      expect(mdblistCalls, 1);
-      expect(
-        first.map((b) => b.platform),
-        isNot(contains(RatingPlatform.rottenTomatoesAudience)),
-      );
-      // 第二次：只重试 mdblist（omdb 已缓存）。
-      failMdblist = false;
+      expect(doubanCalls, 1);
+      expect(first.map((b) => b.platform), isNot(contains(RatingPlatform.douban)));
+      // 第二次：只重试 douban（omdb 已缓存）。
+      failDouban = false;
       final second = await service.fetch(fullQuery);
       expect(omdbCalls, 1, reason: '成功源不重复打');
-      expect(mdblistCalls, 2, reason: '失败源自动重试');
-      expect(
-        second.map((b) => b.platform),
-        contains(RatingPlatform.rottenTomatoesAudience),
-      );
+      expect(doubanCalls, 2, reason: '失败源自动重试');
+      expect(second.map((b) => b.platform), contains(RatingPlatform.douban));
     });
 
     test('串行队列（698）：并发 fetch 不并发打 HTTP', () async {
       var inFlight = 0;
       var maxInFlight = 0;
       final service = HeroRatingsService(
-        omdbApiKey: 'k',
         httpGet: (url, {headers = const {}}) async {
           inFlight++;
           if (inFlight > maxInFlight) maxInFlight = inFlight;
@@ -288,14 +353,12 @@ void main() {
         service.fetch(const HeroRatingQuery(imdbId: 'tt2')),
         service.fetch(const HeroRatingQuery(imdbId: 'tt3')),
       ]);
-      expect(maxInFlight, 1, reason: 'HTTP 请求服务内串行（防免费 key 并发限速）');
+      expect(maxInFlight, 1, reason: 'HTTP 请求服务内串行（防限速/爬站过密）');
     });
 
     test('双 id 皆缺：不发网络，仅种子徽章', () async {
       var httpCalls = 0;
       final service = HeroRatingsService(
-        omdbApiKey: 'k',
-        mdblistApiKey: 'm',
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
           return '{}';
@@ -308,63 +371,47 @@ void main() {
       expect(badges.single.platform, RatingPlatform.tmdb);
     });
 
-    test('MDBList 只认 tt id（裸数字/缺 id 不发请求防串条目）', () async {
-      var urls = <String>[];
-      final service = HeroRatingsService(
-        mdblistApiKey: 'm',
-        httpGet: (url, {headers = const {}}) async {
-          urls.add(url.toString());
-          return jsonEncode({
-            'ratings': {'tomatoesaudience': 80},
-          });
-        },
-      );
-      // 只有 TMDB id：不发 MDBList。
-      await service.fetch(const HeroRatingQuery(tmdbId: '603'));
-      expect(urls, isEmpty);
-      // tt id：发 mdblist movie 面。
-      await service.fetch(const HeroRatingQuery(imdbId: 'tt1'));
-      expect(urls.single, contains('api.mdblist.com/movie/tt1/ratings'));
-    });
-
     test('Trakt 评分桥：有分出 Trakt 徽章（百分比），无分跳过', () async {
-      final withTrakt = HeroRatingsService(
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           expect(imdbId, 'tt0133093');
           expect(isMovie, isTrue);
           return Future<double?>.value(7.5);
         },
       );
-      final badges = await withTrakt.fetch(query);
+      final badges = await service.fetch(query);
       expect(badges, contains(
         const HeroRatingBadge(RatingPlatform.trakt, '75%'),
       ));
 
       final noTrakt = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           return Future<double?>.value();
         },
       );
-      final empty = await noTrakt.fetch(query);
+      final empty = await noTrakt.fetch(const HeroRatingQuery(imdbId: 'tt2', tmdbScore: 7.4));
       expect(empty.map((b) => b.platform), [RatingPlatform.tmdb]);
     });
 
     test('Trakt 桥异常按该源失败处理，不影响种子徽章', () async {
       final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           throw StateError('trakt down');
         },
       );
       final badges = await service.fetch(query);
-      expect(badges.single.platform, RatingPlatform.tmdb);
+      expect(badges, contains(
+        const HeroRatingBadge(RatingPlatform.tmdb, '7.4'),
+      ));
     });
   });
 
   group('HeroRatingsService.selfCheck（设置页测试按钮）', () {
-    test('三源齐备的标准片自检 → 三枚徽章无错误', () async {
+    test('标准片自检：OMDb 三枚 + 爬页双枚', () async {
       final service = HeroRatingsService(
-        omdbApiKey: 'k',
-        mdblistApiKey: 'm',
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) {
             return jsonEncode({
@@ -376,9 +423,11 @@ void main() {
               ],
             });
           }
-          return jsonEncode({
-            'ratings': {'tomatoesaudience': 96},
-          });
+          if (url.host == 'movie.douban.com') {
+            return '<meta property="v:average" content="9.4">';
+          }
+          return '<script type="application/ld+json">'
+              '{"aggregateRating":{"ratingValue":"4.4"}}</script>';
         },
       );
       final result = await service.selfCheck();
@@ -388,8 +437,11 @@ void main() {
         RatingPlatform.rottenTomatoesCritic,
         RatingPlatform.metacritic,
       ]);
-      expect(result.mdblistError, isNull);
-      expect(result.mdblistBadges, isNotEmpty);
+      expect(result.bridgeError, isNull);
+      expect(result.bridgeBadges.map((b) => b.platform), [
+        RatingPlatform.douban,
+        RatingPlatform.letterboxd,
+      ]);
     });
 
     test('key 错误透出 Response: False 的 Error 文案', () async {
@@ -404,14 +456,17 @@ void main() {
       );
       final result = await service.selfCheck();
       expect(result.omdbError, 'Invalid API key!');
-      expect(result.mdblistError, '未配置 MDBList Key');
     });
 
-    test('未配 key 明示提示', () async {
-      final service = HeroRatingsService();
+    test('爬页全挂 → bridgeError 提示反爬/改版', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          throw StateError('blocked');
+        },
+      );
       final result = await service.selfCheck();
-      expect(result.omdbError, '未配置 OMDb Key');
-      expect(result.mdblistError, '未配置 MDBList Key');
+      expect(result.omdbError, '网络错误');
+      expect(result.bridgeError, contains('反爬'));
     });
   });
 }

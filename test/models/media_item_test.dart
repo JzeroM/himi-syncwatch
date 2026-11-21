@@ -303,4 +303,54 @@ void main() {
       expect(item.chapters, isEmpty);
     });
   });
+
+  group('刮削字段挖掘（698 ①）', () {
+    test('CriticRating 解析（烂番茄影评分 0–100）', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '电影',
+        'Type': 'Movie',
+        'CriticRating': 88.0,
+      });
+      expect(item.criticRating, 88.0);
+    });
+
+    test('CustomRating 原样保存 + doubanRating 多形态解析', () {
+      Map<String, dynamic> json(String custom) => {
+            'Id': 'm1',
+            'Name': '电影',
+            'Type': 'Movie',
+            'CustomRating': custom,
+          };
+      // 常见形态：豆瓣刮削插件写「豆瓣 8.9」/「8.9」/「8.9/10」。
+      expect(MediaItem.fromJson(json('豆瓣 8.9')).doubanRating, 8.9);
+      expect(MediaItem.fromJson(json('8.9')).doubanRating, 8.9);
+      expect(MediaItem.fromJson(json('8.9/10')).doubanRating, 8.9);
+      // 原样保留。
+      expect(MediaItem.fromJson(json('豆瓣 8.9')).customRating, '豆瓣 8.9');
+    });
+
+    test('doubanRating 脏数据防御（超范围/无数值/缺失 → null）', () {
+      Map<String, dynamic> json([Object? custom]) => {
+            'Id': 'm1',
+            'Name': '电影',
+            'Type': 'Movie',
+            if (custom != null) 'CustomRating': custom,
+          };
+      expect(MediaItem.fromJson(json('18.9')).doubanRating, isNull);
+      expect(MediaItem.fromJson(json('豆瓣')).doubanRating, isNull);
+      expect(MediaItem.fromJson(json()).doubanRating, isNull);
+    });
+
+    test('doubanId 从 ProviderIds.Douban 取（忽略大小写）', () {
+      final item = MediaItem.fromJson({
+        'Id': 'm1',
+        'Name': '电影',
+        'Type': 'Movie',
+        'ProviderIds': {'Douban': '3541415'},
+      });
+      expect(item.doubanId, '3541415');
+      expect(MediaItem.fromJson({'Id': 'm1', 'Name': 'x', 'Type': 'Movie'}).doubanId, isNull);
+    });
+  });
 }

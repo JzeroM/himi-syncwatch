@@ -410,6 +410,14 @@ class MediaItem {
   /// 无 Backdrop 资源为 null（回退 [posterUrl]）。
   final String? backdropWideUrl;
 
+  /// 服务端刮削的烂番茄影评分（Emby `CriticRating`，0–100）；
+  /// 无刮削数据为 null（698 字段挖掘）。
+  final double? criticRating;
+
+  /// 服务端刮削的自定义评分（Emby `CustomRating`，豆瓣刮削插件常写豆瓣分）。
+  /// 原样保存，豆瓣分解析见 [doubanRating]（698 字段挖掘）。
+  final String? customRating;
+
   /// 标题艺术字图（`ImageTags.Logo`，透明宽幅 PNG）；无 Logo 资源为 null。
   final String? logoUrl;
   final String? year;
@@ -484,6 +492,8 @@ class MediaItem {
     this.year,
     this.officialRating,
     this.communityRating,
+    this.criticRating,
+    this.customRating,
     required this.type,
     this.seriesName,
     this.seriesId,
@@ -546,6 +556,8 @@ class MediaItem {
       year: json['ProductionYear']?.toString(),
       officialRating: json['OfficialRating'],
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
+      criticRating: (json['CriticRating'] as num?)?.toDouble(),
+      customRating: json['CustomRating'] as String?,
       type: json['Type'] ?? 'Movie',
       seriesName: json['SeriesName'],
       seriesId: json['SeriesId'],
@@ -621,6 +633,21 @@ class MediaItem {
 
   /// TMDB id（无则 null）。
   String? get tmdbId => providerId('tmdb');
+
+  /// 豆瓣 id（无则 null，中文刮削插件常写 `ProviderIds.Douban`）。
+  String? get doubanId => providerId('douban');
+
+  /// 豆瓣分（698 字段挖掘）：从 [customRating] 解析（豆瓣刮削插件常写
+  /// `豆瓣 8.9` / `8.9` / `8.9/10` 等形态），解析不出返回 null。
+  /// 取值钳 0–10，防脏数据。
+  double? get doubanRating {
+    final raw = customRating?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    final match = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(raw);
+    final v = double.tryParse(match?.group(1) ?? '');
+    if (v == null || v <= 0 || v > 10) return null;
+    return v;
+  }
 
   String? get runtimeText {
     if (runTimeTicks == null || runTimeTicks! <= 0) return null;

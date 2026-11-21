@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/utils/motion.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/hero_ratings_service.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 
@@ -48,7 +49,8 @@ class HomeHeroItem {
   factory HomeHeroItem.fromMediaItem(MediaItem item, {Object? payload}) {
     return HomeHeroItem(
       title: item.name,
-      imageUrl: item.backdropWideUrl,
+      // 698 N1：轮播只获取电影封面（Primary 海报），不再用宽幅背景图。
+      imageUrl: item.posterUrl,
       logoUrl: item.logoUrl,
       year: item.year,
       rating: item.communityRating,
@@ -312,6 +314,14 @@ class _HeroSlide extends StatelessWidget {
     final overview = item.overview?.trim();
     final query = item.ratingQuery;
 
+    // 698 N4：设备感知目标宽（逻辑宽 × min(dpr,2)，钳 600~1280）——
+    // 请求尺寸贴合显示 + 同宽解码（不拉大图再缩，清晰与快加载同源）。
+    final width = MediaQuery.sizeOf(context).width;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final targetW = embyImageTargetWidth(width, dpr);
+    // Logo 显示高仅 ~54px，目标宽单独收窄（300~600），省流量（698 N4-5）。
+    final logoW = embyImageTargetWidth(180, dpr, min: 300, max: 600);
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap == null ? null : () => onTap!(item),
@@ -327,11 +337,9 @@ class _HeroSlide extends StatelessWidget {
             child: bg == null
                 ? const SizedBox.shrink()
                 : imageBuilder(
-                    bg,
+                    embyImageUrlFor(bg, targetW) ?? bg,
                     fit: BoxFit.cover,
-                    cacheWidth: (MediaQuery.sizeOf(context).width *
-                            MediaQuery.devicePixelRatioOf(context))
-                        .round(),
+                    cacheWidth: targetW,
                     transparent: true,
                   ),
           ),
@@ -353,8 +361,11 @@ class _HeroSlide extends StatelessWidget {
                   SizedBox(
                     height: 54,
                     child: imageBuilder(
-                      logo,
+                      // 698 N4-5：Logo 原图常为数 MB 透明 PNG，按显示需要
+                      // 追加尺寸提示（MB → 几十 KB）+ 同宽解码。
+                      embyImageUrlFor(logo, logoW, quality: 90) ?? logo,
                       fit: BoxFit.contain,
+                      cacheWidth: logoW,
                       errorWidget: Text(
                         item.title,
                         maxLines: 1,

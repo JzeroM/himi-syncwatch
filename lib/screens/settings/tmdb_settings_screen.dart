@@ -24,7 +24,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
   late final TextEditingController _apiBase;
   late final TextEditingController _imageBase;
   late final TextEditingController _omdbKey;
-  late final TextEditingController _mdblistKey;
   final FocusNode _qrFocusNode = FocusNode(debugLabel: 'tmdbQrConfigEntry');
   Animation<double>? _routeAnimation;
   bool _obscure = true;
@@ -39,7 +38,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     _apiBase = TextEditingController(text: s.tmdbApiBase);
     _imageBase = TextEditingController(text: s.tmdbImageBase);
     _omdbKey = TextEditingController(text: s.omdbApiKey);
-    _mdblistKey = TextEditingController(text: s.mdblistApiKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(settingsProvider).tvMode) {
         _qrFocusNode.requestFocus();
@@ -74,7 +72,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     _apiBase.dispose();
     _imageBase.dispose();
     _omdbKey.dispose();
-    _mdblistKey.dispose();
     _qrFocusNode.dispose();
     super.dispose();
   }
@@ -85,7 +82,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     String? tmdbImageBase,
     String? tmdbWatchRegion,
     String? omdbApiKey,
-    String? mdblistApiKey,
   }) {
     ref.read(settingsProvider.notifier).update(
           tmdbApiKey: tmdbApiKey,
@@ -93,7 +89,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
           tmdbImageBase: tmdbImageBase,
           tmdbWatchRegion: tmdbWatchRegion,
           omdbApiKey: omdbApiKey,
-          mdblistApiKey: mdblistApiKey,
         );
   }
 
@@ -120,20 +115,13 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     }
   }
 
-  /// 测试评分数据源（698）：内置标准片实打 OMDb/MDBList，透出 key 错误与
-  /// 缺枚信息——把「解析 bug」和「条目无数据」分开。
+  /// 测试评分数据源（698）：内置标准片实打 OMDb + 豆瓣/Letterboxd 爬页，
+  /// 透出 key 错误与缺枚信息——把「解析 bug」和「条目无数据」分开。
   Future<void> _testRatings() async {
     final s = ref.read(settingsProvider);
-    if (s.omdbApiKey.trim().isEmpty && s.mdblistApiKey.trim().isEmpty) {
-      showAppToast(context, '请先填写 OMDb 或 MDBList Key');
-      return;
-    }
     setState(() => _testingRatings = true);
     try {
-      final service = HeroRatingsService(
-        omdbApiKey: s.omdbApiKey,
-        mdblistApiKey: s.mdblistApiKey,
-      );
+      final service = HeroRatingsService(omdbApiKey: s.omdbApiKey);
       final result = await service.selfCheck();
       if (!mounted) return;
 
@@ -151,11 +139,12 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
               : 'OMDb：缺 ${omdbMissing.map(_platformLabel).join(' / ')}'
                   '（解析或响应形态异常，标准片应三源齐备）';
 
-      final mdbMsg = result.mdblistError != null
-          ? 'MDBList：${result.mdblistError}'
-          : 'MDBList：🍿 观众分 ✓';
+      final bridgeGot = result.bridgeBadges.map((b) => b.platform).toSet();
+      final bridgeMsg = result.bridgeError != null
+          ? '爬页：${result.bridgeError}'
+          : '爬页：${bridgeGot.map(_platformLabel).join(' / ')} ✓';
 
-      showAppToast(context, '$omdbMsg；$mdbMsg');
+      showAppToast(context, '$omdbMsg；$bridgeMsg');
     } catch (e) {
       if (!mounted) return;
       showAppToast(context, '测试失败：$e');
@@ -168,7 +157,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
         RatingPlatform.imdb => 'IMDb',
         RatingPlatform.rottenTomatoesCritic => '烂番茄',
         RatingPlatform.metacritic => 'Metacritic',
-        RatingPlatform.rottenTomatoesAudience => '观众分',
+        RatingPlatform.douban => '豆瓣',
+        RatingPlatform.letterboxd => 'Letterboxd',
         _ => p.name,
       };
 
@@ -180,7 +170,6 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
     if (_apiBase.text != s.tmdbApiBase) _apiBase.text = s.tmdbApiBase;
     if (_imageBase.text != s.tmdbImageBase) _imageBase.text = s.tmdbImageBase;
     if (_omdbKey.text != s.omdbApiKey) _omdbKey.text = s.omdbApiKey;
-    if (_mdblistKey.text != s.mdblistApiKey) _mdblistKey.text = s.mdblistApiKey;
   }
 
   Future<void> _clearConfig() async {
@@ -351,8 +340,9 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
           child: Text(
-            '多平台评分（可选）：首页轮播与详情页的评分行展示 IMDb / 烂番茄影评 / '
-            'Metacritic / 烂番茄观众徽章。留空则对应徽章自动隐藏，不影响其他功能。'
+            '多平台评分：首页轮播与详情页的评分行展示 IMDb / 烂番茄影评 / '
+            'Metacritic（OMDb，内置 key 免配置）、豆瓣 / Letterboxd（免 key 爬页）、'
+            'TMDB / Trakt 徽章。缺数据的平台自动隐藏，不影响其他功能。'
             '烂番茄/Metacritic 仅部分条目有数据（欧美片较全，亚洲条目常仅 IMDb）。',
             style: const TextStyle(
               fontSize: 12,
@@ -363,7 +353,7 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
         ),
         const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: tvExcludeEditable(
             tvMode: s.tvMode,
             child: TextField(
@@ -373,30 +363,13 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
               enableSuggestions: false,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                labelText: 'OMDb API Key（可选）',
-                hintText: 'www.omdbapi.com 的免费 key',
-                helperText: '一枚 key 提供 IMDb / 烂番茄影评 / Metacritic 三枚徽章',
+                labelText: 'OMDb API Key（可选，留空使用内置 key）',
+                hintText: '留空使用内置 key',
+                helperText:
+                    '提供 IMDb / 烂番茄影评 / Metacritic 三枚徽章；内置 key 被'
+                    '限流或失效时可填自己的免费 key（www.omdbapi.com）',
               ),
               onChanged: (v) => _update(omdbApiKey: v),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: tvExcludeEditable(
-            tvMode: s.tvMode,
-            child: TextField(
-              key: const ValueKey('mdblistApiKeyField'),
-              controller: _mdblistKey,
-              autocorrect: false,
-              enableSuggestions: false,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'MDBList API Key（可选）',
-                hintText: 'mdblist.com 免费注册的 key',
-                helperText: '提供烂番茄观众分（🍿 爆米花指数）徽章',
-              ),
-              onChanged: (v) => _update(mdblistApiKey: v),
             ),
           ),
         ),

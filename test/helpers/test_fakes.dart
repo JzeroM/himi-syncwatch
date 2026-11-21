@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/models/tv_device.dart';
+import 'package:himi_syncwatch/services/hero_ratings_service.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
@@ -16,6 +17,13 @@ import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/player/player_adapter.dart';
 
 /// 不触碰平台通道的设置通知器（覆写落盘）。
+/// 测试用评分服务（698）：假 HTTP（不打真网）+ 零队列间隔（`Future.delayed`
+/// 会在 teardown 触发「Timer still pending」，生产 150ms 间隔不进测试）。
+/// 需要验证徽章行为的用例请自建注入式 service（见 hero_ratings_service_test）。
+HeroRatingsService fakeHeroRatingsService() => HeroRatingsService(
+      httpGet: (url, {headers = const {}}) async => '{}',
+    );
+
 class FakeSettingsNotifier extends SettingsNotifier {
   FakeSettingsNotifier([AppSettings initial = const AppSettings()]) {
     state = initial;

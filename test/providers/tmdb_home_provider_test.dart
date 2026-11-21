@@ -416,7 +416,7 @@ void main() {
         id: 'a-m1',
         name: 'A 电影',
         type: 'Movie',
-        backdropWideUrl: 'https://a/backdrop/1.jpg',
+        posterUrl: 'https://a/backdrop/1.jpg',
         logoUrl: 'https://a/logo/1.png',
         year: '2024',
         communityRating: 8.5,
@@ -429,7 +429,7 @@ void main() {
         id: 'b-m2',
         name: 'B 电影',
         type: 'Movie',
-        backdropWideUrl: 'https://b/backdrop/2.jpg',
+        posterUrl: 'https://b/backdrop/2.jpg',
         providerIds: const {'Tmdb': '2'},
       ),
     ]);

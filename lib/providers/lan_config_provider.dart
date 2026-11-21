@@ -174,13 +174,12 @@ final lanConfigProvider =
     tmdbHandler: (body) async {
       final apiKey = asString(body['apiKey']).trim();
       final omdbKey = asString(body['omdbKey']).trim();
-      final mdblistKey = asString(body['mdblistKey']).trim();
       final current = ref.read(settingsProvider);
       final apiBase = asString(body['apiBase']).trim();
       final imageBase = asString(body['imageBase']).trim();
       final region = asString(body['region']).trim().toUpperCase();
       // TMDB key 必填；但只更新评分 key 时允许留空（TMDB 保持当前）。
-      if (apiKey.isEmpty && omdbKey.isEmpty && mdblistKey.isEmpty) {
+      if (apiKey.isEmpty && omdbKey.isEmpty) {
         return '请填写 TMDB API Key 或 Read Token';
       }
       await ref.read(settingsProvider.notifier).update(
@@ -192,7 +191,6 @@ final lanConfigProvider =
                 ? region
                 : current.tmdbWatchRegion,
             omdbApiKey: omdbKey.isEmpty ? null : omdbKey,
-            mdblistApiKey: mdblistKey.isEmpty ? null : mdblistKey,
           );
       return null;
     },

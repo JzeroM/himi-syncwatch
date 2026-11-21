@@ -55,14 +55,12 @@ class EmbyImage extends ConsumerWidget {
       fit: fit,
       memCacheWidth: cacheWidth,
       fadeInDuration: fadeInDuration,
-      placeholder: (_, __) =>
-          placeholder ??
-          Container(
-            color: Colors.grey[850],
-            child: const Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
+      // 默认占位用静态灰块（698）：转圈 spinner 是永动动画——图片未落定
+      // 期间每张海报一个持续 ticker（列表滚动 N 张 = N 个永动源，拖累帧率），
+      // 测试环境 pumpAndSettle 也因此永不收敛。静态占位 + 加载完成淡入
+      // （[fadeInDuration]）为标准做法；需要转圈的调用方可经 [placeholder]
+      // 显式传入。
+      placeholder: (_, __) => placeholder ?? Container(color: Colors.grey[850]),
       errorWidget: (_, __, ___) => errorWidget ?? _defaultError(),
     );
   }

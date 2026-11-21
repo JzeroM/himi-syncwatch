@@ -63,39 +63,78 @@ class HeroRatingQuery {
   const HeroRatingQuery({
     this.imdbId,
     this.tmdbId,
+    this.doubanId,
+    this.title,
+    this.year,
     this.isMovie = true,
     this.tmdbScore,
+    this.criticScore,
+    this.doubanScore,
   });
 
   final String? imdbId;
   final String? tmdbId;
+
+  /// 豆瓣 id（`ProviderIds.Douban`，中文刮削插件常写；爬页直查用）。
+  final String? doubanId;
+
+  /// 片名/年份（豆瓣搜索兜底的相似度匹配用，698 桥接）。
+  final String? title;
+  final String? year;
   final bool isMovie;
 
   /// TMDB 分（Emby `CommunityRating`），本地即得——首帧种子徽章用。
   final double? tmdbScore;
 
+  /// 烂番茄影评分（Emby `CriticRating`，0–100），本地即得（698 字段挖掘）。
+  final double? criticScore;
+
+  /// 豆瓣分（Emby `CustomRating` 解析，0–10），本地即得（698 字段挖掘）。
+  final double? doubanScore;
+
   factory HeroRatingQuery.fromMediaItem(MediaItem item) => HeroRatingQuery(
         imdbId: item.providerId('imdb'),
         tmdbId: item.tmdbId,
+        doubanId: item.doubanId,
+        title: item.name,
+        year: item.year,
         isMovie: item.isMovie,
         tmdbScore: item.communityRating,
+        criticScore: item.criticRating,
+        doubanScore: item.doubanRating,
       );
 
-  /// 首帧种子徽章（纯本地数据，不等网络）：TMDB 分来自 CommunityRating。
+  /// 首帧种子徽章（纯本地数据，不等网络）：TMDB 分（CommunityRating）、
+  /// 烂番茄影评（CriticRating）、豆瓣（CustomRating 解析）——服务端刮削
+  /// 字段挖掘（698），有哪枚出哪枚。
   List<HeroRatingBadge> get seedBadges => [
         if (tmdbScore != null && tmdbScore! > 0)
           HeroRatingBadge(
             RatingPlatform.tmdb,
             formatRatingScore(RatingPlatform.tmdb, tmdbScore!),
           ),
+        if (criticScore != null && criticScore! > 0)
+          HeroRatingBadge(
+            RatingPlatform.rottenTomatoesCritic,
+            formatRatingScore(RatingPlatform.rottenTomatoesCritic, criticScore!),
+          ),
+        if (doubanScore != null && doubanScore! > 0)
+          HeroRatingBadge(
+            RatingPlatform.douban,
+            formatRatingScore(RatingPlatform.douban, doubanScore!),
+          ),
       ];
 
-  /// 服务端缓存键（优先 IMDb id）；双 id 皆缺返回 null（不发网络请求）。
+  /// 服务端缓存键（IMDb → TMDB → 豆瓣 id 三级）；三级皆缺返回 null
+  /// （不发网络请求）。豆瓣 id 兜底让「仅豆瓣刮削」条目也能爬页补分/反补
+  /// tt id（698 ②）。
   String? get cacheKey {
     final imdb = imdbId?.trim();
     if (imdb != null && imdb.isNotEmpty) return 'imdb:$imdb';
     final tmdb = tmdbId?.trim();
     if (tmdb != null && tmdb.isNotEmpty) return 'tmdb:$tmdb';
+    final douban = doubanId?.trim();
+    if (douban != null && douban.isNotEmpty) return 'douban:$douban';
     return null;
   }
 }

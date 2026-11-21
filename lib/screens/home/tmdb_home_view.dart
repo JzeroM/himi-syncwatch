@@ -102,15 +102,26 @@ class _HomeListState extends ConsumerState<_HomeList> {
     super.dispose();
   }
 
+  /// 图片 URL 去 query 的基地址（scheme+host+path）——`_heroSources` 查表键
+  /// 用基地址（698 N4-4/N4-5d）：升清/虚化只重写 query 参数，基地址不变，
+  /// 升清后的 URL 仍能路由到跨服务器 token 条目（tap→详情不断链）。
+  static String _urlBase(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) return url;
+    return '${uri.scheme}://${uri.authority}${uri.path}';
+  }
+
   HomeHeroItem _toHero(TmdbHeroEntry entry) {
-    final serverUrl = entry.item.backdropWideUrl;
-    if (serverUrl != null) {
-      _heroSources[serverUrl] = entry;
-      final ambient = ambientBackdropUrl(serverUrl);
-      if (ambient != null) _heroSources[ambient] = entry;
+    // 698 N1：轮播只获取电影封面（Primary 海报）；基地址注册（虚化层/
+    // 升清层派生 URL 同基地址，天然命中，不再单注册）。
+    final poster = entry.item.posterUrl;
+    if (poster != null && poster.isNotEmpty) {
+      _heroSources[_urlBase(poster)] = entry;
     }
     final logo = entry.item.logoUrl;
-    if (logo != null && logo.isNotEmpty) _heroSources[logo] = entry;
+    if (logo != null && logo.isNotEmpty) {
+      _heroSources[_urlBase(logo)] = entry;
+    }
     return HomeHeroItem.fromMediaItem(entry.item, payload: entry);
   }
 
@@ -121,7 +132,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     bool transparent = false,
     Widget? errorWidget,
   }) {
-    final entry = _heroSources[url];
+    final entry = _heroSources[_urlBase(url)];
     if (entry == null) {
       return errorWidget ?? const SizedBox.shrink();
     }
@@ -348,7 +359,8 @@ class _Hero extends StatelessWidget {
             MediaQuery.devicePixelRatioOf(context))
         .round();
     final item = entry.item;
-    final imageUrl = item.backdropWideUrl;
+    // 698 N1：轮播只获取电影封面（Primary 海报）。
+    final imageUrl = item.posterUrl;
     return SizedBox(
       height: height,
       child: Stack(

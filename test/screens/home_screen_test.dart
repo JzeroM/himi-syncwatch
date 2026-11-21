@@ -10,6 +10,7 @@ import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
@@ -56,6 +57,7 @@ Future<ProviderContainer> _pumpScreen(
       embyAuthServiceProvider
           .overrideWith((ref) => auth ?? FakeEmbyAuthService()),
       embyServiceProvider.overrideWith((ref) => emby ?? FakeEmbyService()),
+      heroRatingsServiceProvider.overrideWithValue(fakeHeroRatingsService()),
       if (serviceFactory != null)
         embyServiceFactoryProvider.overrideWithValue(serviceFactory),
     ],
@@ -1241,14 +1243,14 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m1/Images/Primary?maxHeight=400&tag=p',
           backdropUrl: 'https://a/1s.jpg',
         ),
         MediaItem(
           id: 'm2',
           name: '影片2',
           type: 'Movie',
-          backdropWideUrl: 'https://a/2-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m2/Images/Primary?maxHeight=400&tag=p',
           backdropUrl: 'https://a/2s.jpg',
         ),
       ],
@@ -1267,11 +1269,11 @@ void main() {
     expect(
       carousel.items.every(
         (item) =>
-            item.imageUrl!.contains('maxWidth=1600') &&
-            item.imageUrl!.contains('quality=90'),
+            item.imageUrl!.contains('maxHeight=400') &&
+            item.imageUrl!.contains('Primary'),
       ),
       isTrue,
-      reason: '顶部轮播使用服务器 1600 宽/质量 90 背景',
+      reason: '698 N1：顶部轮播使用电影封面（Primary 海报）',
     );
     expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
         reason: '轮播开启时首页背景改为虚化海报');
@@ -1295,7 +1297,7 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m1/Images/Primary?maxHeight=400&tag=p',
         ),
       ],
     );
@@ -1330,19 +1332,19 @@ void main() {
           id: 'm1',
           name: '影片1',
           type: 'Movie',
-          backdropWideUrl: 'https://a/1-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m1/Images/Primary?maxHeight=400&tag=p',
         ),
         MediaItem(
           id: 'm2',
           name: '影片2',
           type: 'Movie',
-          backdropWideUrl: 'https://a/2-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m2/Images/Primary?maxHeight=400&tag=p',
         ),
         MediaItem(
           id: 'm3',
           name: '影片3',
           type: 'Movie',
-          backdropWideUrl: 'https://a/3-backdrop.jpg?maxWidth=1600&quality=90',
+          posterUrl: 'https://a/Items/m3/Images/Primary?maxHeight=400&tag=p',
         ),
       ],
     );
