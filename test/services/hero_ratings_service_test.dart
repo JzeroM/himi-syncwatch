@@ -194,6 +194,153 @@ void main() {
     });
   });
 
+  group('豆瓣反爬挑战流（698 N5-C）', () {
+    const challengeHtml = '<html><body><form id="sec" method="POST" action="/c">'
+        '<input type="hidden" id="tok" name="tok" value="TOK" />'
+        '<input type="hidden" id="cha" name="cha" value="test-cha-130197" />'
+        '<input type="hidden" id="sol" name="sol" value="" />'
+        '<input type="hidden" id="red" name="red" value="https://movie.douban.com/subject/3541415/" />'
+        '</form></body></html>';
+    const ratingHtml = '<meta property="v:average" content="9.4">';
+
+    test('挑战页 → 挖矿 POST /c → 携通行 cookie 重试取分', () async {
+      var subjectCalls = 0;
+      final getHeaders = <Map<String, String>>[];
+      Uri? postUrl;
+      Map<String, String>? postForm;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'movie.douban.com') {
+            subjectCalls++;
+            getHeaders.add(headers);
+            return subjectCalls == 1 ? challengeHtml : ratingHtml;
+          }
+          return '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          postUrl = url;
+          postForm = form;
+          return const RatingsHttpPostResult(
+              setCookie: 'dbcl2="pass123"; Path=/; Domain=.douban.com');
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(
+        badges,
+        contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')),
+      );
+      // POST /c 表单：tok/cha/red 透传，sol = 挖出的 nonce（秒解向量 = 1）。
+      expect(postUrl.toString(), 'https://movie.douban.com/c');
+      expect(postForm!['tok'], 'TOK');
+      expect(postForm!['cha'], 'test-cha-130197');
+      expect(postForm!['sol'], '1');
+      expect(postForm!['red'], contains('/subject/3541415/'));
+      // 重试 GET 携通行 cookie（只回 name=value 段）+ Referer + bid。
+      final retryHeaders = getHeaders.last;
+      expect(retryHeaders['Cookie'], contains('dbcl2="pass123"'));
+      expect(retryHeaders['Cookie'], contains('bid='));
+      expect(retryHeaders['Cookie'], isNot(contains('Domain=')),
+          reason: 'Cookie 只回传 name=value 段');
+      expect(retryHeaders['Referer'], 'https://movie.douban.com/');
+    });
+
+    test('豆瓣请求头：完整浏览器头组（UA/语言/Referer/bid Cookie）', () async {
+      final headersSeen = <Map<String, String>>[];
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          headersSeen.add(headers);
+          return ratingHtml;
+        },
+      );
+      await service.fetch(const HeroRatingQuery(doubanId: '3541415'));
+      final h = headersSeen.firstWhere((h) => h.containsKey('Referer'));
+      expect(h['User-Agent'], contains('Mozilla/5.0'));
+      expect(h['User-Agent'], contains('Chrome'));
+      expect(h['Accept-Language'], contains('zh-CN'));
+      expect(h['Referer'], 'https://movie.douban.com/');
+      expect(h['Cookie'], startsWith('bid='));
+    });
+
+    test('重试仍被拦 → 源失败不缓存（下次 fetch 自动重试）', () async {
+      var subjectCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'movie.douban.com') {
+            subjectCalls++;
+            return challengeHtml; // 永远挑战页
+          }
+          return '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async =>
+            const RatingsHttpPostResult(setCookie: 'a=b'),
+      );
+      const query = HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0);
+      final first = await service.fetch(query);
+      expect(first.map((b) => b.platform), [RatingPlatform.tmdb],
+          reason: '豆瓣源失败不产出徽章');
+      final before = subjectCalls;
+      await service.fetch(query);
+      expect(subjectCalls, greaterThan(before),
+          reason: '挑战失败不缓存，下次 fetch 自动重试');
+    });
+
+    test('挑战未回 Set-Cookie → 源失败（没换到通行凭证不算过）', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          return url.host == 'movie.douban.com' ? challengeHtml : '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async =>
+            const RatingsHttpPostResult(),
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(badges.map((b) => b.platform), [RatingPlatform.tmdb]);
+    });
+
+    test('selfCheck：豆瓣被拦 → doubanBlocked 如实报', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'movie.douban.com') return challengeHtml;
+          if (url.host.contains('omdbapi')) {
+            return jsonEncode({'Response': 'True', 'imdbRating': '8.8'});
+          }
+          return '<script type="application/ld+json">'
+              '{"aggregateRating":{"ratingValue":"4.4"}}</script>';
+        },
+        httpPost: (url, {headers = const {}, required form}) async =>
+            const RatingsHttpPostResult(setCookie: 'a=b'),
+      );
+      final result = await service.selfCheck();
+      expect(result.doubanBlocked, isTrue);
+      expect(result.bridgeError, isNull,
+          reason: 'Letterboxd 正常取到，不算全挂');
+      expect(result.bridgeBadges.map((b) => b.platform), [
+        RatingPlatform.letterboxd,
+      ]);
+    });
+
+    test('首请求即正常页 → 不打 POST（无挑战不挖矿）', () async {
+      var postCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          return url.host == 'movie.douban.com' ? ratingHtml : '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          postCalls++;
+          return const RatingsHttpPostResult(setCookie: 'a=b');
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(postCalls, 0);
+      expect(badges, contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')));
+    });
+  });
+
   group('Letterboxd 爬页（698 ② 免 key）', () {
     test('/imdb/{tt}/ 路由取分，5 分制 ×2', () async {
       final service = HeroRatingsService(

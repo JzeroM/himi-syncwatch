@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -129,13 +130,22 @@ class PosterCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EmbyImage(
-                    url: item.posterUrl,
-                    fit: BoxFit.cover,
-                    // 按显示宽×dpr 解码，避免原图全尺寸解码卡顿
-                    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
-                        .round(),
-                  ),
+                  Builder(builder: (context) {
+                    // 698 N5-A：card 槽位小而清晰（cap 540/q85，对齐
+                    // SenPlayer media-card:poster:w540 同档）——URL 尺寸
+                    // 重写 + 同宽解码。
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    final targetW =
+                        embyImageSlotWidth(EmbyImageSlot.card, width, dpr);
+                    return EmbyImage(
+                      url: embyImageUrlForSlot(
+                              item.posterUrl, EmbyImageSlot.card, width, dpr) ??
+                          item.posterUrl,
+                      fit: BoxFit.cover,
+                      // 按显示宽×dpr 解码，避免原图全尺寸解码卡顿
+                      cacheWidth: targetW,
+                    );
+                  }),
                   if (serverBadge != null)
                     Positioned(
                       top: 6,

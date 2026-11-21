@@ -194,7 +194,8 @@ void main() {
         of: find.byType(FlexibleSpaceBar),
         matching: find.byType(EmbyImage),
       ),
-      findsOneWidget,
+      findsNWidgets(2),
+      reason: '698 N5-B 构图 A：封面兜底 = 同源两层图（虚化铺底 + 海报完整居中）',
     );
     expect(find.text('测试影片'), findsWidgets);
   });
@@ -249,7 +250,8 @@ void main() {
           of: find.byType(FlexibleSpaceBar),
           matching: find.byType(EmbyImage),
         ),
-        findsOneWidget,
+        findsNWidgets(2),
+        reason: '698 N5-B 构图 A：封面兜底 = 同源两层图（虚化铺底 + 海报完整居中）',
       );
     });
 
@@ -3626,6 +3628,45 @@ void main() {
       for (final s in DetailScreen.heroTextShadows) {
         expect(s.blurRadius, lessThanOrEqualTo(6));
       }
+    });
+  });
+
+  group('698 N5-B 详情 hero 构图（封面兜底 = 海报完整居中 + 虚化铺底）', () {
+    testWidgets('仅封面：2:3 contain 海报 + 同图虚化铺底（ImageFiltered）', (tester) async {
+      await _pumpDetail(tester, item: _item);
+      final ratio = find.descendant(
+        of: find.byType(FlexibleSpaceBar),
+        matching: find.byType(AspectRatio),
+      );
+      expect(ratio, findsOneWidget, reason: '海报按 2:3 帧完整居中');
+      expect(tester.widget<AspectRatio>(ratio).aspectRatio, 2 / 3);
+      expect(
+        find.descendant(
+          of: find.byType(FlexibleSpaceBar),
+          matching: find.byType(ImageFiltered),
+        ),
+        findsOneWidget,
+        reason: '同图虚化铺底',
+      );
+    });
+
+    testWidgets('有 backdrop：维持宽幅 cover（无 2:3 海报层）', (tester) async {
+      final item = MediaItem(
+        id: 'm1',
+        name: '测试影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        backdropUrl: 'https://emby.test/Items/m1/Images/Backdrop?maxHeight=400&tag=b',
+      );
+      await _pumpDetail(tester, item: item);
+      expect(
+        find.descendant(
+          of: find.byType(FlexibleSpaceBar),
+          matching: find.byType(AspectRatio),
+        ),
+        findsNothing,
+        reason: '宽幅 backdrop 满幅 cover，不加海报层',
+      );
     });
   });
 }

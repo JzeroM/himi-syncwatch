@@ -135,7 +135,17 @@ void main() {
 
     testWidgets('清晰图包有 ShaderMask（dstIn 底部渐隐）', (tester) async {
       final controller = PageController();
-      await _pump(tester, controller, items: [_item('1'), _item('2')]);
+      // 698 N5-B：有图才有铺底/渐隐层——带图 fixture 验证真实意图。
+      await _pump(tester, controller, items: [
+        HomeHeroItem(
+            title: '影片1',
+            imageUrl: 'https://e/Items/1/Images/Primary?maxHeight=400&tag=a',
+            payload: '1'),
+        HomeHeroItem(
+            title: '影片2',
+            imageUrl: 'https://e/Items/2/Images/Primary?maxHeight=400&tag=b',
+            payload: '2'),
+      ]);
       final masks = tester
           .widgetList<ShaderMask>(find.byType(ShaderMask))
           .where((m) => m.blendMode == BlendMode.dstIn);

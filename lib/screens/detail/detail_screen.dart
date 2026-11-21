@@ -2013,35 +2013,105 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // TV：海报已做整页背景，此处不再重复铺图/渐变，
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
-                  // 清晰海报：底部渐隐到透明，无缝融入正文虚化氛围层
-                  // （两层底图同源，接缝处自然溶解，无硬边也无色相跳变）。
-                  // 698 N4-2：设备感知目标宽升清（模型层 400px 小图直接放大
-                  // 会糊）+ 同宽解码（清晰与快加载同源）。
+                  // 698 N5-B：有宽幅 backdrop → 满幅 cover（宽幅图天然适配
+                  // 且最清晰，底部渐隐融入正文虚化氛围层）；仅封面兜底 →
+                  // 海报完整居中 + 同图虚化铺底（构图 A，修「显示不全/糊」）。
                   Builder(builder: (context) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
-                    final targetW = embyImageTargetWidth(
-                      MediaQuery.sizeOf(context).width,
-                      dpr,
+                    final width = MediaQuery.sizeOf(context).width;
+                    final backdrop = item.backdropUrl;
+                    final poster = item.posterUrl;
+                    final fade = const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.white,
+                        Colors.white,
+                        Colors.transparent,
+                      ],
+                      stops: [0.0, 0.55, 1.0],
                     );
-                    final heroUrl =
-                        item.backdropUrl ?? item.posterUrl;
-                    return ShaderMask(
-                      shaderCallback: (rect) => const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white,
-                          Colors.white,
-                          Colors.transparent,
-                        ],
-                        stops: [0.0, 0.55, 1.0],
-                      ).createShader(rect),
-                      blendMode: BlendMode.dstIn,
-                      child: EmbyImage(
-                        url: embyImageUrlFor(heroUrl, targetW) ?? heroUrl,
-                        fit: BoxFit.cover,
-                        cacheWidth: targetW,
-                      ),
+                    if (backdrop != null && backdrop.isNotEmpty) {
+                      final targetW =
+                          embyImageSlotWidth(EmbyImageSlot.hero, width, dpr);
+                      return ShaderMask(
+                        shaderCallback: (rect) => fade.createShader(rect),
+                        blendMode: BlendMode.dstIn,
+                        child: EmbyImage(
+                          url: embyImageUrlForSlot(
+                                  backdrop, EmbyImageSlot.hero, width, dpr) ??
+                              backdrop,
+                          fit: BoxFit.cover,
+                          cacheWidth: targetW,
+                        ),
+                      );
+                    }
+                    if (poster == null || poster.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 同图虚化铺底：320 小图 cover + 高斯模糊（放大 15%
+                        // 防模糊边缘渗透明光晕）。
+                        ShaderMask(
+                          shaderCallback: (rect) => fade.createShader(rect),
+                          blendMode: BlendMode.dstIn,
+                          child: ClipRect(
+                            child: Transform.scale(
+                              scale: 1.15,
+                              child: ImageFiltered(
+                                imageFilter: ui.ImageFilter.blur(
+                                    sigmaX: 22, sigmaY: 22),
+                                child: EmbyImage(
+                                  url: ambientBackdropUrl(poster) ?? poster,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 海报完整居中（2:3 + contain 零裁切）：底部 150
+                        // 让位标题/信息块。
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 0,
+                          bottom: 150,
+                          child: Center(
+                            child: AspectRatio(
+                              aspectRatio: 2 / 3,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black54,
+                                      blurRadius: 24,
+                                      offset: Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: EmbyImage(
+                                    url: embyImageUrlForSlot(
+                                            poster,
+                                            EmbyImageSlot.hero,
+                                            width,
+                                            dpr) ??
+                                        poster,
+                                    fit: BoxFit.contain,
+                                    cacheWidth: embyImageSlotWidth(
+                                        EmbyImageSlot.hero, width, dpr),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     );
                   }),
                   // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
@@ -2066,23 +2136,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       // 不加 logo；图 404/加载失败回退文字片名）
                       if (!widget.roomMode && item.logoUrl != null)
                         EmbyImage(
-                          // 698 N4-5：Logo 原图常为数 MB 透明 PNG，按显示需要
-                          // 追加尺寸提示（MB → 几十 KB）+ 同宽解码。
-                          url: embyImageUrlFor(
-                                  item.logoUrl,
-                                  (MediaQuery.sizeOf(context).width *
-                                          MediaQuery.devicePixelRatioOf(context))
-                                      .clamp(300, 640)
-                                      .toInt(),
-                                  quality: 90) ??
+                          // 698 N5-A：Logo 槽位不抠质量（cap 800/q100）；原图
+                          // 常为数 MB 透明 PNG，按显示需要追加尺寸提示 + 同宽
+                          // 解码。
+                          url: embyImageUrlForSlot(item.logoUrl,
+                                  EmbyImageSlot.logo, 180, MediaQuery.devicePixelRatioOf(context)) ??
                               item.logoUrl,
                           height: tv ? 44 : 60,
                           fit: BoxFit.contain,
                           // logo 多为大尺寸透明 PNG，按显示需要限解码宽
-                          cacheWidth: (MediaQuery.sizeOf(context).width *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .clamp(300, 640)
-                              .toInt(),
+                          cacheWidth: embyImageSlotWidth(
+                              EmbyImageSlot.logo, 180,
+                              MediaQuery.devicePixelRatioOf(context)),
                           placeholder: const SizedBox.shrink(),
                           errorWidget: Text(
                             item.name,

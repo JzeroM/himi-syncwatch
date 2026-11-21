@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 
@@ -128,7 +129,7 @@ void main() {
       expect(tapped, isTrue);
     });
 
-    testWidgets('海报按显示宽×dpr 传入 cacheWidth（避免全尺寸解码）', (tester) async {
+    testWidgets('海报按 card 槽位传入 cacheWidth（避免全尺寸解码，698 N5-A）', (tester) async {
       await tester.pumpWidget(_wrap(PosterCard(item: _item(), width: 122)));
       await tester.pumpAndSettle();
 
@@ -136,8 +137,10 @@ void main() {
       final dpr = MediaQuery.devicePixelRatioOf(
         tester.element(find.byType(PosterCard)),
       );
-      expect(img.cacheWidth, (122 * dpr).round());
+      expect(img.cacheWidth,
+          embyImageSlotWidth(EmbyImageSlot.card, 122, dpr));
       expect(img.cacheWidth, isNotNull);
+      expect(img.cacheWidth, lessThanOrEqualTo(540), reason: 'card 档上限 540');
     });
   });
 }

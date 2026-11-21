@@ -7,6 +7,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 /// 网页评分解析工具（film-bridge 移植，698 ②）：
 ///
 /// 豆瓣 / Letterboxd 详情页在 HTML 里内嵌 `application/ld+json` 结构化数据
@@ -88,6 +90,46 @@ class BridgeParsers {
       caseSensitive: false,
     ).firstMatch(text);
     return m?.group(1)?.toLowerCase();
+  }
+
+  // ── 豆瓣反爬挑战（698 N5-C）──────────────────────────────────────
+  //
+  // 豆瓣对非常规客户端返回「点我继续浏览」挑战页（假 200）：SHA-512
+  // 工作量证明——`sha512(cha + nonce)` 十六进制前 4 位为 0（浏览器 JS
+  // 挖矿平均 6.5 万次），挖到 nonce 后 POST /c 换通行 cookie。
+
+  /// 是否为反爬挑战页（含挑战表单特征）。
+  static bool isDoubanChallenge(String html) =>
+      html.contains('id="tok"') && html.contains('id="cha"');
+
+  /// 解析挑战表单三元组（tok/cha/red）；特征不全返回 null。
+  static Map<String, String>? parseDoubanChallenge(String html) {
+    String? pick(String id) => RegExp(
+          'id="$id"[^>]*value="([^"]*)"',
+        ).firstMatch(html)?.group(1);
+    final tok = pick('tok');
+    final cha = pick('cha');
+    final red = pick('red');
+    if (tok == null || cha == null || red == null) return null;
+    return {'tok': tok, 'cha': cha, 'red': red};
+  }
+
+  /// 挖掘挑战 nonce（698 N5-C）：`sha512(cha + nonce)` 十六进制前
+  /// [difficulty] 位为 0（挑战页 JS 同款算法，nonce 从 1 递增）。
+  /// 挖不出（超 [maxIterations]）返回 null（保守放弃，不上徽章）。
+  ///
+  /// 难度 4 平均约 6.5 万次哈希，纯 CPU 毫秒~百毫秒级；测试可用小难度快跑。
+  static String? mineDoubanNonce(
+    String cha, {
+    int difficulty = 4,
+    int maxIterations = 2000000,
+  }) {
+    final target = '0' * difficulty;
+    for (var nonce = 1; nonce <= maxIterations; nonce++) {
+      final hex = sha512.convert(utf8.encode(cha + '$nonce')).toString();
+      if (hex.startsWith(target)) return '$nonce';
+    }
+    return null;
   }
 
   /// 从豆瓣搜索结果页抽 subject 候选：`/subject/(\d+)/` + 邻近标题文本。

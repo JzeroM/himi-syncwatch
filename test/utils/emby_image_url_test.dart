@@ -2,6 +2,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
 
 void main() {
+  group('槽位策略表（698 N5-A，借 SenPlayer 分档）', () {
+    test('三档定值：hero 宁大勿糊 / logo 不抠质量 / card 小而清晰', () {
+      final hero = embyImagePolicies[EmbyImageSlot.hero]!;
+      expect(hero.minWidth, 600);
+      expect(hero.maxWidth, 1600, reason: 'hero 大图宁大勿糊（698 N5-A）');
+      expect(hero.quality, 90);
+
+      final logo = embyImagePolicies[EmbyImageSlot.logo]!;
+      expect(logo.minWidth, 300);
+      expect(logo.maxWidth, 800);
+      expect(logo.quality, 100, reason: 'Logo 透明 PNG 不抠质量（q100）');
+
+      final card = embyImagePolicies[EmbyImageSlot.card]!;
+      expect(card.maxWidth, 540, reason: '对齐 SenPlayer media-card:poster:w540');
+      expect(card.quality, 85);
+    });
+
+    test('embyImageSlotWidth：按槽位钳位', () {
+      // hero：390×2=780（区间内）；2000 宽大窗钳 1600。
+      expect(embyImageSlotWidth(EmbyImageSlot.hero, 390, 2), 780);
+      expect(embyImageSlotWidth(EmbyImageSlot.hero, 2000, 2), 1600);
+      // card：小卡 120×2=240 钳下限 300；大卡钳 540。
+      expect(embyImageSlotWidth(EmbyImageSlot.card, 120, 2), 300);
+      expect(embyImageSlotWidth(EmbyImageSlot.card, 400, 2), 540);
+      // logo：180×2=360。
+      expect(embyImageSlotWidth(EmbyImageSlot.logo, 180, 2), 360);
+    });
+  });
+
   group('embyImageTargetWidth（设备感知目标宽，698 N4）', () {
     test('逻辑宽 × min(dpr,2)：dpr 3 封顶 2（省流量）', () {
       expect(embyImageTargetWidth(390, 3), 780); // 390×2
@@ -9,14 +38,14 @@ void main() {
       expect(embyImageTargetWidth(640, 1.25), 800); // 桌面
     });
 
-    test('钳位 600~1280（hero 默认档）', () {
+    test('默认钳位 600~1600（hero 档）', () {
       expect(embyImageTargetWidth(200, 1), 600); // 钳下限
-      expect(embyImageTargetWidth(2000, 2), 1280); // 钳上限
+      expect(embyImageTargetWidth(2000, 2), 1600); // 钳上限
     });
 
-    test('小件自定义区间（Logo 档 300~600）', () {
-      expect(embyImageTargetWidth(180, 2, min: 300, max: 600), 360);
-      expect(embyImageTargetWidth(50, 2, min: 300, max: 600), 300);
+    test('小件自定义区间（Logo 档 300~800）', () {
+      expect(embyImageTargetWidth(180, 2, min: 300, max: 800), 360);
+      expect(embyImageTargetWidth(50, 2, min: 300, max: 800), 300);
     });
   });
 
@@ -70,6 +99,37 @@ void main() {
       expect(embyImageUrlFor('', 780), isNull);
       expect(embyImageUrlFor('/Items/1/Images/Primary?maxHeight=400', 780),
           '/Items/1/Images/Primary?maxHeight=400');
+    });
+  });
+
+  group('embyImageUrlForSlot（槽位取图入口，698 N5-A）', () {
+    test('quality 跟槽位策略（hero q90 / logo q100 / card q85）', () {
+      String urlFor(EmbyImageSlot slot) => embyImageUrlForSlot(
+            'https://e.test/Items/1/Images/Primary?maxHeight=400&tag=abc',
+            slot,
+            390,
+            2,
+          )!;
+      expect(urlFor(EmbyImageSlot.hero), contains('quality=90'));
+      expect(urlFor(EmbyImageSlot.logo), contains('quality=100'));
+      expect(urlFor(EmbyImageSlot.card), contains('quality=85'));
+    });
+
+    test('目标宽跟槽位钳位（同显示宽不同档）', () {
+      // 400×2=800：hero 800 / card 钳 540 / logo 800。
+      String? widthFor(EmbyImageSlot slot) {
+        final out = embyImageUrlForSlot(
+          'https://e.test/Items/1/Images/Primary?maxHeight=400&tag=abc',
+          slot,
+          400,
+          2,
+        )!;
+        return RegExp(r'maxWidth=(\d+)').firstMatch(out)?.group(1);
+      }
+
+      expect(widthFor(EmbyImageSlot.hero), '800');
+      expect(widthFor(EmbyImageSlot.card), '540');
+      expect(widthFor(EmbyImageSlot.logo), '800');
     });
   });
 }

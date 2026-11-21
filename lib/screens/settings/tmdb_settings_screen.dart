@@ -142,7 +142,8 @@ class _TmdbSettingsScreenState extends ConsumerState<TmdbSettingsScreen> {
       final bridgeGot = result.bridgeBadges.map((b) => b.platform).toSet();
       final bridgeMsg = result.bridgeError != null
           ? '爬页：${result.bridgeError}'
-          : '爬页：${bridgeGot.map(_platformLabel).join(' / ')} ✓';
+          : '爬页：${bridgeGot.map(_platformLabel).join(' / ')}'
+              '${result.doubanBlocked ? '（豆瓣反爬拦截，评分抓取会自动重试）' : ' ✓'}';
 
       showAppToast(context, '$omdbMsg；$bridgeMsg');
     } catch (e) {

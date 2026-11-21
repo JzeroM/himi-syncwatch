@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -314,13 +315,11 @@ class _HeroSlide extends StatelessWidget {
     final overview = item.overview?.trim();
     final query = item.ratingQuery;
 
-    // 698 N4：设备感知目标宽（逻辑宽 × min(dpr,2)，钳 600~1280）——
-    // 请求尺寸贴合显示 + 同宽解码（不拉大图再缩，清晰与快加载同源）。
-    final width = MediaQuery.sizeOf(context).width;
+    // 698 N5-A：分槽位取图——hero 大图宁大勿糊（cap 1600/q90）、Logo 不抠
+    // 质量（cap 800/q100）。海报目标宽按实际显示宽（LayoutBuilder 实测）。
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final targetW = embyImageTargetWidth(width, dpr);
-    // Logo 显示高仅 ~54px，目标宽单独收窄（300~600），省流量（698 N4-5）。
-    final logoW = embyImageTargetWidth(180, dpr, min: 300, max: 600);
+    // Logo 显示高仅 ~54px，按 180 逻辑宽估目标宽（槽位钳 300~800）。
+    final logoW = embyImageSlotWidth(EmbyImageSlot.logo, 180, dpr);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -328,21 +327,30 @@ class _HeroSlide extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 底部渐隐到透明：露出下层同源虚化海报，接缝处自然溶解无硬边
-          // （v1.2.15；与 home_screen 的虚化背景共用同一取图优先级）。
-          ShaderMask(
-            shaderCallback: (rect) =>
-                HomeHeroCarousel.imageFadeGradient.createShader(rect),
-            blendMode: BlendMode.dstIn,
-            child: bg == null
-                ? const SizedBox.shrink()
-                : imageBuilder(
-                    embyImageUrlFor(bg, targetW) ?? bg,
-                    fit: BoxFit.cover,
-                    cacheWidth: targetW,
-                    transparent: true,
+          // 虚化铺底（698 N5-B 构图 A）：同图 320 小图 cover + 高斯模糊——
+          // 海报四周由同源虚化填满，无硬边无色相跳变；底部渐隐到透明
+          // （v1.2.15）与首页虚化背景无缝溶解（接缝对齐层共用取图优先级）。
+          if (bg != null)
+            ShaderMask(
+              shaderCallback: (rect) =>
+                  HomeHeroCarousel.imageFadeGradient.createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: ClipRect(
+                // 模糊采样边缘会向内渗透明光晕：放大 15% 让渗出区落在
+                // 裁剪之外。
+                child: Transform.scale(
+                  scale: 1.15,
+                  child: ImageFiltered(
+                    imageFilter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                    child: imageBuilder(
+                      ambientBackdropUrl(bg) ?? bg,
+                      fit: BoxFit.cover,
+                      transparent: true,
+                    ),
                   ),
-          ),
+                ),
+              ),
+            ),
           // 底部压暗：保证标题/信息可读；底边归零（v1.2.17），接缝暗度
           // 完全由背景蒙罩连续提供，避免叠加出暗带。
           const DecoratedBox(
@@ -353,17 +361,63 @@ class _HeroSlide extends StatelessWidget {
           Positioned(
             left: 20,
             right: 20,
+            top: 0,
             bottom: 30,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // 海报完整居中（698 N5-B 构图 A）：AspectRatio 2:3 + contain
+                // ——零裁切完整可见（修「显示不全」），圆角 + 投影轻量卡片
+                // 感；高度吃剩余空间（Column 定序），信息块永不被挤出。
+                if (bg != null)
+                  Expanded(
+                    child: LayoutBuilder(builder: (context, constraints) {
+                      // 海报实际显示宽上界：min(可用宽, 可用高×2/3)。
+                      final posterW = math.min(
+                        constraints.maxWidth,
+                        constraints.maxHeight * 2 / 3,
+                      );
+                      final targetW = embyImageSlotWidth(
+                          EmbyImageSlot.hero, posterW, dpr);
+                      return Center(
+                        child: AspectRatio(
+                          aspectRatio: 2 / 3,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black26,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black54,
+                                  blurRadius: 24,
+                                  offset: Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: imageBuilder(
+                                embyImageUrlForSlot(
+                                        bg, EmbyImageSlot.hero, posterW, dpr) ??
+                                    bg,
+                                fit: BoxFit.contain,
+                                cacheWidth: targetW,
+                                transparent: true,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
                 if (logo != null && logo.isNotEmpty)
                   SizedBox(
                     height: 54,
                     child: imageBuilder(
-                      // 698 N4-5：Logo 原图常为数 MB 透明 PNG，按显示需要
-                      // 追加尺寸提示（MB → 几十 KB）+ 同宽解码。
-                      embyImageUrlFor(logo, logoW, quality: 90) ?? logo,
+                      // 698 N5-A：Logo 槽位不抠质量（cap 800/q100）；原图常为
+                      // 数 MB 透明 PNG，按显示需要追加尺寸提示 + 同宽解码。
+                      embyImageUrlForSlot(logo, EmbyImageSlot.logo, 180, dpr) ??
+                          logo,
                       fit: BoxFit.contain,
                       cacheWidth: logoW,
                       errorWidget: Text(
