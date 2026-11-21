@@ -51,6 +51,17 @@ class HimiSyncApp extends ConsumerWidget {
             );
           },
           theme: ThemeData(
+            // 698 N10-A：全应用默认字体 MiSans（子集四字重，四端观感一致；
+            // 生僻字回落系统字）。评分行/元数据行开 tnum 等宽数字见
+            // [RatingsBadgeRow]/[_MetaRow]。
+            fontFamily: 'MiSans',
+            fontFamilyFallback: const [
+              'PingFang SC',
+              'HarmonyOS Sans SC',
+              'Microsoft YaHei',
+              'Noto Sans SC',
+              'sans-serif',
+            ],
             colorScheme: ColorScheme.fromSeed(
               seedColor: const Color(0xFF6366F1),
               brightness: Brightness.dark,

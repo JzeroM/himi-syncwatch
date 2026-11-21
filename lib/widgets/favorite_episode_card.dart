@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -37,12 +38,18 @@ class FavoriteEpisodeCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
               height: width * 9 / 16,
-              child: EmbyImage(
-                url: item.posterUrl,
-                fit: BoxFit.cover,
-                cacheWidth:
-                    (width * MediaQuery.devicePixelRatioOf(context)).round(),
-              ),
+              child: Builder(builder: (context) {
+                // 698 N9-F：收藏集卡走 card 槽位（w540/q90 同宽解码）。
+                final dpr = MediaQuery.devicePixelRatioOf(context);
+                return EmbyImage(
+                  url: embyImageUrlForSlot(
+                          item.posterUrl, EmbyImageSlot.card, width, dpr) ??
+                      item.posterUrl,
+                  fit: BoxFit.cover,
+                  cacheWidth:
+                      embyImageSlotWidth(EmbyImageSlot.card, width, dpr),
+                );
+              }),
             ),
           ),
           const SizedBox(height: 6),

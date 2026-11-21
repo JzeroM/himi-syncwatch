@@ -140,7 +140,7 @@ class _CategoryColumnsSection extends ConsumerWidget {
           child: Text(
             '0 = 自动跟随屏幕（TV 默认每行 8 个）；指定后屏幕放不下时'
             '自动压缩为可显示的最大列数',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
+            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
           ),
         ),
         Padding(
@@ -369,7 +369,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             '自定义首页与底部导航的背景渐变，「默认」跟随应用底色',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
+            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
           ),
         ),
         Padding(
@@ -557,7 +557,7 @@ class _AppIconSection extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
             '选择桌面图标外观（Android 首次切换会重启应用，之后切换会刷新界面；若桌面仍未刷新，可重启手机或清除桌面启动器缓存。iOS 会弹系统提示）',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
+            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
           ),
         ),
         Padding(

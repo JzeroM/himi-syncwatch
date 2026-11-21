@@ -105,7 +105,7 @@ class _AppToastState extends State<_AppToast>
                   color: Colors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  height: 1.4,
+                  height: 1.5,
                   decoration: TextDecoration.none,
                   shadows: [
                     Shadow(

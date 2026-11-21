@@ -104,7 +104,7 @@ class AgoraBookConfigPage extends StatelessWidget {
         '开房 / 加入房间需要声网 RTM 凭证；保存后仅写入本机。',
         style: TextStyle(
           color: palette.mutedInk,
-          fontSize: 10.5,
+          fontSize: 11,
           height: 1.35,
         ),
       ),
@@ -174,14 +174,14 @@ class AgoraBookConfigPage extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.ink,
-                fontSize: 12.5,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               '证书已一并保存',
-              style: TextStyle(color: palette.mutedInk, fontSize: 10.5),
+              style: TextStyle(color: palette.mutedInk, fontSize: 11),
             ),
           ],
         ),
@@ -192,7 +192,7 @@ class AgoraBookConfigPage extends StatelessWidget {
           Expanded(
             child: Text(
               '如需更换凭证，点上方「编辑」。',
-              style: TextStyle(color: palette.mutedInk, fontSize: 10.5),
+              style: TextStyle(color: palette.mutedInk, fontSize: 11),
             ),
           ),
           TextButton(
@@ -309,7 +309,7 @@ class _StatusBanner extends StatelessWidget {
                   configured ? '已配置' : '未配置',
                   style: TextStyle(
                     color: color,
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -322,7 +322,7 @@ class _StatusBanner extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: configured ? palette.ink : palette.mutedInk,
-                    fontSize: 10.5,
+                    fontSize: 11,
                   ),
                 ),
               ],
@@ -334,7 +334,7 @@ class _StatusBanner extends StatelessWidget {
               onPressed: onEdit,
               style: TextButton.styleFrom(
                 foregroundColor: palette.mutedInk,
-                textStyle: const TextStyle(fontSize: 11.5),
+                textStyle: const TextStyle(fontSize: 12),
                 minimumSize: const Size(44, 30),
                 padding: const EdgeInsets.symmetric(horizontal: 6),
               ),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -117,13 +116,6 @@ Future<void> _pressLongOk(WidgetTester tester) async {
 }
 
 void main() {
-  setUp(() {
-    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
-    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
-    PosterPalette.debugReset();
-    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
-  });
-
   testWidgets('壳层：表单开按返回 → 关表单留在 Emby 页，不跳首页（v1.1.244）',
       (tester) async {
     await _pumpShellOnServers(

@@ -9,8 +9,6 @@ import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
-import 'package:himi_syncwatch/services/poster_tone_resolver.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
@@ -78,13 +76,6 @@ class _HomeListState extends ConsumerState<_HomeList> {
   final PageController _heroController = PageController();
   final Map<String, TmdbHeroEntry> _heroSources = {};
   int _heroIndex = 0;
-
-  /// 海报色调取色调度（698 N8-A）：背景随当前 hero 海报取色轮换。
-  late final PosterToneResolver _tone = PosterToneResolver(
-    onChanged: () {
-      if (mounted) setState(() {});
-    },
-  );
   late int _lastRefreshEpoch;
 
   @override
@@ -287,35 +278,15 @@ class _HomeListState extends ConsumerState<_HomeList> {
       ),
     );
 
-    // 海报色调渐变基底（698 N8-A）：全页唯一背景层，随当前 hero 海报取色
-    // 轮换（SenPlayer「一张面」过渡；无缝构造：hero 图 α=0 溶入本层，
-    // 无糊层/接缝层）。未取到用主题色兜底。
-    final heroToken = hero?.server.accessToken;
-    _tone.ensure(
-      showCarousel && hero != null ? _toHero(hero).imageUrl : null,
-      headers: heroToken == null ? null : {'X-Emby-Token': heroToken},
-    );
-    final toneBase = Theme.of(context).scaffoldBackgroundColor;
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final fallbackAccent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
-    final toneAccent = _tone.trio == null
-        ? fallbackAccent
-        : PosterPalette.darkenForPage(_tone.trio!.first);
-
     return Stack(
       fit: StackFit.expand,
       children: [
         if (showCarousel && hero != null)
-          AnimatedContainer(
-            key: const Key('tmdbHomeBackground'),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-            decoration: BoxDecoration(
-              gradient: PosterPalette.pageGradient(toneAccent, toneBase),
-            ),
+          HomeHeroBackground(
+            imageUrl: _toHero(hero).imageUrl,
+            baseColor: Theme.of(context).scaffoldBackgroundColor,
+            heroHeight: heroHeight,
+            imageBuilder: _heroImage,
           ),
         list,
       ],
@@ -451,7 +422,7 @@ class _Hero extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        color: Colors.white70, fontSize: 13, height: 1.4),
+                        color: Colors.white70, fontSize: 13, height: 1.5),
                   ),
                 ],
                 const SizedBox(height: 14),

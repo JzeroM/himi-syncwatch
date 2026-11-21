@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
@@ -469,11 +470,16 @@ class _SeasonEpisodeRow extends StatelessWidget {
                       fit: StackFit.expand,
                       children: [
                         EmbyImage(
-                          url: ep.posterUrl,
+                          // 698 N9-F：集缩略图走 card 槽位（w540/q90 同宽解码）。
+                          url: embyImageUrlForSlot(
+                                  ep.posterUrl,
+                                  EmbyImageSlot.card,
+                                  _cardWidth,
+                                  MediaQuery.devicePixelRatioOf(context)) ??
+                              ep.posterUrl,
                           fit: BoxFit.cover,
-                          cacheWidth: (_cardWidth *
-                                  MediaQuery.devicePixelRatioOf(context))
-                              .round(),
+                          cacheWidth: embyImageSlotWidth(EmbyImageSlot.card,
+                              _cardWidth, MediaQuery.devicePixelRatioOf(context)),
                         ),
                         // 每集收藏爱心（图片右上角；触摸操作）
                         if (onToggleFavorite != null)
@@ -552,7 +558,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                 ep.overview ?? '',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, height: 1.4),
+                style: const TextStyle(fontSize: 12, height: 1.5),
               ),
             ],
           ),
@@ -645,11 +651,16 @@ class _SeasonCardRow extends StatelessWidget {
                 height: _posterWidth * 1.5,
                 child: season.posterUrl != null
                     ? EmbyImage(
-                        url: season.posterUrl,
+                        // 698 N9-F：季卡走 card 槽位（w540/q90 同宽解码）。
+                        url: embyImageUrlForSlot(
+                                season.posterUrl,
+                                EmbyImageSlot.card,
+                                _posterWidth,
+                                MediaQuery.devicePixelRatioOf(context)) ??
+                            season.posterUrl,
                         fit: BoxFit.cover,
-                        cacheWidth: (_posterWidth *
-                                MediaQuery.devicePixelRatioOf(context))
-                            .round(),
+                        cacheWidth: embyImageSlotWidth(EmbyImageSlot.card,
+                            _posterWidth, MediaQuery.devicePixelRatioOf(context)),
                       )
                     : Container(
                         color: Colors.white10,

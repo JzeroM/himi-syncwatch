@@ -301,7 +301,7 @@ class _CoverContent extends StatelessWidget {
                         '轻触封面翻开',
                         style: TextStyle(
                           color: palette.foil,
-                          fontSize: 10.5,
+                          fontSize: 11,
                           letterSpacing: 1.1,
                         ),
                       ),
@@ -476,7 +476,7 @@ class _Spine extends StatelessWidget {
                 'HIMI',
                 style: TextStyle(
                   color: palette.foilDim,
-                  fontSize: 8.5,
+                  fontSize: 9,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2.6,
                 ),

@@ -157,13 +157,6 @@ LibraryFolder _lib(String id, String name) => LibraryFolder(
     );
 
 void main() {
-  setUp(() {
-    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
-    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
-    PosterPalette.debugReset();
-    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
-  });
-
   testWidgets('无服务器时显示引导到 Emby 服务器标签的空态', (tester) async {
     await _pumpScreen(tester);
 
@@ -1282,13 +1275,11 @@ void main() {
       isTrue,
       reason: '698 N1：顶部轮播使用电影封面（Primary 海报）',
     );
-    // 698 N8-A：糊层/接缝镜像层已撤（sharp→blur 台阶 =「上下分层感」
-    // 真凶）——背景为海报色调渐变单层。
-    expect(find.byKey(const Key('homeAmbientImage')), findsNothing);
-    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsNothing);
-    expect(find.byKey(const Key('homeAmbientSeamImage')), findsNothing);
-    expect(find.byKey(const Key('homeBackground')), findsOneWidget,
-        reason: '全页唯一背景层 = 海报色调渐变');
+    expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
+        reason: '轮播开启时首页背景改为虚化海报');
+    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsOneWidget,
+        reason: 'v1.2.16 接缝对齐层：与清晰轮播图同裁切 + 镜像延伸，消除分割感');
+    expect(find.byKey(const Key('homeAmbientSeamImage')), findsOneWidget);
     expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
   });
 
@@ -1318,47 +1309,13 @@ void main() {
     expect(find.byKey(const Key('homeBackground')), findsOneWidget);
   });
 
-  testWidgets('海报色调轮换（698 N8-A）：背景渐变随当前 hero 海报取色', (tester) async {
-    PosterPalette.debugReset();
-    PosterPalette.debugTrioLoader = (url, {headers}) async => [
-          const Color(0xFF884422),
-          const Color(0xFF663311),
-          const Color(0xFF221100),
-        ];
-    addTearDown(PosterPalette.debugReset);
-
-    final auth = FakeEmbyAuthService(
-      serverIds: ['s1'],
-      sessions: {
-        's1': _sessionJson(id: 'srv_a', serverId: 's1', serverUrl: 'https://a'),
-      },
-    );
-    final emby = FakeEmbyService(
-      libraries: [_lib('lib1', '电影库')],
-      items: [
-        MediaItem(
-          id: 'm1',
-          name: '影片1',
-          type: 'Movie',
-          posterUrl: 'https://a/Items/m1/Images/Primary?maxHeight=400&tag=p',
-        ),
-      ],
-    );
-    await _pumpScreen(
-      tester,
-      auth: auth,
-      emby: emby,
-      settings: const AppSettings(homeCarousel: true),
-    );
-    await tester.pumpAndSettle();
-
-    final gradient = _bgGradient(tester);
-    expect(
-      gradient.colors.first,
-      PosterPalette.darkenForPage(const Color(0xFF884422)),
-      reason: '背景顶色 = 当前 hero 海报主色调（随画面轮换，SenPlayer 同款）',
-    );
-    expect(gradient.colors, hasLength(3));
+  test('轮播接缝对齐层渐隐：接缝(0.5)前全不透明，镜像段渐隐到透明', () {
+    const g = HomeScreen.ambientSeamFadeGradient;
+    expect(g.stops, orderedEquals(<double>[0.0, 0.5, 0.73, 1.0]));
+    expect(g.colors[0], Colors.white);
+    expect(g.colors[1], Colors.white, reason: '接缝处保持不透明（同源内容）');
+    expect(g.colors[2], Colors.transparent);
+    expect(g.colors[3], Colors.transparent);
   });
 
   testWidgets('首页轮播满 5 秒自动切到下一页', (tester) async {

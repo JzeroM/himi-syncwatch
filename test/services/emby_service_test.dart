@@ -643,6 +643,11 @@ void main() {
       expect(fields, contains('SeriesId'));
       expect(fields, contains('IndexNumber'));
       expect(fields, contains('ParentIndexNumber'));
+      // 698 N9-E：续播卡图源 = 背景图优先——fields 必须带 BackdropImageTags
+      // （缺失时 backdropUrl 恒空，卡片永远回退封面 =「没改过来」的根因）。
+      expect(fields, contains('BackdropImageTags'));
+      expect(req.param('ImageTypeLimit'), '2',
+          reason: '2 = Primary + Backdrop 两类图签（1 会砍掉 Backdrop）');
     });
 
     test('getResumeItems 解析进度字段', () async {

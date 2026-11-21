@@ -132,7 +132,7 @@ class AgoraBookPaperPage extends StatelessWidget {
                         kicker,
                         style: TextStyle(
                           color: palette.mutedInk,
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.25,
                         ),
@@ -147,7 +147,7 @@ class AgoraBookPaperPage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.ink,
-                    fontSize: 17.5,
+                    fontSize: 18,
                     fontWeight: FontWeight.w800,
                     height: 1.2,
                     letterSpacing: 0.2,
@@ -278,8 +278,8 @@ class AgoraBookGuidePage extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: palette.ink,
-              fontSize: 12.3,
-              height: 1.48,
+              fontSize: 12,
+              height: 1.58,
             ),
           ),
           const SizedBox(height: 5),
@@ -289,7 +289,7 @@ class AgoraBookGuidePage extends StatelessWidget {
                 '点击截图可放大',
                 style: TextStyle(
                   color: palette.mutedInk.withValues(alpha: 0.8),
-                  fontSize: 9.5,
+                  fontSize: 10,
                 ),
               ),
               const Spacer(),
@@ -298,7 +298,7 @@ class AgoraBookGuidePage extends StatelessWidget {
                 '${total.toString().padLeft(2, '0')}',
                 style: TextStyle(
                   color: palette.mutedInk,
-                  fontSize: 9.5,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
                 ),

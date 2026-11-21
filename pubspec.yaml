@@ -1,7 +1,7 @@
 name: himi_syncwatch
 description: "HIMI - 私密多人异地同步观影客户端"
 publish_to: 'none'
-version: 1.6.20+700
+version: 1.6.21+701
 
 environment:
   sdk: ^3.6.0
@@ -163,6 +163,18 @@ flutter:
     - assets/images/
     - assets/images/platforms/
     - assets/icons/
+  # MiSans 全局默认字体（698 N10-A）：子集四字重（GB2312+拉丁+标点），
+  # 许可见 third_party/misans/；生僻字经 fontFamilyFallback 回落系统字。
+  fonts:
+    - family: MiSans
+      fonts:
+        - asset: third_party/misans/fonts/MiSans-Regular.ttf
+        - asset: third_party/misans/fonts/MiSans-Medium.ttf
+          weight: 500
+        - asset: third_party/misans/fonts/MiSans-Demibold.ttf
+          weight: 600
+        - asset: third_party/misans/fonts/MiSans-Bold.ttf
+          weight: 700
 
 flutter_launcher_icons:
   image_path: "assets/icon/default.png"

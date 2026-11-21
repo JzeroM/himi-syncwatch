@@ -972,8 +972,10 @@ class EmbyService {
           'MediaTypes': 'Video',
           'Limit': limit,
           'Fields':
-              'UserData,ImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
-          'ImageTypeLimit': 1,
+              'UserData,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,CommunityRating,Overview,PremiereDate,DateLastContentAdded,ProviderIds,SeriesId,IndexNumber,ParentIndexNumber',
+          // 2 = Primary + Backdrop 两类图签（698 N9-E：续播卡要 backdrop
+          // 背景图；1 会把 BackdropImageTags 砍掉，续播卡永远回退封面）。
+          'ImageTypeLimit': 2,
         },
       );
       final items = response.data['Items'] as List<dynamic>? ?? [];

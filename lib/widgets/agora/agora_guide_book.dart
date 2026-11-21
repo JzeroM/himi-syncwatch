@@ -680,7 +680,7 @@ class _BookControls extends StatelessWidget {
                   child: Text(
                     '左右滑动翻页',
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white54, fontSize: 10.5),
+                    style: TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                 ),
               ],

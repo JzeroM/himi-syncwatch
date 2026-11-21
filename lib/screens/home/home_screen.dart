@@ -19,7 +19,7 @@ import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
-import 'package:himi_syncwatch/services/poster_tone_resolver.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/continue_watching_card.dart';
@@ -44,6 +44,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 
   /// 测试注入点：Windows 图片扫码结果（见 [RoomMenuButton.imageScan]）。
   final Future<String?> Function()? imageScan;
+
+  /// 轮播接缝对齐层底部渐隐（v1.2.16）：层高 = 2×hero（0~0.5 为与清晰
+  /// 轮播图同裁切的虚化副本，0.5 为接缝；0.5~0.73 为镜像延伸段渐隐区，
+  /// 之后交叉溶解回全屏虚化氛围层）。
+  @visibleForTesting
+  static const LinearGradient ambientSeamFadeGradient =
+      HomeHeroBackground.seamFadeGradient;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -75,13 +82,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<HomeHeroItem> _heroItems = [];
   int _heroIndex = 0;
   final PageController _heroController = PageController();
-
-  /// 海报色调取色调度（698 N8-A）：背景随当前 hero 海报取色轮换。
-  late final PosterToneResolver _tone = PosterToneResolver(
-    onChanged: () {
-      if (mounted) setState(() {});
-    },
-  );
 
   /// 启动静默检查更新定时器（首屏渲染后触发，dispose 时取消）。
   Timer? _updateCheckTimer;
@@ -410,19 +410,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showHero = homeCarouselEnabled && _heroItems.isNotEmpty;
     final heroIndex =
         _heroItems.isEmpty ? 0 : _heroIndex.clamp(0, _heroItems.length - 1);
-    // 698 N7-C：轮播高度双档（宽×1.35 贴 2:3 + 视口护栏）。
+    // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
     final heroHeight = HomeHeroCarousel.carouselHeightOf(context);
-
-    // 海报色调（698 N8-A）：背景随当前 hero 海报取色轮换（SenPlayer 同款
-    // 「一张面」过渡）；未取到/失败用主题色兜底。ensure 幂等（同 URL 不重发）。
-    final token = ref.watch(embyConfigProvider)?.accessToken;
-    _tone.ensure(
-      showHero ? _heroItems[heroIndex].imageUrl : null,
-      headers: token == null ? null : {'X-Emby-Token': token},
-    );
-    final toneAccent = _tone.trio == null
-        ? accent
-        : PosterPalette.darkenForPage(_tone.trio!.first);
 
     // 是否有可展示媒体内容：库/分类/续播/轮播任一非空。仅计数到位不算内容。
     final hasContent = _categories.isNotEmpty ||
@@ -568,8 +557,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         coordinator: _rowCoordinator,
         child: content,
       ),
-      accent: toneAccent,
+      showHero: showHero,
+      heroHeight: heroHeight,
+      accent: accent,
       base: base,
+      heroIndex: heroIndex,
     );
   }
 
@@ -657,8 +649,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildHomeScaffold({
     required bool tvMode,
     required Widget content,
+    required bool showHero,
+    required double heroHeight,
     required Color? accent,
     required Color base,
+    required int heroIndex,
   }) {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -696,10 +691,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 海报色调渐变基底（698 N8-A）：全页**唯一**背景层——颜色随当前
-          // hero 海报取色轮换（SenPlayer 同款「一张面」过渡），未取到时
-          // 主题色兜底。无模糊铺底/接缝层：hero 图渐隐终点 α=0 溶入本层，
-          // 边界两侧同源无缝（构造保证，不是调参掩盖）。
+          // 主题色渐变基底（轮播关闭/无候选/加载失败时可见）
           AnimatedContainer(
             key: const Key('homeBackground'),
             duration: const Duration(milliseconds: 500),
@@ -708,6 +700,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               gradient: PosterPalette.pageGradient(accent, base),
             ),
           ),
+          // 轮播开启时：当前海报虚化铺满（详情页同款）
+          if (showHero)
+            HomeHeroBackground(
+              imageUrl: _heroItems[heroIndex].imageUrl,
+              baseColor: base,
+              heroHeight: heroHeight,
+            ),
           content,
         ],
       ),
@@ -844,12 +843,25 @@ class _LibraryBar extends StatelessWidget {
                           borderRadius: BorderRadius.circular(14),
                           child: SizedBox(
                             height: _posterHeight,
-                            child: EmbyImage(
-                                url: lib.posterUrl,
+                            child: Builder(builder: (context) {
+                              // 698 N9-F：库封面按显示大小要图（card 槽位
+                              // w540/q90）+ 同宽解码——旧 maxHeight=300 小图
+                              // 档被拉大 1.6~2.4× 显示（库封面糊的根因）。
+                              final dpr =
+                                  MediaQuery.devicePixelRatioOf(context);
+                              final targetW = embyImageSlotWidth(
+                                  EmbyImageSlot.card, 160, dpr);
+                              return EmbyImage(
+                                url: embyImageUrlForSlot(
+                                        lib.posterUrl,
+                                        EmbyImageSlot.card,
+                                        160,
+                                        dpr) ??
+                                    lib.posterUrl,
                                 fit: BoxFit.cover,
-                                cacheWidth: (160 *
-                                        MediaQuery.devicePixelRatioOf(context))
-                                    .round()),
+                                cacheWidth: targetW,
+                              );
+                            }),
                           ),
                         ),
                         const SizedBox(height: 6),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/utils/motion.dart';
@@ -59,6 +60,17 @@ class HomeHeroItem {
       payload: payload ?? item,
     );
   }
+}
+
+String? ambientBackdropUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme) return url;
+  final query = Map<String, String>.from(uri.queryParameters);
+  query.remove('maxHeight');
+  query['maxWidth'] = '320';
+  query['quality'] = '70';
+  return uri.replace(queryParameters: query).toString();
 }
 
 Widget embyHeroImageBuilder(
@@ -147,16 +159,16 @@ class HomeHeroCarousel extends StatefulWidget {
     return detailHeightFor(size.width, size.height);
   }
 
-  /// 清晰图底部渐隐（v1.2.15；N7-B 收窄）：**窄带**渐隐到透明（0.88 起），
-  /// 画面主体全量呈现——旧 0.62 起渐隐吃掉画面底部 38%（「显示不全」真凶），
-  /// 渐隐区半透在虚化底层上还发糊。露出下层同源虚化海报，接缝自然溶解
-  ///（详情页 SliverAppBar 同款思路）。
+  /// 清晰图底部渐隐（v1.2.15；N9-B 模糊坡）：0.72 起渐隐到透明——渐隐区
+  /// 揭开下层**同裁切 σ12 中糊副本**（接缝层上半），观感是「清晰 → 渐进
+  /// 软化」的模糊坡而非消失；σ12 往下再渐入 σ36 全局糊（接缝镜像层），
+  /// 分界线上下模糊量处处连续（N9 消线）。
   @visibleForTesting
   static const LinearGradient imageFadeGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Colors.white, Colors.white, Colors.transparent],
-    stops: [0.0, 0.88, 1.0],
+    stops: [0.0, 0.72, 1.0],
   );
 
   /// 可读性压暗罩（v1.2.17）：文字区维持 0x99（60%）可读性，但**底边必须
@@ -423,7 +435,7 @@ class _HeroSlide extends StatelessWidget {
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 13,
-                      height: 1.4,
+                      height: 1.5,
                       shadows: HomeHeroCarousel.lightTextShadows,
                     ),
                   ),
@@ -465,6 +477,8 @@ class _MetaRow extends StatelessWidget {
     const style = TextStyle(
       color: Colors.white70,
       fontSize: 13,
+      // 698 N10-C：等宽数字（tnum）——年份/评分列对齐、滚动不跳。
+      fontFeatures: [ui.FontFeature.tabularFigures()],
       shadows: HomeHeroCarousel.lightTextShadows,
     );
     final parts = <Widget>[];
@@ -526,3 +540,138 @@ class _Dots extends StatelessWidget {
   }
 }
 
+class HomeHeroBackground extends StatelessWidget {
+  const HomeHeroBackground({
+    super.key,
+    required this.imageUrl,
+    required this.baseColor,
+    required this.heroHeight,
+    this.imageBuilder = embyHeroImageBuilder,
+  });
+
+  final String? imageUrl;
+  final Color baseColor;
+  final double heroHeight;
+  final HomeHeroImageBuilder imageBuilder;
+
+  /// 铺底重糊量（全局氛围层）。
+  @visibleForTesting
+  static const double backdropBlurSigma = 36;
+
+  /// 接缝带糊量（698 N9-B/C 模糊坡）：分界线**上**是同裁切 σ12 中糊副本
+  ///（清晰图渐隐接棒）、线**下**是 σ12 镜像延续（渐隐交棒 σ36 全局糊）——
+  /// 线两侧模糊量均为 σ12、处处连续，分界线在构造上不可见。
+  /// 详情页 hero/镜像带同用（跨文件共享）。
+  static const double seamBlurSigma = 12;
+
+  static const LinearGradient seamFadeGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Colors.white,
+      Colors.white,
+      Colors.transparent,
+      Colors.transparent,
+    ],
+    stops: [0.0, 0.5, 0.73, 1.0],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final source = imageUrl;
+    final url = ambientBackdropUrl(source);
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      child: Stack(
+        key: ValueKey(source),
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(
+                sigmaX: HomeHeroBackground.backdropBlurSigma,
+                sigmaY: HomeHeroBackground.backdropBlurSigma),
+            child: Transform.scale(
+              scale: 1.35,
+              child: KeyedSubtree(
+                key: const Key('homeAmbientImage'),
+                child: imageBuilder(
+                  url,
+                  fit: BoxFit.cover,
+                  cacheWidth: 200,
+                  transparent: true,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            key: const Key('homeAmbientSeamLayer'),
+            top: 0,
+            left: 0,
+            right: 0,
+            height: heroHeight * 2,
+            child: ShaderMask(
+              shaderCallback: (rect) => seamFadeGradient.createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(
+                    sigmaX: HomeHeroBackground.seamBlurSigma,
+                    sigmaY: HomeHeroBackground.seamBlurSigma),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: imageBuilder(
+                        url,
+                        fit: BoxFit.cover,
+                        cacheWidth: 200,
+                        transparent: true,
+                      ),
+                    ),
+                    Positioned(
+                      top: heroHeight,
+                      left: 0,
+                      right: 0,
+                      height: heroHeight,
+                      child: Transform.flip(
+                        flipY: true,
+                        child: KeyedSubtree(
+                          key: const Key('homeAmbientSeamImage'),
+                          child: imageBuilder(
+                            url,
+                            fit: BoxFit.cover,
+                            cacheWidth: 200,
+                            transparent: true,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.30),
+                  Colors.black.withValues(alpha: 0.42),
+                  baseColor.withValues(alpha: 0.90),
+                  baseColor,
+                ],
+                stops: const [0.0, 0.5, 0.85, 1.0],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

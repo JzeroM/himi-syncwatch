@@ -96,9 +96,19 @@ void main() {
       expect(g.stops, isNotNull);
       expect(g.stops!.last, 1.0);
       expect(g.stops![0], 0.0);
-      expect(g.stops, orderedEquals(<double>[0.0, 0.88, 1.0]),
-          reason: '698 N7-B：窄带渐隐（0.88 起）——画面主体全量呈现，'
-              '旧 0.62 起吃掉底部 38%（「显示不全」真凶）');
+      expect(g.stops, orderedEquals(<double>[0.0, 0.72, 1.0]),
+          reason: '698 N9-B 模糊坡：0.72 起渐隐接棒 σ12 中糊副本——'
+              'σ0→σ12→σ36 无台阶（消分界线）');
+    });
+
+    test('模糊坡 σ 连续（698 N9）：接缝 σ12 介于清晰 σ0 与铺底 σ36 之间', () {
+      expect(HomeHeroBackground.seamBlurSigma, 12);
+      expect(HomeHeroBackground.backdropBlurSigma, 36);
+      expect(
+        HomeHeroBackground.seamBlurSigma,
+        lessThan(HomeHeroBackground.backdropBlurSigma),
+        reason: '线两侧均为 σ12、向下渐入 σ36——模糊量处处连续，无线',
+      );
     });
 
     test('压暗罩底边归零：接缝暗度完全由背景蒙罩提供，无叠加台阶', () {

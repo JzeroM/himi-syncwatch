@@ -1,3 +1,5 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/services/hero_ratings_service.dart';
@@ -70,12 +72,14 @@ class RatingsBadgeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final ordered = _ordered(badges);
     if (ordered.isEmpty) return const SizedBox.shrink();
-    final style = textStyle ??
-        const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        );
+    // 698 N10-C：等宽数字（tnum）——评分/年份/分辨率数字列对齐、滚动不跳。
+    final style = (textStyle ??
+            const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ))
+        .copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     return Wrap(
       alignment: alignment,
       spacing: spacing,

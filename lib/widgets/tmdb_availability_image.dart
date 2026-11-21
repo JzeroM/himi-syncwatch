@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 
@@ -46,10 +47,15 @@ class TmdbAvailabilityImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tmdbUrl = backdrop
+    var tmdbUrl = backdrop
         ? (entry.tmdb.backdropUrl(imageBase, size: backdropSize) ??
             entry.tmdb.posterUrl(imageBase))
         : entry.tmdb.posterUrl(imageBase, size: posterSize);
+    // 698 N9-F：海报桶按显示目标宽推导（≥目标最小桶，1:1 不拉大）——
+    // cacheWidth 与显示同口径；显式 [posterSize] 仅在无 cacheWidth 时生效。
+    if (!backdrop && cacheWidth != null) {
+      tmdbUrl = tmdbImageUrlForWidth(tmdbUrl, cacheWidth!);
+    }
     final fallback = TmdbImage(
       url: tmdbUrl,
       fit: fit,

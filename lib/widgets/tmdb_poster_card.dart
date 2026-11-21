@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/tmdb_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -45,12 +46,19 @@ class TmdbPosterCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   poster ??
-                      TmdbImage(
-                        url: item.posterUrl(imageBase),
-                        cacheWidth:
-                            (width * MediaQuery.devicePixelRatioOf(context))
-                                .round(),
-                      ),
+                      Builder(builder: (context) {
+                        // 698 N9-F 卡档：目标宽按 card 槽位（cap 540、dpr 封
+                        // 3），TMDB 桶选 ≥目标最小桶 + 同宽解码（1:1 不拉大
+                        // ——糊=发闷显暗，图大而清楚自然亮堂）。
+                        final dpr = MediaQuery.devicePixelRatioOf(context);
+                        final targetW = embyImageSlotWidth(
+                            EmbyImageSlot.card, width, dpr);
+                        return TmdbImage(
+                          url: tmdbImageUrlForWidth(
+                              item.posterUrl(imageBase), targetW),
+                          cacheWidth: targetW,
+                        );
+                      }),
                   if (serverBadge != null)
                     Positioned(
                       top: 6,

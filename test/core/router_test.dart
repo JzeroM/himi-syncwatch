@@ -153,13 +153,6 @@ int _shellIndex(WidgetTester tester) {
 }
 
 void main() {
-  setUp(() {
-    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
-    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
-    PosterPalette.debugReset();
-    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
-  });
-
   testWidgets('默认进入首页，壳提供五个标签且无侧边栏', (tester) async {
     await _pumpApp(tester);
 

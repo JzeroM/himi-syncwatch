@@ -287,7 +287,7 @@ class _PlaybackDebugPanelState extends State<PlaybackDebugPanel> {
                       child: Text(
                         r.label,
                         style: const TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 11,
                           color: Colors.white38,
                         ),
                       ),
@@ -296,7 +296,7 @@ class _PlaybackDebugPanelState extends State<PlaybackDebugPanel> {
                       child: Text(
                         r.value,
                         style: TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 11,
                           color: _severityColor(r.severity),
                           fontFeatures: const [
                             FontFeature.tabularFigures(),

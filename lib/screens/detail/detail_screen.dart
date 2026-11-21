@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +11,6 @@ import 'package:himi_syncwatch/models/version_preference.dart';
 import 'package:himi_syncwatch/services/playback_rules.dart';
 import 'package:himi_syncwatch/services/player/mpv_session_platform.dart';
 import 'package:himi_syncwatch/services/track_migration.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
-import 'package:himi_syncwatch/services/poster_tone_resolver.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -233,13 +232,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 浮层收起按钮焦点：打开后焦点移入浮层（原控件被浮层遮盖），
   /// 关闭随节点销毁由焦点系统回落。
   final _overviewCloseNode = FocusNode(debugLabel: 'overviewClose');
-
-  /// 海报色调取色调度（698 N8-A）：正文背景随 hero 海报取色（三色渐变）。
-  late final PosterToneResolver _tone = PosterToneResolver(
-    onChanged: () {
-      if (mounted) setState(() {});
-    },
-  );
 
   /// 「可用版本」行 TV ↑/↓ 确定性导航（见 [VersionRowNav]）。
   final _versionRowNav = VersionRowNav();
@@ -1563,15 +1555,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context).scaffoldBackgroundColor;
-
-    // 海报色调（698 N8-A）：正文背景 = hero 海报三色渐变（SenPlayer「一张
-    // 面」过渡；无缝构造：hero 图 α=0 溶入本层，无糊层）。未取到时底色
-    // 兜底。ensure 幂等（同 URL 不重发）。
-    final token = ref.watch(embyConfigProvider)?.accessToken;
-    _tone.ensure(
-      _item?.backdropUrl ?? _item?.posterUrl,
-      headers: token == null ? null : {'X-Emby-Token': token},
-    );
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     // TV 整页背景目标宽度：按显示宽×dpr，夹在 [720,1280]（详见 hdImageUrlFor）
     final bgTargetW = (MediaQuery.sizeOf(context).width *
@@ -1609,17 +1592,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         key: const Key('detailBackground'),
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
-        // 非 TV：海报色调三段渐变打底（698 N8-A，撤虚化氛围底图——
-        // sharp→blur 清晰度台阶是「上下分层感」真凶）；无图/取色失败时
-        // 底色兜底。TV：透明底，海报由下方 Stack 做整页固定背景。
-        decoration: tvMode
-            ? const BoxDecoration()
-            : BoxDecoration(
-                gradient: _item == null
-                    ? null
-                    : PosterPalette.detailGradient(_tone.trio, base),
-                color: _item == null ? base : null,
-              ),
+        // 非 TV：底色打底，正文叠虚化氛围底图（方案 A）；
+        // TV：透明底，海报由下方 Stack 做整页固定背景。
+        decoration: BoxDecoration(color: tvMode ? null : base),
         child: tvMode
             ? Stack(
                 fit: StackFit.expand,
@@ -1662,6 +1637,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             : Stack(
                 fit: StackFit.expand,
                 children: [
+                  // 虚化氛围底图：颜色取自同一张海报，天然与顶部清晰海报
+                  // 无缝衔接（不再另算纯色渐变，消除色相跳变与硬接缝）。
+                  if (_item != null) _buildAmbientBackdrop(base),
                   content,
                   // 687：Hero 落点——主列表海报飞过来后在这里「落地」，
                   // 随即被 backdrop/氛围底覆盖。尺寸 0 保证不参与布局、
@@ -1686,6 +1664,95 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  /// 非 TV 正文氛围背景（方案 A）：同一张 backdrop 低分辨率解码 → 高斯模糊
+  /// 铺满正文 → 竖向压暗罩。因为颜色直接来自海报本身，正文与顶部清晰海报
+  /// 天然同色同调、无色相跳变；模糊尺度大也避免了硬接缝。顶部海报仍用清晰
+  /// 原图（在 SliverAppBar 内），只有正文区虚化。
+  Widget _buildAmbientBackdrop(Color base) {
+    final url = _item?.backdropUrl ?? _item?.posterUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 低分解码 + 放大裁切 + 高斯模糊：开销极低且无边缘透底
+        // （放大 1.35 使模糊采样区完全落在图内，屏幕边缘不会出现透底暗边）
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+          child: Transform.scale(
+            scale: 1.35,
+            child: EmbyImage(
+              key: const Key('detailAmbientImage'),
+              url: url,
+              fit: BoxFit.cover,
+              cacheWidth: 200,
+              placeholder: const SizedBox.shrink(),
+              errorWidget: const SizedBox.shrink(),
+            ),
+          ),
+        ),
+        // 698 N9-C：分界线下镜像延续带——hero 图 σ12 镜像续接（翻转轴
+        // 落在分界线，线两侧内容连续同糊），向下渐隐交棒 σ36 全局糊，
+        // 线下方同样有模糊渐变（消线的一半）。
+        Builder(builder: (context) {
+          final heroH = HomeHeroCarousel.detailHeightOf(context);
+          return Positioned(
+            top: heroH,
+            left: 0,
+            right: 0,
+            height: heroH,
+            child: ShaderMask(
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  Colors.white,
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+                stops: [0.0, 0.45, 0.85, 1.0],
+              ).createShader(rect),
+              blendMode: BlendMode.dstIn,
+              child: Transform.flip(
+                flipY: true,
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(
+                    sigmaX: HomeHeroBackground.seamBlurSigma,
+                    sigmaY: HomeHeroBackground.seamBlurSigma,
+                  ),
+                  child: EmbyImage(
+                    url: url,
+                    fit: BoxFit.cover,
+                    cacheWidth: 200,
+                    placeholder: const SizedBox.shrink(),
+                    errorWidget: const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+        // 压暗罩：顶部略暗衔接 AppBar 底部蒙层；底部渐入应用底色，保证
+        // 版本/剧集列表等正文可读。
+        DecoratedBox(
+          key: const Key('detailAmbientScrim'),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.30),
+                Colors.black.withValues(alpha: 0.42),
+                base.withValues(alpha: 0.90),
+                base,
+              ],
+              stops: const [0.0, 0.5, 0.85, 1.0],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   /// 操作区（简介上方）：
   /// - 非 TV：第一行播放/建房主按钮（玻璃质感、各占约半行），第二行
@@ -1989,9 +2056,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
                   // 满幅大图（N7-A 构图回归，SenPlayer 同款）：横版背景图
-                  // cover 满幅（无 backdrop 用封面兜底），底部窄带渐隐到
-                  // 透明无缝融入正文虚化氛围层（N7-B：0.85 起渐隐，画面主体
-                  // 全量呈现——旧 0.55 起吃掉底部 45%，「显示不全」真凶）。
+                  // cover 满幅（无 backdrop 用封面兜底）。698 N9-B 模糊坡：
+                  // σ12 同裁切中糊副本垫底，清晰图 0.72 起渐隐接棒中糊
+                  //（σ0→σ12 渐进软化），线下镜像带续 σ12→σ36（N9-C）——
+                  // 分界线上下模糊量处处连续，无台阶无线。
                   // 698 N5-A/N7-D：hero 槽宁大勿糊（q90、cap 3000）+ 同宽解码。
                   Builder(builder: (context) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -2000,26 +2068,45 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                     if (heroUrl == null || heroUrl.isEmpty) {
                       return const SizedBox.shrink();
                     }
-                    return ShaderMask(
-                      shaderCallback: (rect) => const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white,
-                          Colors.white,
-                          Colors.transparent,
-                        ],
-                        stops: [0.0, 0.85, 1.0],
-                      ).createShader(rect),
-                      blendMode: BlendMode.dstIn,
-                      child: EmbyImage(
-                        url: embyImageUrlForSlot(
-                                heroUrl, EmbyImageSlot.hero, width, dpr) ??
-                            heroUrl,
-                        fit: BoxFit.cover,
-                        cacheWidth:
-                            embyImageSlotWidth(EmbyImageSlot.hero, width, dpr),
-                      ),
+                    final heroImageUrl = embyImageUrlForSlot(
+                            heroUrl, EmbyImageSlot.hero, width, dpr) ??
+                        heroUrl;
+                    final cacheW =
+                        embyImageSlotWidth(EmbyImageSlot.hero, width, dpr);
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // σ12 中糊副本（同裁切）：渐隐区的「中间景深」。
+                        ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(
+                            sigmaX: HomeHeroBackground.seamBlurSigma,
+                            sigmaY: HomeHeroBackground.seamBlurSigma,
+                          ),
+                          child: EmbyImage(
+                            url: heroImageUrl,
+                            fit: BoxFit.cover,
+                            cacheWidth: cacheW,
+                          ),
+                        ),
+                        ShaderMask(
+                          shaderCallback: (rect) => const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white,
+                              Colors.white,
+                              Colors.transparent,
+                            ],
+                            stops: [0.0, 0.72, 1.0],
+                          ).createShader(rect),
+                          blendMode: BlendMode.dstIn,
+                          child: EmbyImage(
+                            url: heroImageUrl,
+                            fit: BoxFit.cover,
+                            cacheWidth: cacheW,
+                          ),
+                        ),
+                      ],
                     );
                   }),
                   // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
@@ -2501,6 +2588,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
+            // 698 N10-C：等宽数字（tnum）。
+            fontFeatures: [ui.FontFeature.tabularFigures()],
             shadows: DetailScreen.heroTextShadows),
       ));
     }
@@ -2508,13 +2597,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       gap();
       chips.add(Text(item.year!,
           style: const TextStyle(
-              color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
+              color: Colors.white70,
+              fontFeatures: [ui.FontFeature.tabularFigures()],
+              shadows: DetailScreen.heroTextShadows)));
     }
     if (item.runtimeText != null) {
       gap();
       chips.add(Text(item.runtimeText!,
           style: const TextStyle(
-              color: Colors.white70, shadows: DetailScreen.heroTextShadows)));
+              color: Colors.white70,
+              fontFeatures: [ui.FontFeature.tabularFigures()],
+              shadows: DetailScreen.heroTextShadows)));
     }
 
     final video =

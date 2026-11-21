@@ -46,7 +46,10 @@ const Map<EmbyImageSlot, EmbyImagePolicy> embyImagePolicies = {
   EmbyImageSlot.hero:
       EmbyImagePolicy(minWidth: 600, maxWidth: 3000, quality: 90, maxDpr: 3),
   EmbyImageSlot.logo: EmbyImagePolicy(minWidth: 300, maxWidth: 800, quality: 100),
-  EmbyImageSlot.card: EmbyImagePolicy(minWidth: 300, maxWidth: 540, quality: 85),
+  // card：对齐 SenPlayer media-card:poster:w540:**q90**（698 N9-F 卡档）；
+  // dpr 封 3——3x 屏卡片 1:1 不放大（糊=发闷显暗，图大而清楚自然亮堂）。
+  EmbyImageSlot.card:
+      EmbyImagePolicy(minWidth: 300, maxWidth: 540, quality: 90, maxDpr: 3),
 };
 
 /// 设备感知目标宽（物理像素，已含 dpr）：`逻辑宽 × min(dpr, [dprCap])`，
@@ -81,13 +84,14 @@ int embyImageSlotWidth(
   );
 }
 
-/// 按目标宽 [targetWidth] 重写 Emby 图片 URL 的尺寸参数（698 N4/N4-5）：
+/// 按目标宽 [targetWidth] 重写 Emby 图片 URL 的尺寸参数（698 N4/N9-F）：
 ///
-/// - `maxHeight=400` 小图档（Poster/Backdrop）→ `maxWidth=$w` +
-///   `quality=$quality`（未带 quality 时）；
+/// - **任意 `maxHeight=N` 小图档**（模型层 400/300 高缩略档）→ `maxWidth=$w`
+///   + `quality=$quality`（未带 quality 时）——N9-F 泛化：旧规则只认 400，
+///   媒体库 300 档被当「已带尺寸」透传，改不动（库封面糊的隐蔽坑）；
 /// - **无尺寸参数的原图**（Logo `?tag=…`）→ 追加 `maxWidth=$w&quality=$quality`；
-/// - 已带尺寸（虚化层 `maxWidth=320` 小图、宽幅档）或非 Emby 图片 URL
-///   （无 `/Images/` 形态、外部图床）→ **原样透传**，绝不误改。
+/// - 已带 `maxWidth` 尺寸（虚化层 `maxWidth=320` 小图、宽幅档）或非 Emby
+///   图片 URL（无 `/Images/` 形态、外部图床）→ **原样透传**，绝不误改。
 ///
 /// 只改 query，`tag` 不动——Emby 按 tag 校验资源，缓存键随之变化属预期。
 String? embyImageUrlFor(
@@ -103,7 +107,7 @@ String? embyImageUrlFor(
       uri.path.contains('/Items/') && uri.path.contains('/Images/');
   final hasSize = query.containsKey('maxWidth') || query.containsKey('maxHeight');
 
-  if (query['maxHeight'] == '400') {
+  if (query.containsKey('maxHeight')) {
     // 小图档 → 按显示宽请求（服务端缩放）。
     query.remove('maxHeight');
     query['maxWidth'] = '$targetWidth';
@@ -111,7 +115,7 @@ String? embyImageUrlFor(
     // 无尺寸原图（Logo）→ 追加尺寸提示。
     query['maxWidth'] = '$targetWidth';
   } else {
-    // 已带尺寸（虚化小图/宽幅档）或非 Emby 图片：透传。
+    // 已带 maxWidth 尺寸（虚化小图/宽幅档）或非 Emby 图片：透传。
     return url;
   }
 
@@ -132,4 +136,21 @@ String? embyImageUrlForSlot(
     embyImageSlotWidth(slot, logicalWidth, devicePixelRatio),
     quality: p.quality,
   );
+}
+
+/// TMDB 尺寸桶选择（698 N9-F）：按目标宽选**≥ 目标的最小桶**（TMDB 固定桶
+/// w92/w154/w185/w342/w500/w780），1:1 附近取图不拉大——旧固定 `w154`
+/// 缩略桶撑 200~540 显示 = 1.5~3.5× 拉大（网格墙糊源）。非 TMDB 形态 URL
+/// 原样返回。
+String tmdbImageUrlForWidth(String? url, int targetWidth) {
+  if (url == null || url.isEmpty) return url ?? '';
+  const ladder = ['w92', 'w154', 'w185', 'w342', 'w500', 'w780'];
+  var bucket = 'w780';
+  for (final step in ladder) {
+    if (targetWidth <= int.parse(step.substring(1))) {
+      bucket = step;
+      break;
+    }
+  }
+  return url.replaceFirst(RegExp(r'/w\d+(?=/)'), '/$bucket');
 }

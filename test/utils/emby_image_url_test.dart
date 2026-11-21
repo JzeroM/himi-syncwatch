@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
 
 void main() {
-  group('槽位策略表（698 N5-A/N7-D，借 SenPlayer 分档）', () {
-    test('三档定值：hero 宁大勿糊 / logo 不抠质量 / card 小而清晰', () {
+  group('槽位策略表（698 N5-A/N7-D/N9-F，借 SenPlayer 分档）', () {
+    test('三档定值：hero 宁大勿糊 / logo 不抠质量 / card 对齐 w540:q90', () {
       final hero = embyImagePolicies[EmbyImageSlot.hero]!;
       expect(hero.minWidth, 600);
       expect(hero.maxWidth, 3000, reason: 'N7-D：上限 3000 对齐 media-detail:large 档');
@@ -17,7 +17,8 @@ void main() {
 
       final card = embyImagePolicies[EmbyImageSlot.card]!;
       expect(card.maxWidth, 540, reason: '对齐 SenPlayer media-card:poster:w540');
-      expect(card.quality, 85);
+      expect(card.quality, 90, reason: 'N9-F：卡档 q90 对齐 SenPlayer（q85→q90）');
+      expect(card.maxDpr, 3, reason: 'N9-F：3x 屏卡片 1:1 不放大（糊=发闷显暗）');
     });
 
     test('embyImageSlotWidth：按槽位钳位 + 按档 dpr 封顶', () {
@@ -95,6 +96,18 @@ void main() {
       expect('quality=70'.allMatches(out!).length, 1);
     });
 
+    test('任意 maxHeight=N 小图档都重写（698 N9-F 泛化）', () {
+      // 旧规则只认 maxHeight=400，媒体库 300 档被「已带尺寸」透传——
+      // 库封面糊的隐蔽坑。
+      final out = embyImageUrlFor(
+        'https://e.test/Items/lib1/Images/Primary?maxHeight=300&tag=abc',
+        480,
+      );
+      expect(out, contains('maxWidth=480'));
+      expect(out, isNot(contains('maxHeight')));
+      expect(out, contains('tag=abc'));
+    });
+
     test('null/空串 → null；无 scheme 原样返回', () {
       expect(embyImageUrlFor(null, 780), isNull);
       expect(embyImageUrlFor('', 780), isNull);
@@ -104,7 +117,7 @@ void main() {
   });
 
   group('embyImageUrlForSlot（槽位取图入口，698 N5-A）', () {
-    test('quality 跟槽位策略（hero q90 / logo q100 / card q85）', () {
+    test('quality 跟槽位策略（hero q90 / logo q100 / card q90）', () {
       String urlFor(EmbyImageSlot slot) => embyImageUrlForSlot(
             'https://e.test/Items/1/Images/Primary?maxHeight=400&tag=abc',
             slot,
@@ -113,7 +126,7 @@ void main() {
           )!;
       expect(urlFor(EmbyImageSlot.hero), contains('quality=90'));
       expect(urlFor(EmbyImageSlot.logo), contains('quality=100'));
-      expect(urlFor(EmbyImageSlot.card), contains('quality=85'));
+      expect(urlFor(EmbyImageSlot.card), contains('quality=90'));
     });
 
     test('目标宽跟槽位钳位（同显示宽不同档）', () {
@@ -131,6 +144,22 @@ void main() {
       expect(widthFor(EmbyImageSlot.hero), '800');
       expect(widthFor(EmbyImageSlot.card), '540');
       expect(widthFor(EmbyImageSlot.logo), '800');
+    });
+  });
+
+  group('tmdbImageUrlForWidth（698 N9-F TMDB 尺寸桶）', () {
+    test('按目标宽选 ≥目标最小桶（w92~w780 梯度）', () {
+      const u = 'https://image.tmdb.org/t/p/w500/abc.jpg';
+      expect(tmdbImageUrlForWidth(u, 120), contains('/w154/'));
+      expect(tmdbImageUrlForWidth(u, 200), contains('/w342/'));
+      expect(tmdbImageUrlForWidth(u, 480), contains('/w500/'));
+      expect(tmdbImageUrlForWidth(u, 540), contains('/w780/'),
+          reason: '540 档（w500 不够）→ w780，1:1 不拉大');
+    });
+
+    test('非 TMDB 形态/空值容错', () {
+      expect(tmdbImageUrlForWidth('https://e/x.jpg', 540), 'https://e/x.jpg');
+      expect(tmdbImageUrlForWidth(null, 540), '');
     });
   });
 }

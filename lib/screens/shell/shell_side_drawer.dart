@@ -372,7 +372,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
                 kShellNavLabels[index],
                 style: TextStyle(
                   color: selected ? Colors.white : Colors.white70,
-                  fontSize: 13.5,
+                  fontSize: 14,
                   fontWeight:
                       selected ? FontWeight.bold : FontWeight.normal,
                 ),
