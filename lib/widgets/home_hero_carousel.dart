@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/utils/motion.dart';
@@ -60,17 +59,6 @@ class HomeHeroItem {
       payload: payload ?? item,
     );
   }
-}
-
-String? ambientBackdropUrl(String? url) {
-  if (url == null || url.isEmpty) return null;
-  final uri = Uri.tryParse(url);
-  if (uri == null || !uri.hasScheme) return url;
-  final query = Map<String, String>.from(uri.queryParameters);
-  query.remove('maxHeight');
-  query['maxWidth'] = '320';
-  query['quality'] = '70';
-  return uri.replace(queryParameters: query).toString();
 }
 
 Widget embyHeroImageBuilder(
@@ -538,124 +526,3 @@ class _Dots extends StatelessWidget {
   }
 }
 
-class HomeHeroBackground extends StatelessWidget {
-  const HomeHeroBackground({
-    super.key,
-    required this.imageUrl,
-    required this.baseColor,
-    required this.heroHeight,
-    this.imageBuilder = embyHeroImageBuilder,
-  });
-
-  final String? imageUrl;
-  final Color baseColor;
-  final double heroHeight;
-  final HomeHeroImageBuilder imageBuilder;
-
-  static const LinearGradient seamFadeGradient = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [
-      Colors.white,
-      Colors.white,
-      Colors.transparent,
-      Colors.transparent,
-    ],
-    stops: [0.0, 0.5, 0.73, 1.0],
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final source = imageUrl;
-    final url = ambientBackdropUrl(source);
-    if (url == null || url.isEmpty) return const SizedBox.shrink();
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 500),
-      child: Stack(
-        key: ValueKey(source),
-        fit: StackFit.expand,
-        children: [
-          ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-            child: Transform.scale(
-              scale: 1.35,
-              child: KeyedSubtree(
-                key: const Key('homeAmbientImage'),
-                child: imageBuilder(
-                  url,
-                  fit: BoxFit.cover,
-                  cacheWidth: 200,
-                  transparent: true,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            key: const Key('homeAmbientSeamLayer'),
-            top: 0,
-            left: 0,
-            right: 0,
-            height: heroHeight * 2,
-            child: ShaderMask(
-              shaderCallback: (rect) => seamFadeGradient.createShader(rect),
-              blendMode: BlendMode.dstIn,
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: heroHeight,
-                      child: imageBuilder(
-                        url,
-                        fit: BoxFit.cover,
-                        cacheWidth: 200,
-                        transparent: true,
-                      ),
-                    ),
-                    Positioned(
-                      top: heroHeight,
-                      left: 0,
-                      right: 0,
-                      height: heroHeight,
-                      child: Transform.flip(
-                        flipY: true,
-                        child: KeyedSubtree(
-                          key: const Key('homeAmbientSeamImage'),
-                          child: imageBuilder(
-                            url,
-                            fit: BoxFit.cover,
-                            cacheWidth: 200,
-                            transparent: true,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.30),
-                  Colors.black.withValues(alpha: 0.42),
-                  baseColor.withValues(alpha: 0.90),
-                  baseColor,
-                ],
-                stops: const [0.0, 0.5, 0.85, 1.0],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

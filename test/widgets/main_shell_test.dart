@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
@@ -87,6 +88,13 @@ double navOpacity(WidgetTester tester) {
 }
 
 void main() {
+  setUp(() {
+    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
+    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
+    PosterPalette.debugReset();
+    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
+  });
+
   testWidgets('桌面 Dock：收起只剩图标轨，展开显示文字，把手切换', (tester) async {
     MainShell.debugIsDesktopPlatformOverride = true;
     addTearDown(() => MainShell.debugIsDesktopPlatformOverride = null);

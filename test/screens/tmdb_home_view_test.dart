@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -141,6 +142,13 @@ bool _focusWithin(Finder finder) {
 }
 
 void main() {
+  setUp(() {
+    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
+    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
+    PosterPalette.debugReset();
+    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
+  });
+
   testWidgets('栏目加载中先显示英雄骨架和平台栏，不显示空态', (tester) async {
     await _pump(
       tester,
@@ -376,7 +384,7 @@ void main() {
       settings: const AppSettings(homeCarousel: false),
     );
     expect(find.byType(HomeHeroCarousel), findsNothing);
-    expect(find.byType(HomeHeroBackground), findsNothing);
+    expect(find.byKey(const Key('tmdbHomeBackground')), findsNothing);
     expect(find.text('查看详情'), findsOneWidget);
   });
 
@@ -388,7 +396,7 @@ void main() {
     );
 
     expect(find.byType(HomeHeroCarousel), findsNothing);
-    expect(find.byType(HomeHeroBackground), findsNothing);
+    expect(find.byKey(const Key('tmdbHomeBackground')), findsNothing);
     expect(find.text('查看详情'), findsNothing);
     expect(find.text('流媒体平台'), findsOneWidget);
   });

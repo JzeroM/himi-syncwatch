@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/models/emby_playback_settings.dart';
@@ -173,18 +174,27 @@ class _SeqItemFakeService extends FakeEmbyService {
 }
 
 void main() {
-  testWidgets('非 TV：正文铺虚化氛围底图 + 压暗罩，顶部海报保持清晰', (tester) async {
+  setUp(() {
+    // 698 N8：色调取色不走真实图片管线（引擎异步/缓存管理 Timer 在
+    // FakeAsync 下不落定）——默认 stub 返回 null（主题色兜底路径）。
+    PosterPalette.debugReset();
+    PosterPalette.debugTrioLoader = (url, {headers}) async => null;
+  });
+
+  testWidgets('非 TV：正文为海报色调三段渐变（698 N8-A，无虚化铺底）', (tester) async {
     await _pumpDetail(tester);
 
-    // 正文氛围层（低分模糊图 + 压暗罩）存在
-    expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
-    expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
+    // 虚化氛围层已撤（sharp→blur 清晰度台阶 =「上下分层感」真凶）。
+    expect(find.byKey(const Key('detailAmbientImage')), findsNothing);
+    expect(find.byKey(const Key('detailAmbientScrim')), findsNothing);
 
-    // 页面背景不再使用纯色渐变（改为底色打底）
+    // 正文背景 = 海报色调三段渐变（全页唯一背景层；取色失败时底色同色三段）。
     final container = tester
         .widget<AnimatedContainer>(find.byKey(const Key('detailBackground')));
     final decoration = container.decoration! as BoxDecoration;
-    expect(decoration.gradient, isNull, reason: '方案 A：正文改用虚化底图，不再叠加纯色渐变');
+    expect(decoration.gradient, isNotNull,
+        reason: '698 N8-A：正文为海报色调三段渐变（全页唯一背景层）');
+    expect((decoration.gradient! as LinearGradient).colors, hasLength(3));
 
     // 顶部海报仍是清晰原图（SliverAppBar 内），未被 TV 整页方案替换
     expect(find.byKey(const Key('detailBackdrop')), findsNothing);
@@ -238,11 +248,15 @@ void main() {
       );
     });
 
-    testWidgets('非 TV 回归：氛围底图在、海报仍在 AppBar 内', (tester) async {
+    testWidgets('非 TV 回归：色调渐变背景在、海报仍在 AppBar 内', (tester) async {
       await _pumpDetail(tester);
 
-      expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
-      expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
+      expect(find.byKey(const Key('detailAmbientImage')), findsNothing);
+      expect(find.byKey(const Key('detailAmbientScrim')), findsNothing);
+      final container = tester
+          .widget<AnimatedContainer>(find.byKey(const Key('detailBackground')));
+      expect((container.decoration! as BoxDecoration).gradient, isNotNull,
+          reason: '698 N8-A：海报色调三段渐变打底');
       expect(find.byKey(const Key('detailBackdrop')), findsNothing);
       expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
       expect(

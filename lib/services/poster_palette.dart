@@ -78,6 +78,11 @@ class PosterPalette {
   static Future<ui.Image?> Function(String url, {Map<String, String>? headers})?
       debugImageLoader;
 
+  /// 三色组级调试注入（698 N8）：绕过图片解码直接喂三色组（widget 测试用
+  /// ——真实图片管线涉引擎异步，FakeAsync 下不落定）。
+  static Future<List<Color>?> Function(String url,
+      {Map<String, String>? headers})? debugTrioLoader;
+
   static final Map<String, List<Color>> _cache = <String, List<Color>>{};
   static final Map<String, Future<List<Color>?>> _inflight =
       <String, Future<List<Color>?>>{};
@@ -88,6 +93,7 @@ class PosterPalette {
     _inflight.clear();
     debugTimeout = defaultTimeout;
     debugImageLoader = null;
+    debugTrioLoader = null;
   }
 
   static int debugCacheLength() => _cache.length;
@@ -118,6 +124,8 @@ class PosterPalette {
   static Future<List<Color>?> _raw(String url,
       {Map<String, String>? headers}) async {
     if (url.isEmpty) return null;
+    final injected = debugTrioLoader;
+    if (injected != null) return injected(url, headers: headers);
     final hit = _cache.remove(url);
     if (hit != null) {
       _cache[url] = hit;

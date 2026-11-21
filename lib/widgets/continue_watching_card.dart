@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
+import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
@@ -79,13 +80,22 @@ class ContinueWatchingCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  EmbyImage(
-                    url: item.posterUrl ?? item.backdropUrl,
-                    fit: BoxFit.cover,
-                    accessToken: accessToken,
-                    cacheWidth: (width * MediaQuery.devicePixelRatioOf(context))
-                        .round(),
-                  ),
+                  Builder(builder: (context) {
+                    // 698 N8-E：16:9 横卡用**背景图**（cover 满框不裁切），
+                    // 封面兜底；card 槽位取图（w540/q85 同宽解码）。
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    final targetW =
+                        embyImageSlotWidth(EmbyImageSlot.card, width, dpr);
+                    final heroUrl = item.backdropUrl ?? item.posterUrl;
+                    return EmbyImage(
+                      url: embyImageUrlForSlot(
+                              heroUrl, EmbyImageSlot.card, width, dpr) ??
+                          heroUrl,
+                      fit: BoxFit.cover,
+                      accessToken: accessToken,
+                      cacheWidth: targetW,
+                    );
+                  }),
                   if (serverBadge != null)
                     Positioned(
                       top: 6,
