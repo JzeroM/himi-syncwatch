@@ -1985,7 +1985,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         SliverAppBar(
           // 698：非 TV 海报高度与首页轮播同源（屏高 × 0.55，钳位 300~640）；
           // TV 保持 220（540 逻辑高屏降高让位正文，见 TV 横幅守卫）。
-          expandedHeight: tv ? 220 : HomeHeroCarousel.heroHeightOf(context),
+          expandedHeight: tv ? 220 : HomeHeroCarousel.detailHeightOf(context),
           pinned: true,
           // 透明 AppBar：非 TV 时清晰海报底部渐隐后，露出正文虚化氛围层，
           // 两层同源图片在接缝处柔化过渡，无硬边。
@@ -2013,105 +2013,38 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 // TV：海报已做整页背景，此处不再重复铺图/渐变，
                 // 标题区直接坐在整页背景上。
                 if (!tv) ...[
-                  // 698 N5-B：有宽幅 backdrop → 满幅 cover（宽幅图天然适配
-                  // 且最清晰，底部渐隐融入正文虚化氛围层）；仅封面兜底 →
-                  // 海报完整居中 + 同图虚化铺底（构图 A，修「显示不全/糊」）。
+                  // 满幅大图（N7-A 构图回归，SenPlayer 同款）：横版背景图
+                  // cover 满幅（无 backdrop 用封面兜底），底部窄带渐隐到
+                  // 透明无缝融入正文虚化氛围层（N7-B：0.85 起渐隐，画面主体
+                  // 全量呈现——旧 0.55 起吃掉底部 45%，「显示不全」真凶）。
+                  // 698 N5-A/N7-D：hero 槽宁大勿糊（q90、cap 3000）+ 同宽解码。
                   Builder(builder: (context) {
                     final dpr = MediaQuery.devicePixelRatioOf(context);
                     final width = MediaQuery.sizeOf(context).width;
-                    final backdrop = item.backdropUrl;
-                    final poster = item.posterUrl;
-                    final fade = const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white,
-                        Colors.white,
-                        Colors.transparent,
-                      ],
-                      stops: [0.0, 0.55, 1.0],
-                    );
-                    if (backdrop != null && backdrop.isNotEmpty) {
-                      final targetW =
-                          embyImageSlotWidth(EmbyImageSlot.hero, width, dpr);
-                      return ShaderMask(
-                        shaderCallback: (rect) => fade.createShader(rect),
-                        blendMode: BlendMode.dstIn,
-                        child: EmbyImage(
-                          url: embyImageUrlForSlot(
-                                  backdrop, EmbyImageSlot.hero, width, dpr) ??
-                              backdrop,
-                          fit: BoxFit.cover,
-                          cacheWidth: targetW,
-                        ),
-                      );
-                    }
-                    if (poster == null || poster.isEmpty) {
+                    final heroUrl = item.backdropUrl ?? item.posterUrl;
+                    if (heroUrl == null || heroUrl.isEmpty) {
                       return const SizedBox.shrink();
                     }
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // 同图虚化铺底：320 小图 cover + 高斯模糊（放大 15%
-                        // 防模糊边缘渗透明光晕）。
-                        ShaderMask(
-                          shaderCallback: (rect) => fade.createShader(rect),
-                          blendMode: BlendMode.dstIn,
-                          child: ClipRect(
-                            child: Transform.scale(
-                              scale: 1.15,
-                              child: ImageFiltered(
-                                imageFilter: ui.ImageFilter.blur(
-                                    sigmaX: 22, sigmaY: 22),
-                                child: EmbyImage(
-                                  url: ambientBackdropUrl(poster) ?? poster,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // 海报完整居中（2:3 + contain 零裁切）：底部 150
-                        // 让位标题/信息块。
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          bottom: 150,
-                          child: Center(
-                            child: AspectRatio(
-                              aspectRatio: 2 / 3,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black26,
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Colors.black54,
-                                      blurRadius: 24,
-                                      offset: Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: EmbyImage(
-                                    url: embyImageUrlForSlot(
-                                            poster,
-                                            EmbyImageSlot.hero,
-                                            width,
-                                            dpr) ??
-                                        poster,
-                                    fit: BoxFit.contain,
-                                    cacheWidth: embyImageSlotWidth(
-                                        EmbyImageSlot.hero, width, dpr),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    return ShaderMask(
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white,
+                          Colors.white,
+                          Colors.transparent,
+                        ],
+                        stops: [0.0, 0.85, 1.0],
+                      ).createShader(rect),
+                      blendMode: BlendMode.dstIn,
+                      child: EmbyImage(
+                        url: embyImageUrlForSlot(
+                                heroUrl, EmbyImageSlot.hero, width, dpr) ??
+                            heroUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth:
+                            embyImageSlotWidth(EmbyImageSlot.hero, width, dpr),
+                      ),
                     );
                   }),
                   // 可读性压暗（v1.2.21）：底边归零，避免与正文氛围罩
@@ -2171,6 +2104,24 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       const SizedBox(height: 8),
                       _buildMetaRow(item),
+                      // 多平台评分行（698，N7-G 移位到简介胶囊上方）：与首页
+                      // 轮播同款「品牌图标 + 分数」，缺哪枚隐藏哪枚；异步补位
+                      // （种子分首帧即出，网络源渐进到达）。
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: HeroRatingsLoader(
+                          query: HeroRatingQuery.fromMediaItem(item),
+                          service: ref.watch(heroRatingsServiceProvider),
+                          iconSize: 15,
+                          alignment: WrapAlignment.center,
+                          textStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            shadows: DetailScreen.heroTextShadows,
+                          ),
+                        ),
+                      ),
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
@@ -2212,23 +2163,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ],
                         ),
                       ],
-                      // 多平台评分行（698）：与首页轮播同款「品牌图标 + 分数」，
-                      // 缺哪枚隐藏哪枚；异步补位（种子 TMDB 分首帧即出）。
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: HeroRatingsLoader(
-                          query: HeroRatingQuery.fromMediaItem(item),
-                          service: ref.watch(heroRatingsServiceProvider),
-                          iconSize: 15,
-                          alignment: WrapAlignment.center,
-                          textStyle: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            shadows: DetailScreen.heroTextShadows,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),

@@ -410,7 +410,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final heroIndex =
         _heroItems.isEmpty ? 0 : _heroIndex.clamp(0, _heroItems.length - 1);
     // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
-    final heroHeight = HomeHeroCarousel.heroHeightOf(context);
+    final heroHeight = HomeHeroCarousel.carouselHeightOf(context);
 
     // 是否有可展示媒体内容：库/分类/续播/轮播任一非空。仅计数到位不算内容。
     final hasContent = _categories.isNotEmpty ||

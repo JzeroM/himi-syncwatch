@@ -119,7 +119,8 @@ class RatingsBadgeRow extends StatelessWidget {
   }
 }
 
-/// 异步评分行：首帧渲染种子徽章（本地分），网络数据到达后整体替换。
+/// 异步评分行：首帧渲染种子徽章（本地分/缓存），网络源渐进补位
+///（698 N7-F 流式）。
 ///
 /// [query] 变化（换条目）时重新加载；[service] 内部按 IMDb id 缓存，
 /// 重复构建不重复发请求。
@@ -172,10 +173,13 @@ class _HeroRatingsLoaderState extends State<HeroRatingsLoader> {
 
   Future<void> _load() async {
     final seq = ++_seq;
-    final badges = await widget.service.fetch(widget.query);
-    // 竞态防护：期间换过条目/服务（seq 不同）则丢弃本次结果。
-    if (!mounted || seq != _seq) return;
-    setState(() => _badges = badges);
+    // 698 N7-F：流式渐进——种子/缓存首帧先出，网络源落地逐帧补位，
+    // 不再等最慢源（豆瓣挑战流）全齐才显示。
+    await for (final badges in widget.service.watch(widget.query)) {
+      // 竞态防护：期间换过条目/服务（seq 不同）则丢弃本次结果。
+      if (!mounted || seq != _seq) return;
+      setState(() => _badges = badges);
+    }
   }
 
   @override

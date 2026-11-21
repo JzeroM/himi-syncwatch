@@ -2,12 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
 
 void main() {
-  group('槽位策略表（698 N5-A，借 SenPlayer 分档）', () {
+  group('槽位策略表（698 N5-A/N7-D，借 SenPlayer 分档）', () {
     test('三档定值：hero 宁大勿糊 / logo 不抠质量 / card 小而清晰', () {
       final hero = embyImagePolicies[EmbyImageSlot.hero]!;
       expect(hero.minWidth, 600);
-      expect(hero.maxWidth, 1600, reason: 'hero 大图宁大勿糊（698 N5-A）');
+      expect(hero.maxWidth, 3000, reason: 'N7-D：上限 3000 对齐 media-detail:large 档');
       expect(hero.quality, 90);
+      expect(hero.maxDpr, 3, reason: 'N7-D：hero 用满物理像素（dpr 封 3）');
 
       final logo = embyImagePolicies[EmbyImageSlot.logo]!;
       expect(logo.minWidth, 300);
@@ -19,10 +20,10 @@ void main() {
       expect(card.quality, 85);
     });
 
-    test('embyImageSlotWidth：按槽位钳位', () {
-      // hero：390×2=780（区间内）；2000 宽大窗钳 1600。
-      expect(embyImageSlotWidth(EmbyImageSlot.hero, 390, 2), 780);
-      expect(embyImageSlotWidth(EmbyImageSlot.hero, 2000, 2), 1600);
+    test('embyImageSlotWidth：按槽位钳位 + 按档 dpr 封顶', () {
+      // hero：390×3=1170（dpr 封 3，用满物理像素）；大窗钳 3000。
+      expect(embyImageSlotWidth(EmbyImageSlot.hero, 390, 3), 1170);
+      expect(embyImageSlotWidth(EmbyImageSlot.hero, 2000, 2), 3000);
       // card：小卡 120×2=240 钳下限 300；大卡钳 540。
       expect(embyImageSlotWidth(EmbyImageSlot.card, 120, 2), 300);
       expect(embyImageSlotWidth(EmbyImageSlot.card, 400, 2), 540);
@@ -32,13 +33,13 @@ void main() {
   });
 
   group('embyImageTargetWidth（设备感知目标宽，698 N4）', () {
-    test('逻辑宽 × min(dpr,2)：dpr 3 封顶 2（省流量）', () {
+    test('逻辑宽 × min(dpr, 封顶)：通用档封 2（省流量）', () {
       expect(embyImageTargetWidth(390, 3), 780); // 390×2
       expect(embyImageTargetWidth(390, 2), 780);
       expect(embyImageTargetWidth(640, 1.25), 800); // 桌面
     });
 
-    test('默认钳位 600~1600（hero 档）', () {
+    test('默认钳位 600~1600（通用档）', () {
       expect(embyImageTargetWidth(200, 1), 600); // 钳下限
       expect(embyImageTargetWidth(2000, 2), 1600); // 钳上限
     });

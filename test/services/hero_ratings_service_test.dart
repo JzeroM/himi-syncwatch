@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/services/hero_ratings_service.dart';
+import 'package:himi_syncwatch/services/ratings_cache_store.dart';
 
 void main() {
   group('parseOmdb（698 OMDb 一枚 key 三枚徽章）', () {
@@ -232,7 +234,9 @@ void main() {
         contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')),
       );
       // POST /c 表单：tok/cha/red 透传，sol = 挖出的 nonce（秒解向量 = 1）。
-      expect(postUrl.toString(), 'https://movie.douban.com/c');
+      // 698 N7-E：POST 目标 = 挑战宿主 sec.douban.com（真机实录——POST 到
+      // movie 域 = 未解决挑战循环，永不发通行 cookie）。
+      expect(postUrl.toString(), 'https://sec.douban.com/c');
       expect(postForm!['tok'], 'TOK');
       expect(postForm!['cha'], 'test-cha-130197');
       expect(postForm!['sol'], '1');
@@ -338,6 +342,97 @@ void main() {
       );
       expect(postCalls, 0);
       expect(badges, contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')));
+    });
+
+    test('表单 action 绝对 URL → 原样 POST（不硬编宿主）', () async {
+      Uri? postUrl;
+      var subjectCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'movie.douban.com') {
+            subjectCalls++;
+            return subjectCalls == 1
+                ? challengeHtml.replaceFirst(
+                    'action="/c"', 'action="https://verify.douban.com/x"')
+                : ratingHtml;
+          }
+          return '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          postUrl = url;
+          return const RatingsHttpPostResult(setCookie: 'a=b');
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(badges, contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')));
+      expect(postUrl.toString(), 'https://verify.douban.com/x');
+    });
+
+    test('sec 轮未解掉 → 换请求宿主兜底再解一轮（698 N7-E）', () async {
+      final postUrls = <String>[];
+      var subjectCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'movie.douban.com') {
+            subjectCalls++;
+            // 前两次都回挑战页：sec 轮后仍拦 → 触发宿主兜底轮。
+            return subjectCalls <= 2 ? challengeHtml : ratingHtml;
+          }
+          return '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          postUrls.add(url.toString());
+          return const RatingsHttpPostResult(setCookie: 'a=b');
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbScore: 8.0),
+      );
+      expect(badges, contains(const HeroRatingBadge(RatingPlatform.douban, '9.4')));
+      expect(postUrls, [
+        'https://sec.douban.com/c',
+        'https://movie.douban.com/c',
+      ], reason: 'sec 轮无效 → action 按请求宿主兜底再解');
+    });
+
+    test('搜索反爬空壳 → 源失败不缓存（自动重试，698 N7-E）', () async {
+      var searchCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'search.douban.com') {
+            searchCalls++;
+            return '<html>empty shell</html>'; // 无 __DATA__/subject/「没有找到」
+          }
+          return '{}';
+        },
+      );
+      const query = HeroRatingQuery(title: '盗梦空间', tmdbId: '603');
+      final first = await service.fetch(query);
+      expect(first, isEmpty, reason: '空壳不出徽章');
+      final before = searchCalls;
+      await service.fetch(query);
+      expect(searchCalls, greaterThan(before),
+          reason: '空壳 = 源失败，绝不缓存（下次自动重试）');
+    });
+
+    test('搜索真无匹配 → 缓存空（不再重查）', () async {
+      var searchCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host == 'search.douban.com') {
+            searchCalls++;
+            return '<script>window.__DATA__ = {"items":[]};</script>没有找到相关结果';
+          }
+          return '{}';
+        },
+      );
+      const query = HeroRatingQuery(title: '不存在的片子xyz', tmdbId: '603');
+      final first = await service.fetch(query);
+      expect(first, isEmpty);
+      await service.fetch(query);
+      expect(searchCalls, 1, reason: '真无匹配缓存空（短 TTL），不重复搜索');
     });
   });
 
@@ -483,15 +578,16 @@ void main() {
       expect(second.map((b) => b.platform), contains(RatingPlatform.douban));
     });
 
-    test('串行队列（698）：并发 fetch 不并发打 HTTP', () async {
-      var inFlight = 0;
-      var maxInFlight = 0;
+    test('OMDb 串行限速（698 N7-F 队列分组：仅 key 源过队列）', () async {
+      var omdbInFlight = 0;
+      var omdbMaxInFlight = 0;
       final service = HeroRatingsService(
         httpGet: (url, {headers = const {}}) async {
-          inFlight++;
-          if (inFlight > maxInFlight) maxInFlight = inFlight;
+          if (!url.host.contains('omdbapi')) return '{}';
+          omdbInFlight++;
+          if (omdbInFlight > omdbMaxInFlight) omdbMaxInFlight = omdbInFlight;
           await Future<void>.delayed(const Duration(milliseconds: 5));
-          inFlight--;
+          omdbInFlight--;
           return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
         },
       );
@@ -500,7 +596,7 @@ void main() {
         service.fetch(const HeroRatingQuery(imdbId: 'tt2')),
         service.fetch(const HeroRatingQuery(imdbId: 'tt3')),
       ]);
-      expect(maxInFlight, 1, reason: 'HTTP 请求服务内串行（防限速/爬站过密）');
+      expect(omdbMaxInFlight, 1, reason: 'OMDb 免费 key 串行限速');
     });
 
     test('双 id 皆缺：不发网络，仅种子徽章', () async {
@@ -553,6 +649,168 @@ void main() {
       expect(badges, contains(
         const HeroRatingBadge(RatingPlatform.tmdb, '7.4'),
       ));
+    });
+  });
+
+  group('评分行流式渐进（698 N7-F）', () {
+    const query = HeroRatingQuery(imdbId: 'tt1', tmdbScore: 7.4);
+
+    test('watch：种子首帧先出，逐源补位（帧单调递增）', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host.contains('omdbapi')) {
+            return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+          }
+          return '{}';
+        },
+      );
+      final emissions = await service.watch(query).toList();
+      expect(emissions.first.map((b) => b.platform), [RatingPlatform.tmdb],
+          reason: '首帧 = 种子（不等网络）');
+      expect(emissions.length, greaterThan(1), reason: '逐源补位多帧');
+      expect(emissions.last.map((b) => b.platform), contains(RatingPlatform.imdb));
+      for (var i = 1; i < emissions.length; i++) {
+        expect(emissions[i].length, greaterThanOrEqualTo(emissions[i - 1].length),
+            reason: '徽章只增不减');
+      }
+    });
+
+    test('watch：慢源不挡快源（IMDb 先上，豆瓣落地再补）', () async {
+      final doubanGate = Completer<String>();
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) {
+          if (url.host == 'movie.douban.com') return doubanGate.future;
+          return Future.value(
+              jsonEncode({'Response': 'True', 'imdbRating': '7.6'}));
+        },
+      );
+      const slowQuery =
+          HeroRatingQuery(imdbId: 'tt1', doubanId: '3541415', tmdbScore: 7.4);
+      final emissions = <List<HeroRatingBadge>>[];
+      final sub = service.watch(slowQuery).listen(emissions.add);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(
+        emissions.expand((e) => e).map((b) => b.platform),
+        contains(RatingPlatform.imdb),
+        reason: '快源已上',
+      );
+      expect(
+        emissions.last.map((b) => b.platform),
+        isNot(contains(RatingPlatform.douban)),
+        reason: '慢源（豆瓣）未落地前不陪等',
+      );
+      doubanGate.complete('<meta property="v:average" content="8.9">');
+      await sub.asFuture<void>();
+      expect(
+        emissions.last.map((b) => b.platform),
+        contains(RatingPlatform.douban),
+      );
+    });
+
+    test('watch：会话缓存命中首帧即全量（零网络）', () async {
+      var httpCalls = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          httpCalls++;
+          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+        },
+      );
+      await service.fetch(query); // 全量并缓存
+      final callsAfterFetch = httpCalls;
+      final emissions = await service.watch(query).toList();
+      expect(
+        emissions.first.map((b) => b.platform),
+        containsAll([RatingPlatform.tmdb, RatingPlatform.imdb]),
+        reason: '缓存命中首帧即全量',
+      );
+      expect(httpCalls, callsAfterFetch, reason: 'watch 不重复打 HTTP');
+    });
+  });
+
+  group('评分徽章缓存（698 N7-I：重复获取归零）', () {
+    const query = HeroRatingQuery(imdbId: 'tt1', tmdbScore: 7.4);
+
+    test('跨服务重建命中持久缓存（settings/trakt 变更不再重复获取）', () async {
+      var httpCalls = 0;
+      final store = MemoryRatingsCacheStore();
+      String body() {
+        httpCalls++;
+        return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+      }
+
+      final service1 = HeroRatingsService(
+        cacheStore: store,
+        httpGet: (url, {headers = const {}}) async => body(),
+      );
+      final first = await service1.fetch(query);
+      expect(first.map((b) => b.platform), contains(RatingPlatform.imdb));
+      final callsAfterFirst = httpCalls;
+
+      // 新服务实例（provider 重建语义）+ 同一 store：零网络出全量。
+      final service2 = HeroRatingsService(
+        cacheStore: store,
+        httpGet: (url, {headers = const {}}) async => body(),
+      );
+      final second = await service2.fetch(query);
+      expect(httpCalls, callsAfterFirst, reason: '缓存命中零网络');
+      expect(second.map((b) => b.platform), contains(RatingPlatform.imdb));
+    });
+
+    test('失败不缓存可重试（重建后同样重试）', () async {
+      var httpCalls = 0;
+      var fail = true;
+      final store = MemoryRatingsCacheStore();
+      final service = HeroRatingsService(
+        cacheStore: store,
+        httpGet: (url, {headers = const {}}) async {
+          httpCalls++;
+          if (fail) throw StateError('net down');
+          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+        },
+      );
+      await service.fetch(query);
+      fail = false;
+      await service.fetch(query);
+      expect(httpCalls, greaterThan(1), reason: '失败源自动重试');
+      // 成功后进缓存：第三次零网络。
+      final before = httpCalls;
+      await service.fetch(query);
+      expect(httpCalls, before);
+    });
+
+    test('TTL：有分 7 天有效，空结果 24h 重查', () async {
+      var omdbCalls = 0;
+      final store = MemoryRatingsCacheStore();
+      final service = HeroRatingsService(
+        cacheStore: store,
+        httpGet: (url, {headers = const {}}) async {
+          if (url.host.contains('omdbapi')) omdbCalls++;
+          return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
+        },
+      );
+      // 有分 2 天前 → 未过期（7d）→ 命中。
+      await store.write(
+        'omdb:imdb:tt1',
+        RatingsCacheEntry(
+          badges: const [HeroRatingBadge(RatingPlatform.imdb, '7.6')],
+          at: DateTime.now().subtract(const Duration(days: 2)),
+          hasData: true,
+        ),
+      );
+      await service.fetch(query);
+      expect(omdbCalls, 0, reason: '有分 TTL 7 天内命中');
+
+      // 空结果 2 天前 → 已过期（24h）→ 重查。
+      await store.write(
+        'omdb:imdb:tt2',
+        RatingsCacheEntry(
+          badges: const [],
+          at: DateTime.now().subtract(const Duration(days: 2)),
+          hasData: false,
+        ),
+      );
+      await service.fetch(const HeroRatingQuery(imdbId: 'tt2'));
+      expect(omdbCalls, 1, reason: '空结果 TTL 24h 后自动重查');
     });
   });
 

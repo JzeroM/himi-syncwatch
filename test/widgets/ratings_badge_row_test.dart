@@ -212,4 +212,9 @@ class _FakeService implements HeroRatingsSource {
     calls++;
     return result();
   }
+
+  @override
+  Stream<List<HeroRatingBadge>> watch(HeroRatingQuery query) async* {
+    yield await fetch(query);
+  }
 }

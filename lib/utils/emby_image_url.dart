@@ -23,36 +23,42 @@ enum EmbyImageSlot {
   card,
 }
 
-/// 槽位策略表（698 N5-A，借 SenPlayer 分档思想）。
+/// 槽位策略表（698 N5-A/N7-D，借 SenPlayer 分档）。
 class EmbyImagePolicy {
   const EmbyImagePolicy({
     required this.minWidth,
     required this.maxWidth,
     required this.quality,
+    this.maxDpr = 2,
   });
 
   final int minWidth;
   final int maxWidth;
   final int quality;
+
+  /// dpr 封顶（N7-D）：hero 宁大勿糊用满物理像素（封 3）；小件封 2 省流量。
+  final double maxDpr;
 }
 
 const Map<EmbyImageSlot, EmbyImagePolicy> embyImagePolicies = {
-  EmbyImageSlot.hero: EmbyImagePolicy(minWidth: 600, maxWidth: 1600, quality: 90),
+  // hero：宁大勿糊（N7-D）——上限 3000 对齐 SenPlayer media-detail:large
+  //（3000x4500/3000x1688 q90）档；dpr 封 3，3x 屏用满物理像素。
+  EmbyImageSlot.hero:
+      EmbyImagePolicy(minWidth: 600, maxWidth: 3000, quality: 90, maxDpr: 3),
   EmbyImageSlot.logo: EmbyImagePolicy(minWidth: 300, maxWidth: 800, quality: 100),
   EmbyImageSlot.card: EmbyImagePolicy(minWidth: 300, maxWidth: 540, quality: 85),
 };
 
-/// 设备感知目标宽（物理像素，已含 dpr）：`逻辑宽 × min(dpr, 2)`，
+/// 设备感知目标宽（物理像素，已含 dpr）：`逻辑宽 × min(dpr, [dprCap])`，
 /// 按槽位 [EmbyImagePolicy] 钳位。
-///
-/// dpr 封顶 2：高 dpr（手机 3×）屏 2× 已足够清晰，3× 纯耗流量。
 int embyImageTargetWidth(
   double logicalWidth,
   double devicePixelRatio, {
   int? min,
   int? max,
+  double dprCap = 2,
 }) {
-  final dpr = devicePixelRatio < 2 ? devicePixelRatio : 2;
+  final dpr = devicePixelRatio < dprCap ? devicePixelRatio : dprCap;
   final pixels = logicalWidth * dpr;
   return pixels
       .clamp((min ?? 600).toDouble(), (max ?? 1600).toDouble())
@@ -71,6 +77,7 @@ int embyImageSlotWidth(
     devicePixelRatio,
     min: p.minWidth,
     max: p.maxWidth,
+    dprCap: p.maxDpr,
   );
 }
 

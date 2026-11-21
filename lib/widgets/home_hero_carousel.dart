@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -124,29 +123,52 @@ class HomeHeroCarousel extends StatefulWidget {
   /// 用户开始拖动时回调（用于暂停外层动画等）。
   final VoidCallback? onUserInteract;
 
-  /// 轮播/详情页海报高度单源（698）：屏高 × [heroHeightRatio]，钳位
-  /// [heroHeightMin]~[heroHeightMax]（超大窗不糊成巨幅、小窗不塌成条）。
-  /// 服务器首页 / TMDB 首页 / 详情页（非 TV）三处消费，改一处全局生效。
-  static const double heroHeightRatio = 0.55;
+  /// 高度双档（698 N7-C，借 SenPlayer「显示区比例贴图」）：显示区比例贴图种
+  /// 比例，cover 裁切天然最小——轮播贴竖版海报 2:3、详情贴横版背景图
+  /// （SenPlayer 详情实测 ~1.17:1）。**视口护栏**：高度不超屏高 ×
+  /// [viewportCapRatio]（宽扁窗不撑破视口，懒列表照常建、信息块可点），
+  /// 再钳 [heroHeightMin]~[heroHeightMax]。
+  static const double carouselHeightRatio = 1.35;
+  static const double detailHeightRatio = 0.85;
+  static const double viewportCapRatio = 0.65;
   static const double heroHeightMin = 300;
   static const double heroHeightMax = 640;
 
-  /// 高度计算（纯函数，便于测试）：[screenHeight] × 0.55，钳位 300~640。
-  static double heroHeightFor(double screenHeight) =>
-      (screenHeight * heroHeightRatio).clamp(heroHeightMin, heroHeightMax);
+  static double _heroHeight(double byWidth, double screenHeight) {
+    final cap = screenHeight * viewportCapRatio;
+    return (byWidth < cap ? byWidth : cap).clamp(heroHeightMin, heroHeightMax);
+  }
 
-  /// 高度计算（取 MediaQuery 屏高）。
-  static double heroHeightOf(BuildContext context) =>
-      heroHeightFor(MediaQuery.sizeOf(context).height);
+  /// 轮播高度（纯函数）：宽 × 1.35（贴 2:3 海报）+ 视口护栏。
+  static double carouselHeightFor(double width, double screenHeight) =>
+      _heroHeight(width * carouselHeightRatio, screenHeight);
 
-  /// 清晰图底部渐隐（v1.2.15）：底部渐隐到透明，露出下层同源虚化海报，
-  /// 消除「清晰图 → 虚化图」的内容硬切（详情页 SliverAppBar 同款处理）。
+  /// 详情 hero 高度（纯函数）：宽 × 0.85（≈1.17:1，贴横版背景图）+ 视口护栏。
+  static double detailHeightFor(double width, double screenHeight) =>
+      _heroHeight(width * detailHeightRatio, screenHeight);
+
+  /// 轮播高度（取 MediaQuery）。
+  static double carouselHeightOf(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return carouselHeightFor(size.width, size.height);
+  }
+
+  /// 详情 hero 高度（取 MediaQuery）。
+  static double detailHeightOf(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return detailHeightFor(size.width, size.height);
+  }
+
+  /// 清晰图底部渐隐（v1.2.15；N7-B 收窄）：**窄带**渐隐到透明（0.88 起），
+  /// 画面主体全量呈现——旧 0.62 起渐隐吃掉画面底部 38%（「显示不全」真凶），
+  /// 渐隐区半透在虚化底层上还发糊。露出下层同源虚化海报，接缝自然溶解
+  ///（详情页 SliverAppBar 同款思路）。
   @visibleForTesting
   static const LinearGradient imageFadeGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Colors.white, Colors.white, Colors.transparent],
-    stops: [0.0, 0.62, 1.0],
+    stops: [0.0, 0.88, 1.0],
   );
 
   /// 可读性压暗罩（v1.2.17）：文字区维持 0x99（60%）可读性，但**底边必须
@@ -315,11 +337,13 @@ class _HeroSlide extends StatelessWidget {
     final overview = item.overview?.trim();
     final query = item.ratingQuery;
 
-    // 698 N5-A：分槽位取图——hero 大图宁大勿糊（cap 1600/q90）、Logo 不抠
-    // 质量（cap 800/q100）。海报目标宽按实际显示宽（LayoutBuilder 实测）。
+    // 698 N5-A/N7-D：分槽位取图——hero 大图宁大勿糊（q90、cap 3000、dpr
+    // 封 3 用满物理像素）、Logo 不抠质量（cap 800/q100）。
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    final width = MediaQuery.sizeOf(context).width;
     // Logo 显示高仅 ~54px，按 180 逻辑宽估目标宽（槽位钳 300~800）。
     final logoW = embyImageSlotWidth(EmbyImageSlot.logo, 180, dpr);
+    final heroW = embyImageSlotWidth(EmbyImageSlot.hero, width, dpr);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -327,30 +351,24 @@ class _HeroSlide extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 虚化铺底（698 N5-B 构图 A）：同图 320 小图 cover + 高斯模糊——
-          // 海报四周由同源虚化填满，无硬边无色相跳变；底部渐隐到透明
-          // （v1.2.15）与首页虚化背景无缝溶解（接缝对齐层共用取图优先级）。
-          if (bg != null)
-            ShaderMask(
-              shaderCallback: (rect) =>
-                  HomeHeroCarousel.imageFadeGradient.createShader(rect),
-              blendMode: BlendMode.dstIn,
-              child: ClipRect(
-                // 模糊采样边缘会向内渗透明光晕：放大 15% 让渗出区落在
-                // 裁剪之外。
-                child: Transform.scale(
-                  scale: 1.15,
-                  child: ImageFiltered(
-                    imageFilter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                    child: imageBuilder(
-                      ambientBackdropUrl(bg) ?? bg,
-                      fit: BoxFit.cover,
-                      transparent: true,
-                    ),
+          // 满幅大图（N7-A 构图回归，SenPlayer 同款）：竖版海报 cover 居中
+          // 裁切满幅铺开；底部窄带渐隐到透明（N7-B：0.88 起渐隐，画面主体
+          // 全量呈现），露出下层同源虚化海报，接缝自然溶解无硬边
+          // （v1.2.15；与 home_screen 的虚化背景共用同一取图优先级）。
+          ShaderMask(
+            shaderCallback: (rect) =>
+                HomeHeroCarousel.imageFadeGradient.createShader(rect),
+            blendMode: BlendMode.dstIn,
+            child: bg == null
+                ? const SizedBox.shrink()
+                : imageBuilder(
+                    embyImageUrlForSlot(bg, EmbyImageSlot.hero, width, dpr) ??
+                        bg,
+                    fit: BoxFit.cover,
+                    cacheWidth: heroW,
+                    transparent: true,
                   ),
-                ),
-              ),
-            ),
+          ),
           // 底部压暗：保证标题/信息可读；底边归零（v1.2.17），接缝暗度
           // 完全由背景蒙罩连续提供，避免叠加出暗带。
           const DecoratedBox(
@@ -361,55 +379,10 @@ class _HeroSlide extends StatelessWidget {
           Positioned(
             left: 20,
             right: 20,
-            top: 0,
             bottom: 30,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 海报完整居中（698 N5-B 构图 A）：AspectRatio 2:3 + contain
-                // ——零裁切完整可见（修「显示不全」），圆角 + 投影轻量卡片
-                // 感；高度吃剩余空间（Column 定序），信息块永不被挤出。
-                if (bg != null)
-                  Expanded(
-                    child: LayoutBuilder(builder: (context, constraints) {
-                      // 海报实际显示宽上界：min(可用宽, 可用高×2/3)。
-                      final posterW = math.min(
-                        constraints.maxWidth,
-                        constraints.maxHeight * 2 / 3,
-                      );
-                      final targetW = embyImageSlotWidth(
-                          EmbyImageSlot.hero, posterW, dpr);
-                      return Center(
-                        child: AspectRatio(
-                          aspectRatio: 2 / 3,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black26,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black54,
-                                  blurRadius: 24,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: imageBuilder(
-                                embyImageUrlForSlot(
-                                        bg, EmbyImageSlot.hero, posterW, dpr) ??
-                                    bg,
-                                fit: BoxFit.contain,
-                                cacheWidth: targetW,
-                                transparent: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
                 if (logo != null && logo.isNotEmpty)
                   SizedBox(
                     height: 54,

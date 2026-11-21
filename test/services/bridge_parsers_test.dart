@@ -81,8 +81,8 @@ void main() {
     });
   });
 
-  group('extractDoubanSubjects（搜索候选）', () {
-    test('抽 subject id + 锚文本标题（去重）', () {
+  group('extractDoubanSubjects（搜索候选三级，698 N7-E）', () {
+    test('① 抽 subject id + 锚文本标题（去重）', () {
       const html = '<a href="https://movie.douban.com/subject/3541415/">盗梦空间</a>'
           '<a href="https://movie.douban.com/subject/3541415/?from=rec">重复</a>'
           '<a href="https://movie.douban.com/subject/1295644/">这个杀手不太冷</a>';
@@ -90,6 +90,24 @@ void main() {
       expect(out.length, 2);
       expect(out.first['id'], '3541415');
       expect(out.first['title'], '盗梦空间');
+    });
+
+    test('② window.__DATA__ 内嵌 JSON（锚点缺席的 JS 渲染页）', () {
+      const html = '<script>window.__DATA__ = {"items":['
+          '{"id":"3541415","title":"盗梦空间 Inception","url":"https://movie.douban.com/subject/3541415/"},'
+          '{"id":"1295644","title":"这个杀手不太冷"}'
+          ']};</script><script>other()</script>';
+      final out = BridgeParsers.extractDoubanSubjects(html);
+      expect(out.length, 2);
+      expect(out.first['id'], '3541415');
+      expect(out.first['title'], '盗梦空间 Inception');
+    });
+
+    test('② 脏 JSON 不影响锚点路径', () {
+      const html = '<a href="https://movie.douban.com/subject/111/">好片</a>'
+          '<script>window.__DATA__ = {broken</script>';
+      final out = BridgeParsers.extractDoubanSubjects(html);
+      expect(out.single['id'], '111');
     });
   });
 
@@ -135,12 +153,13 @@ void main() {
       expect(BridgeParsers.isDoubanChallenge('<form id="tok">'), isFalse);
     });
 
-    test('parseDoubanChallenge：tok/cha/red 三元组提取', () {
+    test('parseDoubanChallenge：tok/cha/red/action 提取', () {
       final form = BridgeParsers.parseDoubanChallenge(challengeHtml);
       expect(form, {
         'tok': 'TOK123@yyy',
         'cha': 'test-cha-130197',
         'red': 'https://movie.douban.com/subject/3541415/',
+        'action': '/c',
       });
     });
 

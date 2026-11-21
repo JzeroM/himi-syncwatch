@@ -96,4 +96,9 @@ class _FakeSource implements HeroRatingsSource {
 
   @override
   Future<List<HeroRatingBadge>> fetch(HeroRatingQuery query) async => badges;
+
+  @override
+  Stream<List<HeroRatingBadge>> watch(HeroRatingQuery query) async* {
+    yield await fetch(query);
+  }
 }

@@ -194,8 +194,8 @@ void main() {
         of: find.byType(FlexibleSpaceBar),
         matching: find.byType(EmbyImage),
       ),
-      findsNWidgets(2),
-      reason: '698 N5-B 构图 A：封面兜底 = 同源两层图（虚化铺底 + 海报完整居中）',
+      findsOneWidget,
+      reason: '698 N7-A 构图回归：满幅大图一层（cover 居中裁切）',
     );
     expect(find.text('测试影片'), findsWidgets);
   });
@@ -250,8 +250,8 @@ void main() {
           of: find.byType(FlexibleSpaceBar),
           matching: find.byType(EmbyImage),
         ),
-        findsNWidgets(2),
-        reason: '698 N5-B 构图 A：封面兜底 = 同源两层图（虚化铺底 + 海报完整居中）',
+        findsOneWidget,
+        reason: '698 N7-A 构图回归：满幅大图一层（cover 居中裁切）',
       );
     });
 
@@ -2675,12 +2675,12 @@ void main() {
       expect(bar.expandedHeight, 220, reason: 'TV 540 逻辑高下横幅降高让位正文');
     });
 
-    testWidgets('非 TV 横幅 expandedHeight=heroHeightOf（698 高度单源）', (tester) async {
+    testWidgets('非 TV 横幅 expandedHeight=detailHeightOf（698 N7-C 双档）', (tester) async {
       await _pumpDetail(tester, tv: false);
       final bar = tester.widget<SliverAppBar>(find.byType(SliverAppBar));
-      // 测试窗默认 800×600：clamp(600×0.55, 300, 640) = 330。
-      expect(bar.expandedHeight, HomeHeroCarousel.heroHeightOf(tester.element(find.byType(SliverAppBar))),
-          reason: '非 TV 横幅高度与首页轮播同源（屏高 × 0.55，钳位 300~640）');
+      // 测试窗默认 800×600：护栏 min(800×0.85, 600×0.65) = 390。
+      expect(bar.expandedHeight, HomeHeroCarousel.detailHeightOf(tester.element(find.byType(SliverAppBar))),
+          reason: '详情横幅高度走详情档（宽 × 0.85 贴横版背景图 + 视口护栏）');
     });
 
     testWidgets('TV 浮层标题 16、简介正文 14（默认隐藏）', (tester) async {
@@ -3631,26 +3631,19 @@ void main() {
     });
   });
 
-  group('698 N5-B 详情 hero 构图（封面兜底 = 海报完整居中 + 虚化铺底）', () {
-    testWidgets('仅封面：2:3 contain 海报 + 同图虚化铺底（ImageFiltered）', (tester) async {
+  group('698 N7-A/B 详情 hero 构图（满幅 cover + 窄带渐隐）', () {
+    testWidgets('封面兜底：满幅 cover 一层图（backdrop 缺席用 posterUrl）', (tester) async {
       await _pumpDetail(tester, item: _item);
-      final ratio = find.descendant(
+      final heroImages = find.descendant(
         of: find.byType(FlexibleSpaceBar),
-        matching: find.byType(AspectRatio),
+        matching: find.byType(EmbyImage),
       );
-      expect(ratio, findsOneWidget, reason: '海报按 2:3 帧完整居中');
-      expect(tester.widget<AspectRatio>(ratio).aspectRatio, 2 / 3);
-      expect(
-        find.descendant(
-          of: find.byType(FlexibleSpaceBar),
-          matching: find.byType(ImageFiltered),
-        ),
-        findsOneWidget,
-        reason: '同图虚化铺底',
-      );
+      expect(heroImages, findsOneWidget, reason: '满幅大图一层（N7-A 构图回归）');
+      final img = tester.widget<EmbyImage>(heroImages.first);
+      expect(img.fit, BoxFit.cover, reason: 'cover 满幅（居中裁切）');
     });
 
-    testWidgets('有 backdrop：维持宽幅 cover（无 2:3 海报层）', (tester) async {
+    testWidgets('有 backdrop：横版背景图满幅 cover（N7-A 详情=横图）', (tester) async {
       final item = MediaItem(
         id: 'm1',
         name: '测试影片',
@@ -3659,14 +3652,29 @@ void main() {
         backdropUrl: 'https://emby.test/Items/m1/Images/Backdrop?maxHeight=400&tag=b',
       );
       await _pumpDetail(tester, item: item);
-      expect(
-        find.descendant(
-          of: find.byType(FlexibleSpaceBar),
-          matching: find.byType(AspectRatio),
-        ),
-        findsNothing,
-        reason: '宽幅 backdrop 满幅 cover，不加海报层',
+      final heroImages = find.descendant(
+        of: find.byType(FlexibleSpaceBar),
+        matching: find.byType(EmbyImage),
       );
+      expect(heroImages, findsOneWidget);
+      final img = tester.widget<EmbyImage>(heroImages.first);
+      expect(img.fit, BoxFit.cover);
+      expect(img.url, contains('Backdrop'), reason: '优先横版背景图');
+    });
+
+    testWidgets('详情评分行在简介胶囊上方（698 N7-G 移位）', (tester) async {
+      await _pumpDetail(tester, item: _item);
+      final badgeRow = find.descendant(
+        of: find.byType(HeroRatingsLoader),
+        matching: find.byType(RatingsBadgeRow),
+      );
+      final overviewBtn = find.widgetWithText(GlassContainer, '简介');
+      expect(badgeRow, findsOneWidget);
+      expect(overviewBtn, findsOneWidget);
+      final badgeY = tester.getTopLeft(badgeRow).dy;
+      final overviewY = tester.getTopLeft(overviewBtn).dy;
+      expect(badgeY, lessThan(overviewY),
+          reason: '评分行移位到简介胶囊上方（698 N7-G）');
     });
   });
 }

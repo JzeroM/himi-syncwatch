@@ -96,7 +96,9 @@ void main() {
       expect(g.stops, isNotNull);
       expect(g.stops!.last, 1.0);
       expect(g.stops![0], 0.0);
-      expect(g.stops, orderedEquals(<double>[0.0, 0.62, 1.0]));
+      expect(g.stops, orderedEquals(<double>[0.0, 0.88, 1.0]),
+          reason: '698 N7-B：窄带渐隐（0.88 起）——画面主体全量呈现，'
+              '旧 0.62 起吃掉底部 38%（「显示不全」真凶）');
     });
 
     test('压暗罩底边归零：接缝暗度完全由背景蒙罩提供，无叠加台阶', () {

@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/services/bridge_parsers.dart';
+import 'package:himi_syncwatch/services/ratings_cache_store.dart';
 
 /// 拉取原始响应体（可注入便于测试；默认走 Dio）。
 typedef RatingsHttpGet = Future<String> Function(
@@ -33,6 +35,12 @@ typedef RatingsHttpPost = Future<RatingsHttpPostResult> Function(
 abstract class HeroRatingsSource {
   /// 取该条目的全部徽章（含种子分）；无数据返回空列表。
   Future<List<HeroRatingBadge>> fetch(HeroRatingQuery query);
+
+  /// 渐进视图（698 N7-F）：种子/缓存首帧先出，网络源落地逐帧补位。
+  /// 默认实现整批一次（假源无需感知）。
+  Stream<List<HeroRatingBadge>> watch(HeroRatingQuery query) async* {
+    yield await fetch(query);
+  }
 }
 
 /// Trakt 评分查询桥（由 TraktClient 适配；未登录/未命中返回 null）。
@@ -97,9 +105,11 @@ class HeroRatingsService implements HeroRatingsSource {
     this.traktRating,
     RatingsHttpGet? httpGet,
     RatingsHttpPost? httpPost,
+    RatingsCacheStore? cacheStore,
     this.queueGap = Duration.zero,
   })  : _httpGet = httpGet ?? _dioGet,
-        _httpPost = httpPost ?? _dioPost;
+        _httpPost = httpPost ?? _dioPost,
+        _cacheStore = cacheStore ?? MemoryRatingsCacheStore();
 
   /// 内置 OMDb 免费 key（698 N3）：零配置即亮 IMDb/烂番茄/Metacritic 三枚。
   /// 用户配置的 `omdbApiKey` 非空时覆盖；被限流/吊销时换自己的 key。
@@ -125,10 +135,17 @@ class HeroRatingsService implements HeroRatingsSource {
 
   final RatingsHttpGet _httpGet;
   final RatingsHttpPost _httpPost;
+  final RatingsCacheStore _cacheStore;
   final Random _random = Random();
 
-  /// 豆瓣通行 cookie（挑战解决后记忆，同进程后续请求直带；698 N5-C）。
-  String? _doubanPassCookie;
+  /// 豆瓣 cookie jar（698 N7-E）：自造 bid 打底，挑战 POST 响应的
+  /// Set-Cookie（通行凭证 `dbsawcv1` 等，真机实录）按名覆盖。
+  final Map<String, String> _doubanCookies = {};
+
+  /// 豆瓣反爬挑战宿主（698 N7-E 真机实录）：subject/search 都先 302 到
+  /// `sec.douban.com/c` 下发挑战页，表单 `action="/c"` 必须落**该宿主**——
+  /// POST 到 movie 域会被当成未解决挑战循环，永不发通行 cookie（旧 bug）。
+  static const String doubanChallengeOrigin = 'https://sec.douban.com';
 
   /// 浏览器 bid cookie（豆瓣风控基线，随请求持久携带）。
   late final String _bidCookie =
@@ -154,8 +171,15 @@ class HeroRatingsService implements HeroRatingsSource {
     return result;
   }
 
-  /// 队列内执行一次 HTTP 拉取（带请求间隔抖动）。
-  Future<String> _get(Uri url, {Map<String, String> headers = const {}}) {
+  /// HTTP 拉取（698 N7-F 队列分组）：[throttled] 请求过串行队列（带间隔
+  /// 抖动）——仅 OMDb 免费 key 需要限速；爬页源（豆瓣/Letterboxd）并行跑
+  /// （评分行渐进呈现，不再全串行陪等最慢源）。
+  Future<String> _get(
+    Uri url, {
+    Map<String, String> headers = const {},
+    bool throttled = true,
+  }) {
+    if (!throttled) return _httpGet(url, headers: headers);
     return _serialize(() async {
       if (queueGap > Duration.zero) {
         await Future<void>.delayed(
@@ -234,7 +258,57 @@ class HeroRatingsService implements HeroRatingsSource {
     return [...seed, for (final r in results) ...r];
   }
 
-  /// 按源缓存取数：失败（null）不缓存 → 下次重试；成功（含空）缓存。
+  /// 渐进视图（698 N7-F）：首帧 = 种子 + 会话缓存即时部分（零网络），
+  /// 随后每源落地补位一帧——评分行不再等最慢源（豆瓣挑战流）全齐才显示。
+  @override
+  Stream<List<HeroRatingBadge>> watch(HeroRatingQuery query) async* {
+    const order = ['omdb', 'trakt', 'douban', 'letterboxd'];
+    final seed = query.seedBadges;
+    final key = query.cacheKey;
+    if (key == null) {
+      yield seed;
+      return;
+    }
+    final done = <String, List<HeroRatingBadge>>{};
+    List<HeroRatingBadge> merged() =>
+        [...seed, for (final s in order) ...?done[s]];
+
+    // 先取「此前已完成」的会话缓存（不得把本次新起的 future 当缓存——
+    // 否则首帧又变等全齐）。
+    final prior = {for (final s in order) s: _cache['$s:$key']};
+    final futures = <String, Future<List<HeroRatingBadge>>>{
+      'omdb': _cached('omdb', key, () => _fetchOmdb(query)),
+      'trakt': _cached('trakt', key, () => _fetchTrakt(query)),
+      'douban': _cached('douban', key, () => _fetchDouban(query)),
+      'letterboxd': _cached('letterboxd', key, () => _fetchLetterboxd(query)),
+    };
+    for (final s in order) {
+      final f = prior[s];
+      if (f != null) {
+        final r = await f;
+        if (r != null) done[s] = r;
+      }
+    }
+    yield merged();
+    for (final s in order) {
+      done[s] = await futures[s]!;
+      yield merged();
+    }
+  }
+
+  /// 有分缓存 TTL（698 N7-I）：评分漂移慢，7 天重查一次。
+  static const Duration ratingsTtlWithData = Duration(days: 7);
+
+  /// 「确认无数据」空结果 TTL：24h 后自动重查（防永久钉死）。
+  static const Duration ratingsTtlEmpty = Duration(hours: 24);
+
+  bool _fresh(RatingsCacheEntry e) =>
+      DateTime.now().difference(e.at) <
+      (e.hasData ? ratingsTtlWithData : ratingsTtlEmpty);
+
+  /// 按源缓存取数（698 N7-I 双层）：会话内 future map + 持久 store（跨
+  /// 服务重建/跨启动命中即零网络）。失败（null）**不写任何缓存** → 下次
+  /// 重试；成功（含「确认无数据」空）按 TTL 缓存。
   Future<List<HeroRatingBadge>> _cached(
     String source,
     String key,
@@ -243,7 +317,21 @@ class HeroRatingsService implements HeroRatingsSource {
     final cacheKey = '$source:$key';
     var future = _cache[cacheKey];
     if (future == null) {
-      future = run();
+      future = () async {
+        final entry = await _cacheStore.read(cacheKey);
+        if (entry != null && _fresh(entry)) return entry.badges;
+        final result = await run();
+        if (result == null) return null;
+        await _cacheStore.write(
+          cacheKey,
+          RatingsCacheEntry(
+            badges: result,
+            at: DateTime.now(),
+            hasData: result.isNotEmpty,
+          ),
+        );
+        return result;
+      }();
       _cache[cacheKey] = future;
     }
     final result = await future;
@@ -329,63 +417,93 @@ class HeroRatingsService implements HeroRatingsSource {
   // 证明（`sha512(cha+nonce)` 前 4 位十六进制为 0）挖到 nonce 后 POST /c
   // 换通行 cookie，浏览器 JS 同款逻辑程序化复刻。
 
-  /// 豆瓣请求头（698 N5-C）：完整浏览器头组 + Referer + bid/通行 Cookie。
+  /// 豆瓣请求头（698 N5-C/N7-E）：完整浏览器头组 + Referer + Cookie jar。
   /// 光加 UA 过不去风控（实测 Referer+Cookie 全套仍 0 命中才挖挑战）。
   Map<String, String> _doubanHeaders() => {
         ..._browserHeaders,
         'Referer': 'https://movie.douban.com/',
-        'Cookie': [
-          _bidCookie,
-          if (_doubanPassCookie != null) _doubanPassCookie!,
-        ].join('; '),
+        'Cookie': _cookieHeader(),
       };
 
-  /// 豆瓣 GET（698 N5-C）：命中挑战页 → 挖矿解决 → 重试一次。
-  /// 挖不出/仍被拦 → 抛 [DoubanChallengeException]（源失败不缓存，下次重试）。
-  Future<String> _doubanGet(Uri url) async {
-    final html = await _get(url, headers: _doubanHeaders());
-    if (!BridgeParsers.isDoubanChallenge(html)) return html;
-    await _solveDoubanChallenge(url, html);
-    final retry = await _get(url, headers: _doubanHeaders());
-    if (BridgeParsers.isDoubanChallenge(retry)) {
-      throw const DoubanChallengeException();
-    }
-    return retry;
+  /// Cookie 头：自造 bid 打底，服务端下发（挑战 POST 的通行凭证）按名覆盖。
+  String _cookieHeader() {
+    final jar = {'bid': _bidCookie, ..._doubanCookies};
+    return jar.entries.map((e) => '${e.key}=${e.value}').join('; ');
   }
 
-  /// 解决一次挑战：解析表单 → 挖 nonce → POST `/c` → 记忆 Set-Cookie 通行凭证。
-  Future<void> _solveDoubanChallenge(Uri origin, String html) async {
+  /// 吸收 `Set-Cookie` 的 name=value 段（属性 Path/Expires 等不回传）。
+  void _absorbCookies(String raw) {
+    for (final part in raw.split('\n')) {
+      final nv = part.split(';').first.trim();
+      final eq = nv.indexOf('=');
+      if (eq <= 0) continue;
+      _doubanCookies[nv.substring(0, eq)] = nv.substring(eq + 1);
+    }
+  }
+
+  /// 豆瓣 GET（698 N5-C/N7-E）：命中挑战页 → 挖矿解决 → 重试；仍被拦换
+  /// 宿主策略再解一轮（防挑战宿主变化）；挖不出/仍被拦 → 抛
+  /// [DoubanChallengeException]（源失败不缓存，下次自动重试）。
+  Future<String> _doubanGet(Uri url) async {
+    var html = await _get(url, headers: _doubanHeaders(), throttled: false);
+    if (!BridgeParsers.isDoubanChallenge(html)) return html;
+    await _solveDoubanChallenge(html, requestUrl: url, useRequestHost: false);
+    html = await _get(url, headers: _doubanHeaders(), throttled: false);
+    if (BridgeParsers.isDoubanChallenge(html)) {
+      await _solveDoubanChallenge(html, requestUrl: url, useRequestHost: true);
+      html = await _get(url, headers: _doubanHeaders(), throttled: false);
+    }
+    if (BridgeParsers.isDoubanChallenge(html)) {
+      throw const DoubanChallengeException();
+    }
+    return html;
+  }
+
+  /// 解决一次挑战：解析表单 → 挖 nonce（isolate，防卡 UI）→ POST → 吸收
+  /// Set-Cookie 通行凭证（真机实录为 `dbsawcv1`，随名变化自适应）。
+  ///
+  /// POST 目标 = 表单 action 解析：相对路径**按挑战宿主**落
+  /// [doubanChallengeOrigin]（挑战页由 `sec.douban.com/c` 302 下发，
+  /// `action="/c"` 必须落该宿主——POST 到 movie 域 = 未解决挑战循环，
+  /// 698 N7-E 真机实录旧 bug）；[useRequestHost] 为宿主变化兜底。
+  Future<void> _solveDoubanChallenge(
+    String html, {
+    required Uri requestUrl,
+    required bool useRequestHost,
+  }) async {
     final form = BridgeParsers.parseDoubanChallenge(html);
     final cha = form?['cha'];
     if (form == null || cha == null || cha.isEmpty) {
       throw const DoubanChallengeException();
     }
-    final nonce = BridgeParsers.mineDoubanNonce(cha);
+    // 挖矿纯 CPU（难度 4 平均 ~6.5 万次 sha512）→ isolate 防卡 UI。
+    final nonce = await Isolate.run(() => BridgeParsers.mineDoubanNonce(cha));
     if (nonce == null) throw const DoubanChallengeException();
-    final result = await _serialize(() => _httpPost(
-          origin.replace(path: '/c'),
-          headers: _doubanHeaders(),
-          form: {
-            'tok': form['tok']!,
-            'cha': cha,
-            'sol': nonce,
-            'red': form['red']!,
-            'btnsubmit': '继续浏览',
-          },
-        ));
+    final action = form['action'] ?? '/c';
+    final Uri target;
+    if (action.startsWith('http')) {
+      target = Uri.parse(action);
+    } else {
+      target = Uri.parse(
+        '${useRequestHost ? requestUrl.origin : doubanChallengeOrigin}$action',
+      );
+    }
+    final result = await _httpPost(
+      target,
+      headers: _doubanHeaders(),
+      form: {
+        'tok': form['tok']!,
+        'cha': cha,
+        'sol': nonce,
+        'red': form['red']!,
+        'btnsubmit': '继续浏览',
+      },
+    );
     final setCookie = result.setCookie;
     if (setCookie == null || setCookie.isEmpty) {
       throw const DoubanChallengeException();
     }
-    // 只留 name=value 段（属性部分 Path/Expires 等不回传）。
-    _doubanPassCookie = setCookie
-        .split('\n')
-        .map((c) => c.split(';').first.trim())
-        .where((c) => c.contains('='))
-        .join('; ');
-    if (_doubanPassCookie!.isEmpty) {
-      throw const DoubanChallengeException();
-    }
+    _absorbCookies(setCookie);
   }
 
   /// 豆瓣搜索兜底：`subject_search` 候选 + film-bridge 相似度匹配（698 ②）。
@@ -399,6 +517,15 @@ class HeroRatingsService implements HeroRatingsSource {
     );
     final html = await _doubanGet(searchUrl);
     final candidates = BridgeParsers.extractDoubanSubjects(html);
+    if (candidates.isEmpty) {
+      // 698 N7-E：过闸后仍零结构化内容 = 反爬空壳 → 抛错（源失败**不缓存**，
+      // 下次自动重试）；有结果页痕迹的空 = 真无匹配 → null（缓存空）。
+      final looksReal = html.contains('__DATA__') ||
+          html.contains('/subject/') ||
+          html.contains('没有找到');
+      if (!looksReal) throw const DoubanChallengeException();
+      return null;
+    }
     String? bestId;
     var bestScore = 0.0;
     for (final c in candidates) {
@@ -429,7 +556,7 @@ class HeroRatingsService implements HeroRatingsSource {
       } else {
         return const [];
       }
-      final html = await _get(route, headers: _browserHeaders);
+      final html = await _get(route, headers: _browserHeaders, throttled: false);
       final rating = BridgeParsers.extractRating(html);
       if (rating == null || rating <= 0) return const [];
       // Letterboxd 5 分制 → 0–10。
@@ -491,6 +618,7 @@ class HeroRatingsService implements HeroRatingsSource {
       final lbHtml = await _get(
         Uri.parse('https://letterboxd.com/imdb/$selfCheckImdbId/'),
         headers: _browserHeaders,
+        throttled: false,
       );
       final lbRating = BridgeParsers.extractRating(lbHtml);
       if (lbRating != null && lbRating > 0) {

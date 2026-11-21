@@ -2,32 +2,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 
 void main() {
-  // 0.55 二进制不可精确表示，屏高 × 0.55 存在浮点舍入 → 数值断言用 closeTo。
-  group('heroHeightFor（698 轮播/详情页海报高度单源）', () {
-    test('常规屏高：0.55 × 屏高', () {
-      // 600 → 330；900 → 495。
-      expect(HomeHeroCarousel.heroHeightFor(600), closeTo(330, 0.001));
-      expect(HomeHeroCarousel.heroHeightFor(900), closeTo(495, 0.001));
+  group('高度双档（698 N7-C，显示区比例贴图：轮播贴 2:3 / 详情贴横图）', () {
+    test('轮播高度 = 宽×1.35（贴竖版海报 2:3）', () {
+      // 390×844 手机：526.5（决策值，护栏不触碰）。
+      expect(HomeHeroCarousel.carouselHeightFor(390, 844),
+          closeTo(526.5, 0.001));
+      // 钳位区间。
+      expect(HomeHeroCarousel.carouselHeightFor(200, 844), 300);
+      expect(HomeHeroCarousel.carouselHeightFor(1000, 2000), 640);
     });
 
-    test('小窗钳到下限 300（400×0.55=220 → 300）', () {
-      expect(HomeHeroCarousel.heroHeightFor(400), 300);
-      expect(HomeHeroCarousel.heroHeightFor(545), 300);
+    test('详情高度 = 宽×0.85（≈1.17:1 贴横版背景图，SenPlayer 同档）', () {
+      expect(
+          HomeHeroCarousel.detailHeightFor(390, 844), closeTo(331.5, 0.001));
+      expect(HomeHeroCarousel.detailHeightFor(200, 844), 300);
+      expect(HomeHeroCarousel.detailHeightFor(1000, 2000), 640);
     });
 
-    test('超大窗钳到上限 640（1200×0.55=660 → 640）', () {
-      expect(HomeHeroCarousel.heroHeightFor(1200), 640);
-      expect(HomeHeroCarousel.heroHeightFor(2000), 640);
+    test('视口护栏：宽扁窗高度不超屏高×0.65（撑破视口=懒列表不建）', () {
+      // 800×600 桌面窗：轮播 800×1.35=1080 → 护栏 390。
+      expect(HomeHeroCarousel.carouselHeightFor(800, 600), 390);
+      // 详情 800×0.85=680 → 护栏 390。
+      expect(HomeHeroCarousel.detailHeightFor(800, 600), 390);
     });
 
-    test('钳位边界：恰好 300 / 640 附近时钳制生效', () {
-      // 300/0.55 ≈ 545.45；640/0.55 ≈ 1163.64。
-      expect(HomeHeroCarousel.heroHeightFor(300 / 0.55), closeTo(300, 0.001));
-      expect(HomeHeroCarousel.heroHeightFor(640 / 0.55), closeTo(640, 0.001));
-    });
-
-    test('比例常量语义（改比例需同步更新此断言）', () {
-      expect(HomeHeroCarousel.heroHeightRatio, 0.55);
+    test('比率常量与钳位区间', () {
+      expect(HomeHeroCarousel.carouselHeightRatio, 1.35);
+      expect(HomeHeroCarousel.detailHeightRatio, 0.85);
+      expect(HomeHeroCarousel.viewportCapRatio, 0.65);
       expect(HomeHeroCarousel.heroHeightMin, 300);
       expect(HomeHeroCarousel.heroHeightMax, 640);
     });

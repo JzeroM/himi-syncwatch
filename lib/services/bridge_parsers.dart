@@ -102,7 +102,9 @@ class BridgeParsers {
   static bool isDoubanChallenge(String html) =>
       html.contains('id="tok"') && html.contains('id="cha"');
 
-  /// 解析挑战表单三元组（tok/cha/red）；特征不全返回 null。
+  /// 解析挑战表单（tok/cha/red/action）；特征不全返回 null。
+  /// `action` 为表单原样 action（相对路径按挑战宿主解析——挑战页由
+  /// `sec.douban.com` 302 后下发，698 N7-E 真机实录）。
   static Map<String, String>? parseDoubanChallenge(String html) {
     String? pick(String id) => RegExp(
           'id="$id"[^>]*value="([^"]*)"',
@@ -111,7 +113,10 @@ class BridgeParsers {
     final cha = pick('cha');
     final red = pick('red');
     if (tok == null || cha == null || red == null) return null;
-    return {'tok': tok, 'cha': cha, 'red': red};
+    final action = RegExp(r'<form[^>]*action="([^"]*)"')
+        .firstMatch(html)
+        ?.group(1);
+    return {'tok': tok, 'cha': cha, 'red': red, if (action != null) 'action': action};
   }
 
   /// 挖掘挑战 nonce（698 N5-C）：`sha512(cha + nonce)` 十六进制前
@@ -132,12 +137,14 @@ class BridgeParsers {
     return null;
   }
 
-  /// 从豆瓣搜索结果页抽 subject 候选：`/subject/(\d+)/` + 邻近标题文本。
-  /// 返回 `{'id': '3541415', 'title': '盗梦空间 Inception'}…`（顺序保留）。
+  /// 从豆瓣搜索结果页抽 subject 候选（698 N7-E 三级）：
+  /// ① HTML 锚点（`/subject/(\d+)/` + 铉文本）；
+  /// ② `window.__DATA__` 内嵌 JSON（递归收集 `{id, title}`，防 JS 渲染页）。
+  /// 返回 `{'id': '3541415', 'title': '盗梦空间 Inception'}…`（顺序保留、去重）。
   static List<Map<String, String>> extractDoubanSubjects(String html) {
     final out = <Map<String, String>>[];
     final seen = <String>{};
-    // subject 链接锚文本即标题（搜索页结构：`<a href="…/subject/3541415/" …>盗梦空间</a>`）。
+    // ① 锚点（搜索页结构：`<a href="…/subject/3541415/" …>盗梦空间</a>`）。
     final linkRe = RegExp(
       r'href="[^"]*movie\.douban\.com/subject/(\d+)/[^"]*"[^>]*>([\s\S]{1,120}?)</a>',
       caseSensitive: false,
@@ -151,7 +158,75 @@ class BridgeParsers {
       out.add({'id': id, 'title': title});
       if (out.length >= 12) break;
     }
+    // ② window.__DATA__ JSON（新搜索页把结果放内嵌 JSON，锚点可能缺席）。
+    final blob = _extractJsonObject(html, 'window.__DATA__');
+    if (blob != null) {
+      try {
+        _collectSubjects(jsonDecode(blob), seen, out);
+      } catch (_) {
+        // 脏 JSON：锚点路径已尽力。
+      }
+    }
     return out;
+  }
+
+  /// 从 `marker = {...}` 起按花括号配平截出完整 JSON 对象（字符串感知）。
+  static String? _extractJsonObject(String html, String marker) {
+    final start = html.indexOf(marker);
+    if (start < 0) return null;
+    final eq = html.indexOf('=', start + marker.length);
+    if (eq < 0) return null;
+    var i = html.indexOf('{', eq);
+    if (i < 0) return null;
+    var depth = 0;
+    var inString = false;
+    var escape = false;
+    for (; i < html.length; i++) {
+      final c = html[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (c == '\\') {
+        escape = true;
+        continue;
+      }
+      if (c == '"') inString = !inString;
+      if (inString) continue;
+      if (c == '{') depth++;
+      if (c == '}') {
+        depth--;
+        if (depth == 0) return html.substring(eq + 1, i + 1);
+      }
+    }
+    return null;
+  }
+
+  /// 递归收集 `{id, title}` 形态的 subject 候选（schema 无关）。
+  static void _collectSubjects(
+    Object? node,
+    Set<String> seen,
+    List<Map<String, String>> out,
+  ) {
+    if (out.length >= 12) return;
+    if (node is List) {
+      for (final e in node) {
+        _collectSubjects(e, seen, out);
+      }
+      return;
+    }
+    if (node is! Map) return;
+    final id = node['id'];
+    final title = node['title'];
+    if (id != null && title is String && title.isNotEmpty) {
+      final idStr = '$id';
+      if (RegExp(r'^\d{5,12}$').hasMatch(idStr) && seen.add(idStr)) {
+        out.add({'id': idStr, 'title': normalizeWhitespace(title)});
+      }
+    }
+    for (final v in node.values) {
+      _collectSubjects(v, seen, out);
+    }
   }
 
   // ── 标题匹配（film-bridge shared.js 移植）──────────────────────────

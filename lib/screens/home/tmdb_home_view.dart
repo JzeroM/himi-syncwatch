@@ -184,7 +184,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
 
     final showCarousel = showHero && carouselEnabled;
     // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
-    final heroHeight = HomeHeroCarousel.heroHeightOf(context);
+    final heroHeight = HomeHeroCarousel.carouselHeightOf(context);
     final headerCount =
         (showHero && (hero != null || heroLoading || sectionsLoading)) ? 1 : 0;
     final weeklyIndex = sections.indexWhere((s) => s.key == 'trending_week');
