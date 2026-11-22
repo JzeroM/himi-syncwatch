@@ -95,19 +95,48 @@ void main() {
       );
     });
 
-    test('凹口胶囊路径：顶缘中央 cos 谷（母滴半嵌位），两端半圆', () {
-      final path = FluidGlassNavBar.notchBarPath(
-        size: const Size(800, 54),
-        dip: 26,
-        halfWidth: 44,
+    test('凹口弧与母滴同心、恒距 4dp（正好包裹下半部分）', () {
+      expect(
+        FluidGlassNavBar.notchRadius - FluidGlassNavBar.motherSize / 2,
+        FluidGlassNavBar.notchGap,
+        reason: '凹口弧半径 = 母滴 R + 恒定间距（严格同心）',
       );
-      expect(path.contains(const Offset(400, 5)), isFalse,
-          reason: '中央顶缘凹口（谷深 26 → y=5 在谷外）');
-      expect(path.contains(const Offset(400, 30)), isTrue,
-          reason: '谷底以下仍在胶囊内');
-      expect(path.contains(const Offset(20, 5)), isTrue,
-          reason: '凹口以外顶边平直（y=0 起算）');
-      expect(path.contains(const Offset(400, -5)), isFalse);
+      const cx = 400.0;
+      const mcy = FluidGlassNavBar.motherCenterY;
+      const nr = FluidGlassNavBar.notchRadius;
+      final path = FluidGlassNavBar.notchBarPath(size: const Size(800, 54));
+      // 弧内外 3dp：恒距 4dp 缝隙语义（弧内凹口空腔、弧外条体）。
+      expect(path.contains(const Offset(cx, mcy + nr - 3)), isFalse,
+          reason: '弧内 3dp 在凹口空腔（母滴嵌入处）');
+      expect(path.contains(const Offset(cx, mcy + nr + 3)), isTrue,
+          reason: '弧外 3dp 在条体内（4dp 呼吸缝）');
+      // 侧向包裹到母滴水平中心线（下半圆范围）。
+      expect(path.contains(Offset(cx - nr + 3, mcy)), isFalse,
+          reason: '凹口包裹到母滴水平中心线（左）');
+      expect(path.contains(Offset(cx + nr - 3, mcy)), isFalse,
+          reason: '凹口包裹到母滴水平中心线（右）');
+    });
+
+    test('透镜叶形轮廓：顶缘八字拱（中央高两端低）+ 底缘微下拱', () {
+      final path = FluidGlassNavBar.notchBarPath(size: const Size(800, 54));
+      const cx = 400.0;
+      // 顶缘中央峰：y≈0 有料、y=-2 无料。
+      expect(path.contains(const Offset(cx + 60, 3)), isTrue,
+          reason: '中央顶缘高（峰下有料）');
+      expect(path.contains(const Offset(cx + 60, -2)), isFalse,
+          reason: '中央顶缘高（峰上无料）');
+      // 顶缘端部低（topArch=4）：y=2 无料、y=6 有料。
+      const rightEndX = 800.0 - (54 - FluidGlassNavBar.topArch) / 2;
+      expect(path.contains(const Offset(rightEndX - 1, 2)), isFalse,
+          reason: '端部顶缘低（八字拱落下）');
+      expect(path.contains(const Offset(rightEndX - 1, 6)), isTrue);
+      // 底缘下拱：中央垂（54+3.5）、端部高（54）。
+      expect(path.contains(const Offset(cx, 56)), isTrue,
+          reason: '底缘中央微下拱');
+      expect(path.contains(const Offset(cx, 58.5)), isFalse,
+          reason: '中央底缘 ≤ 57.5');
+      expect(path.contains(const Offset(26, 55)), isFalse,
+          reason: '端部底缘 54（拱回）');
     });
 
     test('几何常量：子滴 ≈ 母滴 1.35×、扇形落位中心略高（视频像素实测）', () {

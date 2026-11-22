@@ -9,28 +9,30 @@ import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 流体液态导航（698 N17，样式注册表第②款）：Dribbble「Bottom Navigation
-/// Micro Interaction」同款**悬浮凹口 + 水滴分裂**动效——用户上传视频
-/// （`.clawbench/uploads/01d7efc…mp4`）逐帧 1:1 分解复刻，全玻璃纯白零彩色。
+/// 流体液态导航（698 N17/N18，样式注册表第②款）：Dribbble「Bottom
+/// Navigation Micro Interaction」同款**悬浮凹口 + 水滴分裂**动效——
+/// 用户上传视频逐帧 1:1 分解复刻 + N18 真机反馈修正。
 ///
-/// **视频逐帧规格**（30fps 实测，展开 0.9s / 收回 0.7s）：
-/// - 涟漪环蓄力（0-160ms）：细环 1.9R 向内收缩贴上母滴，越收越亮，
-///   在母滴边缘亮成白环，随后化作淡波向外散去；
-/// - 母滴预拉伸（160-230ms）：向斜上方拉成倾斜胶囊（蓄力弹射）；
-/// - gooey 拉丝分裂（230-430ms）：子滴从母滴拉出，metaball 细颈
-///   粘连→变细→断裂；左上 Emby → 正上声网 → 右上设置 错峰弹出；
-/// - ＋ 旋转 45° 成 ×（~300ms）；卫星小液滴飞散淡出（纯液体细节）；
-///   子滴**图标落位后才淡入**（飞行中是纯液滴）；
-/// - 展开态：母滴变**空心玻璃环 + ×**，三子滴扇形落位（中心略高）；
-/// - 收回（0.7s）严格反序：× 亮环 → 右→中→左 飞回 gooey 吸收
-///   → 最后一滴椭圆过冲回落凹口弹性回稳。
+/// **N18 修正（真机两轮反馈）**：
+/// - 液滴改**玻璃白**（半透明 + rim + 高光月牙 + 底部内影，非实心白块）；
+/// - 比例缩小（母滴 Ø38 / 子滴 Ø52，比值 ≈1.37 与视频一致）；
+/// - 条形 = **透镜叶形轮廓**：顶缘八字拱（中央高、两端缓落）+
+///   底缘微下拱（中央厚 ~7dp）；**凹口弧与母滴严格同心**（R+4dp 恒距），
+///   正好包裹母滴下半部分；
+/// - **高级拉丝（premium filament）**：双层 metaball（core+halo 光晕）、
+///   动态 whisker 细丝（16→2.5dp 指数收细，行程 75% 才 pinch-off）、
+///   体积守恒收腰、断丝回弹 + 微液滴、收回探丝（reverse 自然
+///   tendril-first）、高光沿丝、玻璃液滴；
+/// - 放慢灵动：展开 1150ms / 收回 850ms / 错峰 ~120ms、easeOutBack
+///   单次过冲、子滴从母滴「长出」（起步 scale 0.4→1）、落位微弹。
 ///
-/// **形状**：胶囊条 + 顶缘中央弧形凹口（cos 谷，母滴半嵌）+ 悬浮玻璃圆钮；
-/// 子滴 Ø≈母滴 1.35×（视频像素实测 74/54）。
+/// **动效骨架（视频逐帧规格）**：涟漪环内收蓄力 → 母滴预拉伸 →
+/// gooey 拉丝分裂（左上 Emby → 正上声网 → 右上设置 错峰）→ ＋旋 45°
+/// 成 × → 卫星小液滴飞散 → 图标落位后淡入 → 收回反序吸收（右→中→左）。
 ///
-/// **双玻璃形态（N5-G，随「液态玻璃」开关）**：开 = 液态玻璃（折射胶囊 +
-/// 液滴高光/光晕，goo 层半透 0.92）；关 = 轻量磨砂（模糊 + 半透明 +
-/// 描边，goo 层 0.82）。**纯玻璃白，零彩色**（用户拍板）。
+/// **双玻璃形态（N5-G）**：开 = 液态玻璃（折射胶囊 + 液体 α0.32 +
+/// halo 光晕 + 高光月牙）；关 = 轻量磨砂（模糊胶囊 + 液体 α0.48）。
+/// 纯玻璃白零彩色。
 class FluidGlassNavBar extends ConsumerStatefulWidget {
   const FluidGlassNavBar({
     super.key,
@@ -41,71 +43,107 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
 
-  // ── 几何常量（698 N17，守卫测试直查）─────────────────────────────
+  // ── 几何常量（698 N17/N18，守卫测试直查）─────────────────────────
 
-  /// 导航条高（与玻璃水滴款同档）。
+  /// 导航条高（两端厚度；中央因底拱略厚）。
   static const double navHeight = ShellNavBar.navHeight;
 
   /// 凹口上方飞行区高（展开三钮/命中区；盒子高 = navHeight + flyZone）。
   static const double flyZone = 96;
 
-  /// 母滴直径（悬浮圆钮）。
-  static const double motherSize = 46;
+  /// 母滴直径（悬浮玻璃圆钮，N18 缩比 46→38）。
+  static const double motherSize = 38;
 
-  /// 子滴直径 ≈ 母滴 1.35×（视频实测 74/54）。
-  static const double childSize = 62;
+  /// 子滴直径（N18 缩比 62→52；比值 ≈1.37 与视频实测一致）。
+  static const double childSize = 52;
 
-  /// 子滴/母滴直径比（守卫：1.35 档）。
+  /// 子滴/母滴直径比（守卫：≈1.37 档）。
   static const double childScaleRatio = childSize / motherSize;
 
-  /// 母滴圆心（相对条顶）。
-  static const double motherCenterY = 14;
+  /// 母滴圆心 y（条顶坐标系；母滴悬浮出条顶 ~7dp）。
+  static const double motherCenterY = 12;
 
-  /// 子滴圆心高于母滴圆心的量（视频 1.48×Ø）。
-  static const double childRise = 68;
+  /// 凹口弧与母滴的恒定间距（同心 R+gap，处处等距）。
+  static const double notchGap = 4;
 
-  /// 中心子滴额外上浮（视频中心高 15px ≈ 0.28×Ø）。
-  static const double centerExtraRise = 13;
+  /// 凹口弧半径 = 母滴 R + [notchGap]（与母滴严格同心，守卫恒距）。
+  static const double notchRadius = motherSize / 2 + notchGap;
 
-  /// 子滴横向间距（±，中线两侧）。
-  static const double childSpread = 108;
+  /// 顶缘八字拱高（中央峰 → 两端缓落，视频 6px/80 厚等比 ≈ 4dp）。
+  static const double topArch = 4;
 
-  /// 卫星小液滴半径（约子滴 1/5，视频细节）。
-  static const double satelliteRadius = 6;
+  /// 底缘下拱高（中央微垂，视频 5px/80 等比 ≈ 3.5dp）。
+  static const double botArch = 3.5;
+
+  /// 子滴圆心高于母滴圆心的量（视频 1.65×Ø 等比）。
+  static const double childRise = 63;
+
+  /// 中心子滴额外上浮（视频 0.28×Ø 等比）。
+  static const double centerExtraRise = 11;
+
+  /// 子滴横向间距（±；N18 收紧 108→92，滴间净距 ≈0.77×Ø 与视频同档）。
+  static const double childSpread = 92;
+
+  /// 卫星小液滴半径（视频细节）。
+  static const double satelliteRadius = 5;
 
   // ── 动效时间线（归一化 t∈[0,1]，守卫测试直查）───────────────────
 
-  /// 展开总时长（视频 ~0.9s）；收回走 reverseDuration（视频 ~0.7s）。
-  static const Duration expandDuration = Duration(milliseconds: 900);
-  static const Duration collapseDuration = Duration(milliseconds: 700);
+  /// 展开 1150ms（N18 放慢：900→1150）；收回 850ms（700→850）。
+  static const Duration expandDuration = Duration(milliseconds: 1150);
+  static const Duration collapseDuration = Duration(milliseconds: 850);
 
-  /// 三子滴飞行区间（错峰 0.13 / 0.10，左→中→右）。
-  static const List<double> childStarts = [0.20, 0.33, 0.42];
-  static const List<double> childEnds = [0.58, 0.71, 0.82];
+  /// 三子滴飞行区间（错峰 ≈120ms，左→中→右）。
+  static const List<double> childStarts = [0.18, 0.285, 0.39];
+  static const List<double> childEnds = [0.62, 0.725, 0.83];
 
   /// 涟漪环：内收蓄力 → 白环 → 淡波外散。
   static const double ringShrinkStart = 0.00;
-  static const double ringShrinkEnd = 0.18;
-  static const double ringWaveStart = 0.18;
-  static const double ringWaveEnd = 0.42;
+  static const double ringShrinkEnd = 0.16;
+  static const double ringWaveStart = 0.16;
+  static const double ringWaveEnd = 0.38;
 
   /// ＋↔× 旋转区间（45°）。
-  static const double iconRotateStart = 0.18;
-  static const double iconRotateEnd = 0.36;
+  static const double iconRotateStart = 0.15;
+  static const double iconRotateEnd = 0.33;
 
-  /// 母滴空心化（实心滴 → 玻璃环）。
-  static const double hollowStart = 0.28;
-  static const double hollowEnd = 0.52;
+  /// 母滴空心化（实心滴 → 玻璃环，展开态视频同款）。
+  static const double hollowStart = 0.26;
+  static const double hollowEnd = 0.50;
 
   /// 卫星液滴飞行/淡出。
-  static const double satelliteStart = 0.50;
-  static const double satelliteEnd = 0.74;
-  static const double satelliteFadeStart = 0.66;
-  static const double satelliteFadeEnd = 0.80;
+  static const double satelliteStart = 0.55;
+  static const double satelliteEnd = 0.78;
+  static const double satelliteFadeStart = 0.70;
+  static const double satelliteFadeEnd = 0.84;
 
   /// 子滴图标淡入（落位后才出现，视频规格）。
-  static const double childIconStart = 0.58;
-  static const double childIconEnd = 0.80;
+  static const double childIconStart = 0.60;
+  static const double childIconEnd = 0.82;
+
+  // ── 拉丝参数（698 N18 高级拉丝，守卫直查）───────────────────────
+
+  /// whisker 细丝 pinch-off 行程位（75% 行程才断，晚于 metaball 断距）。
+  static const double wirePinch = 0.75;
+
+  /// 细丝根部宽（dp，起飞时）。
+  static const double wireWidthRoot = 16;
+
+  /// 细丝断口宽（dp，pinch 前发丝级）。
+  static const double wireWidthTip = 2.5;
+
+  /// 细丝宽度（行程 p 单调指数收细：16 → 2.5dp；p≥wirePinch 无丝）。
+  @visibleForTesting
+  static double wireWidth(double p) {
+    if (p <= 0 || p >= wirePinch) return 0;
+    final k = p / wirePinch;
+    return wireWidthRoot *
+        math.pow(wireWidthTip / wireWidthRoot, k).toDouble();
+  }
+
+  /// 液体透明度档（折射 0.32 / 磨砂 0.48，守卫：玻璃透感非实心白）。
+  @visibleForTesting
+  static double liquidOpacity(bool glassOn) => glassOn ? 0.32 : 0.48;
 
   /// 归一化区间映射（@visibleForTesting：时间线语义单测直查）。
   @visibleForTesting
@@ -134,31 +172,75 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   static Offset satelliteTarget({required double totalWidth}) =>
       Offset(totalWidth / 2 + 74, motherCenterY - 52);
 
-  /// 凹口胶囊路径（条顶坐标系；cos 谷平滑相切于平顶边，守卫/绘制同源）。
+  /// 母滴圆心（条顶坐标系）。
   @visibleForTesting
-  static Path notchBarPath({
-    required Size size,
-    required double dip,
-    required double halfWidth,
-  }) {
+  static Offset motherCenter({required double totalWidth}) =>
+      Offset(totalWidth / 2, motherCenterY);
+
+  /// 凹口胶囊路径（条顶坐标系）：**透镜叶形**——顶缘八字拱（二次贝塞尔
+  /// 中央峰）、底缘微下拱（二次贝塞尔中央垂）、两端半圆帽、中央
+  /// **与母滴同心的凹口弧**（[notchRadius]，恒距 [notchGap]，从母滴
+  /// 水平中心线绕底包裹下半圆；肩部 8dp S 弯相切顺入顶缘）。
+  ///
+  /// 左右严格镜像（右段 = 左段反向参数化），「八字」对称。
+  @visibleForTesting
+  static Path notchBarPath({required Size size}) {
     final cx = size.width / 2;
-    final r = size.height / 2;
-    final path = Path()..moveTo(r, 0);
-    // 顶边：直线 → cos 谷（谷底深 dip，|x-cx|<halfWidth 内平滑下凹）→ 直线
-    const steps = 24;
-    for (var i = 0; i <= steps; i++) {
-      final x = cx - halfWidth + (2 * halfWidth) * i / steps;
-      final y = dip * (1 + math.cos(math.pi * (x - cx) / halfWidth)) / 2;
-      path.lineTo(x, y);
-    }
-    path
-      ..lineTo(size.width - r, 0)
-      ..arcToPoint(Offset(size.width - r, size.height),
-          radius: Radius.circular(r), clockwise: true)
-      ..lineTo(r, size.height)
-      ..arcToPoint(Offset(r, 0),
-          radius: Radius.circular(r), clockwise: true)
-      ..close();
+    const mcy = motherCenterY;
+    const nr = notchRadius;
+    final endTopY = topArch;
+    final endBotY = size.height;
+    final endR = (endBotY - endTopY) / 2;
+    final leftEndX = endR;
+    final rightEndX = size.width - endR;
+    final notchRect = Rect.fromCircle(
+      center: Offset(cx, mcy),
+      radius: nr,
+    );
+
+    final path = Path()..moveTo(leftEndX, endTopY);
+    // 顶缘左段：八字拱（端部 endTopY → 中段峰 ≈0 → 肩部 2）。
+    path.quadraticBezierTo(cx - 60, -3, cx - nr - 8, 2);
+    // 左肩 S 弯：水平切出 → 竖直切入凹口弧起点（与弧相切）。
+    path.cubicTo(
+      cx - nr, 2,
+      cx - nr, mcy - 7,
+      cx - nr, mcy,
+    );
+    // 凹口弧：与母滴同心（R+gap 恒距），绕底包裹下半圆
+    //（π → 0 经 π/2 底部，sweep -π）。
+    path.arcTo(notchRect, math.pi, -math.pi, false);
+    // 右肩 S 弯（左段镜像反向）。
+    path.cubicTo(
+      cx + nr, mcy - 7,
+      cx + nr, 2,
+      cx + nr + 8, 2,
+    );
+    // 顶缘右段（左段镜像反向）。
+    path.quadraticBezierTo(cx + 60, -3, rightEndX, endTopY);
+    // 右端半圆帽（顶 → 右 → 底）。
+    path.arcTo(
+      Rect.fromCircle(
+        center: Offset(rightEndX, (endTopY + endBotY) / 2),
+        radius: endR,
+      ),
+      -math.pi / 2,
+      math.pi,
+      false,
+    );
+    // 底缘：微向下拱（中央垂 botArch）。
+    path.quadraticBezierTo(cx, endBotY + 2 * botArch, leftEndX, endBotY);
+    // 左端半圆帽（底 → 左 → 顶），闭合。
+    path.arcTo(
+      Rect.fromCircle(
+        center: Offset(leftEndX, (endTopY + endBotY) / 2),
+        radius: endR,
+      ),
+      math.pi / 2,
+      math.pi,
+      false,
+    );
+    path.close();
     return path;
   }
 
@@ -167,8 +249,23 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   /// 凹口胶囊（玻璃/磨砂皮肤容器）。
   static const Key barKey = ValueKey('fluidNotchBar');
 
-  /// gooey 液层（母滴/子滴/卫星滴 metaball）。
+  /// gooey 液层 core（实体）/ halo（边缘光晕，双层 metaball）。
   static const Key gooKey = ValueKey('fluidGooLayer');
+  static const Key gooHaloKey = ValueKey('fluidGooHalo');
+
+  /// 液滴/细丝逐滴钥匙（core 层）。
+  static const Key dropMotherKey = ValueKey('fluidDropMother');
+  static const List<Key> dropChildKeys = [
+    ValueKey('fluidDropChild0'),
+    ValueKey('fluidDropChild1'),
+    ValueKey('fluidDropChild2'),
+  ];
+  static const Key dropSatKey = ValueKey('fluidDropSat');
+  static const List<Key> wireKeys = [
+    ValueKey('fluidWire0'),
+    ValueKey('fluidWire1'),
+    ValueKey('fluidWire2'),
+  ];
 
   /// 中央悬浮钮（＋↔×）。
   static const Key centerKey = ValueKey('fluidCenterButton');
@@ -190,6 +287,154 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<FluidGlassNavBar> createState() => _FluidGlassNavBarState();
+}
+
+/// 单个液滴/细丝的动画状态（goo 层与视觉层同源，几何只算一次）。
+class _DropState {
+  const _DropState({
+    required this.key,
+    required this.center,
+    required this.radius,
+    this.angle = 0,
+    this.stretchK = 0,
+    this.opacity = 1,
+    this.wireLen = 0,
+  });
+
+  final Key key;
+  final Offset center;
+
+  /// 圆滴半径；细丝为胶囊半宽（长度另见 [wireLen]）。
+  final double radius;
+
+  /// 拉伸轴角（液态拉伸/细丝方向）。
+  final double angle;
+
+  /// 体积守恒拉伸量（沿轴 1+k / 垂轴 1-0.6k）。
+  final double stretchK;
+
+  final double opacity;
+
+  /// 细丝长度（>0 即细丝胶囊）。
+  final double wireLen;
+
+  bool get isWire => wireLen > 0;
+}
+
+/// 液滴/细丝几何（纯函数：goo 层与视觉层同源，698 N18）。
+///
+/// 拉丝七技法：长出三拍（grow）/ 体积守恒收腰（stretchK）/ whisker 细丝
+/// （wireWidth 指数收细 + 75% pinch-off）/ 断丝回弹（bump）/ 断点微液滴 /
+/// 收回探丝（reverse 时细丝先现后粗，tendril-first）/ 落位微弹。
+List<_DropState> _computeDrops(double t, double totalWidth) {
+  final m = FluidGlassNavBar.motherCenter(totalWidth: totalWidth);
+  final rM = FluidGlassNavBar.motherSize / 2;
+  final rC = FluidGlassNavBar.childSize / 2;
+  final out = <_DropState>[];
+
+  double progressOf(int i) => FluidGlassNavBar.interval(
+        t,
+        FluidGlassNavBar.childStarts[i],
+        FluidGlassNavBar.childEnds[i],
+      );
+
+  // 断丝回弹（pinch 窗口 15% 行程内的表面张力微弹）。
+  double bumpOf(double p) => 0.04 *
+      math.sin(
+          math.pi * ((p - FluidGlassNavBar.wirePinch) / 0.15).clamp(0.0, 1.0));
+
+  // 母滴（预拉伸 + 断丝回弹 + 空心化透明度）。
+  final warp = FluidGlassNavBar.triangle(t, 0.12, 0.20, 0.32);
+  final t1 = FluidGlassNavBar.childTarget(0, totalWidth: totalWidth);
+  final wAngle = math.atan2(t1.dy - m.dy, t1.dx - m.dx);
+  final hollow = FluidGlassNavBar.interval(
+    t,
+    FluidGlassNavBar.hollowStart,
+    FluidGlassNavBar.hollowEnd,
+  );
+  out.add(_DropState(
+    key: FluidGlassNavBar.dropMotherKey,
+    center: m,
+    radius: rM * (1 + bumpOf(progressOf(0))),
+    angle: wAngle,
+    stretchK: 0.45 * warp,
+    opacity: 1 - 0.85 * hollow,
+  ));
+
+  for (var i = 0; i < 3; i++) {
+    final p = progressOf(i);
+    if (p <= 0) continue;
+    final target = FluidGlassNavBar.childTarget(i, totalWidth: totalWidth);
+    final eased = Curves.easeOutBack.transform(p.clamp(0.0, 1.0));
+    final pos = Offset.lerp(m, target, eased.clamp(0.0, 1.15))!;
+    final dir = math.atan2(target.dy - m.dy, target.dx - m.dx);
+    // 长出三拍：起飞前 30% 行程内 0.4→1（从母滴「长出」）。
+    final grow =
+        0.4 + 0.6 * Curves.easeOut.transform((p / 0.3).clamp(0.0, 1.0));
+    // 落位微弹（末段 15% 行程 1→1.05→1）。
+    final settle = p > 0.85 ? 1 + 0.05 * math.sin(math.pi * (p - 0.85) / 0.15) : 1.0;
+    final k = math.sin(math.pi * p.clamp(0.0, 1.0)) * 0.30;
+    out.add(_DropState(
+      key: FluidGlassNavBar.dropChildKeys[i],
+      center: pos,
+      radius: rC * grow * (1 + bumpOf(p)) * settle,
+      angle: dir,
+      stretchK: k,
+    ));
+
+    // whisker 细丝：行程 18%~75% 存在（reverse 即收回探丝）。
+    if (p > 0.18 && p < FluidGlassNavBar.wirePinch) {
+      final w = FluidGlassNavBar.wireWidth(p);
+      final dist = (pos - m).distance;
+      final len = math.max(dist - rM * 0.55 - rC * 0.55 * grow, w * 1.5);
+      out.add(_DropState(
+        key: FluidGlassNavBar.wireKeys[i],
+        center: Offset.lerp(m, pos, 0.5)!,
+        radius: w / 2,
+        angle: dir,
+        wireLen: len,
+      ));
+    }
+
+    // 断丝微液滴（pinch 后 17% 行程内在断点淡出飞散）。
+    if (p > FluidGlassNavBar.wirePinch && p < 0.92) {
+      final fade = 1 - (p - FluidGlassNavBar.wirePinch) / 0.17;
+      final dirV = (pos - m) / (pos - m).distance;
+      out.add(_DropState(
+        key: ValueKey('fluidPinch$i'),
+        center: m + dirV * ((pos - m).distance * 0.55 + (1 - fade) * 14),
+        radius: 3 * fade.clamp(0.2, 1.0),
+        opacity: fade.clamp(0.0, 1.0),
+      ));
+    }
+  }
+
+  // 卫星小液滴（飞散 + 淡出，视频液体细节）。
+  final sat = FluidGlassNavBar.interval(
+    t,
+    FluidGlassNavBar.satelliteStart,
+    FluidGlassNavBar.satelliteEnd,
+  );
+  if (sat > 0 && sat < 1) {
+    final fade = 1 -
+        FluidGlassNavBar.interval(
+          t,
+          FluidGlassNavBar.satelliteFadeStart,
+          FluidGlassNavBar.satelliteFadeEnd,
+        );
+    final pos = Offset.lerp(
+      m + const Offset(8, -8),
+      FluidGlassNavBar.satelliteTarget(totalWidth: totalWidth),
+      sat,
+    )!;
+    out.add(_DropState(
+      key: FluidGlassNavBar.dropSatKey,
+      center: pos,
+      radius: FluidGlassNavBar.satelliteRadius * (0.6 + 0.4 * fade),
+      opacity: fade.clamp(0.0, 1.0),
+    ));
+  }
+  return out;
 }
 
 class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
@@ -260,7 +505,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
             return Stack(
               clipBehavior: Clip.none,
               children: [
-                // 绘制层：凹口胶囊 + gooey 液体 + 图标（Clip.none 上溢飞行区）。
+                // 绘制层：凹口胶囊 + gooey 液体 + 视觉 + 图标（Clip.none 上溢）。
                 Positioned(
                   left: 0,
                   right: 0,
@@ -270,7 +515,8 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
                     clipBehavior: Clip.none,
                     children: [
                       _bar(glassOn, totalWidth),
-                      _goo(t, totalWidth, glassOn),
+                      _gooLayer(t, totalWidth, glassOn, halo: true),
+                      _gooLayer(t, totalWidth, glassOn, halo: false),
                       IgnorePointer(
                         child: CustomPaint(
                           key: glassOn
@@ -284,7 +530,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
                           ),
                         ),
                       ),
-                      _lobes(t, totalWidth),
+                      _lobes(totalWidth),
                       _icons(t, totalWidth),
                     ],
                   ),
@@ -305,8 +551,6 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   Widget _bar(bool glassOn, double totalWidth) {
     final path = FluidGlassNavBar.notchBarPath(
       size: Size(totalWidth, FluidGlassNavBar.navHeight),
-      dip: 26,
-      halfWidth: 44,
     );
     return Positioned(
       left: 0,
@@ -328,7 +572,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
                     )
                   : const _FrostedBar(),
             ),
-            // 凹口缘描边（全路径 1px 白 0.28，玻璃/磨砂同款轮廓）。
+            // 凹口缘描边（全路径 1px 白，玻璃/磨砂同款轮廓）。
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -342,139 +586,83 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     );
   }
 
-  // ── gooey 液层（metaball：blur + alpha 阈值，重叠自动粘连/断裂）────
+  // ── gooey 液层（双层 metaball：halo 柔光 / core 实体）────────────
 
-  Widget _goo(double t, double totalWidth, bool glassOn) {
-    final cx = totalWidth / 2;
-    final mcy = FluidGlassNavBar.motherCenterY;
-    final rM = FluidGlassNavBar.motherSize / 2;
-    final rC = FluidGlassNavBar.childSize / 2;
-
-    final drops = <Widget>[];
-
-    // 母滴（预拉伸：向左上子滴方向倾斜胶囊；空心化由视觉层环体现）。
-    final warp = FluidGlassNavBar.triangle(t, 0.14, 0.22, 0.34);
-    final t1 = FluidGlassNavBar.childTarget(0, totalWidth: totalWidth);
-    final angle = math.atan2(t1.dy - mcy, t1.dx - cx);
-    drops.add(
-      Positioned(
-        left: cx - rM,
-        top: mcy - rM,
-        width: rM * 2,
-        height: rM * 2,
-        child: Transform.rotate(
-          angle: angle,
-          child: Transform.scale(
-            scaleX: 1 + 0.45 * warp,
-            scaleY: 1 - 0.22 * warp,
+  Widget _gooLayer(double t, double totalWidth, bool glassOn,
+      {required bool halo}) {
+    final drops = _computeDrops(t, totalWidth);
+    final children = <Widget>[
+      for (final d in drops)
+        if (d.isWire)
+          Positioned(
+            left: d.center.dx - d.wireLen / 2,
+            top: d.center.dy - d.radius,
+            width: d.wireLen,
+            height: d.radius * 2,
             child: Transform.rotate(
-              angle: -angle,
-              child: const DecoratedBox(
+              angle: d.angle,
+              child: DecoratedBox(
+                key: halo ? null : d.key,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: d.opacity),
+                  borderRadius: BorderRadius.all(Radius.circular(d.radius)),
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-
-    // 三子滴：弹性甩出 + 飞行中液态拉伸（沿运动方向）。
-    for (var i = 0; i < 3; i++) {
-      final p = FluidGlassNavBar.interval(
-        t,
-        FluidGlassNavBar.childStarts[i],
-        FluidGlassNavBar.childEnds[i],
-      );
-      if (p <= 0) continue;
-      final target = FluidGlassNavBar.childTarget(i, totalWidth: totalWidth);
-      final eased = Curves.elasticOut.transform(p);
-      final pos = Offset.lerp(Offset(cx, mcy), target, eased)!;
-      final dir = math.atan2(target.dy - mcy, target.dx - cx);
-      final k = math.sin(math.pi * p.clamp(0.0, 1.0)) * 0.30;
-      drops.add(
-        Positioned(
-          left: pos.dx - rC,
-          top: pos.dy - rC,
-          width: rC * 2,
-          height: rC * 2,
-          child: Transform.rotate(
-            angle: dir,
-            child: Transform.scale(
-              scaleX: 1 + k,
-              scaleY: 1 - 0.6 * k,
-              child: Transform.rotate(
-                angle: -dir,
-                child: const DecoratedBox(
+          )
+        else
+          Positioned(
+            left: d.center.dx - d.radius,
+            top: d.center.dy - d.radius,
+            width: d.radius * 2,
+            height: d.radius * 2,
+            child: Transform.rotate(
+              angle: d.angle,
+              child: Transform.scale(
+                scaleX: 1 + d.stretchK,
+                scaleY: 1 - 0.6 * d.stretchK,
+                child: DecoratedBox(
+                  key: halo ? null : d.key,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Colors.white.withValues(alpha: d.opacity),
                     shape: BoxShape.circle,
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-    }
-
-    // 卫星小液滴（飞散 + 淡出，视频液体细节）。
-    final sat = FluidGlassNavBar.interval(
-      t,
-      FluidGlassNavBar.satelliteStart,
-      FluidGlassNavBar.satelliteEnd,
-    );
-    if (sat > 0 && sat < 1) {
-      final fade = 1 -
-          FluidGlassNavBar.interval(
-            t,
-            FluidGlassNavBar.satelliteFadeStart,
-            FluidGlassNavBar.satelliteFadeEnd,
-          );
-      final pos = Offset.lerp(
-        Offset(cx + 8, mcy - 8),
-        FluidGlassNavBar.satelliteTarget(totalWidth: totalWidth),
-        sat,
-      )!;
-      final rS = FluidGlassNavBar.satelliteRadius * (0.6 + 0.4 * fade);
-      drops.add(
-        Positioned(
-          left: pos.dx - rS,
-          top: pos.dy - rS,
-          width: rS * 2,
-          height: rS * 2,
-          child: Opacity(
-            opacity: fade,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    ];
 
     // metaball：blur 软化 alpha + 阈值矩阵硬化 → 重叠粘连、分离断颈。
+    // halo 层（σ13 柔阈值）给边缘光晕，core 层（σ7 紧阈值）画实体。
     return Positioned.fill(
       child: IgnorePointer(
         child: KeyedSubtree(
-          key: FluidGlassNavBar.gooKey,
+          key: halo ? FluidGlassNavBar.gooHaloKey : FluidGlassNavBar.gooKey,
           child: Opacity(
-            opacity: glassOn ? 0.92 : 0.82,
+            opacity: halo
+                ? (glassOn ? 0.14 : 0.10)
+                : FluidGlassNavBar.liquidOpacity(glassOn),
             child: ColorFiltered(
-              colorFilter: const ColorFilter.matrix([
-                1, 0, 0, 0, 0,
-                0, 1, 0, 0, 0,
-                0, 0, 1, 0, 0,
-                0, 0, 0, 18, -7, // alpha 阈值（gooey 粘连）
-              ]),
+              colorFilter: halo
+                  ? const ColorFilter.matrix([
+                      1, 0, 0, 0, 0,
+                      0, 1, 0, 0, 0,
+                      0, 0, 1, 0, 0,
+                      0, 0, 0, 8, -2, // 柔阈值（光晕）
+                    ])
+                  : const ColorFilter.matrix([
+                      1, 0, 0, 0, 0,
+                      0, 1, 0, 0, 0,
+                      0, 0, 1, 0, 0,
+                      0, 0, 0, 18, -7, // 紧阈值（实体 gooey）
+                    ]),
               child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                child: Stack(clipBehavior: Clip.none, children: drops),
+                imageFilter: ui.ImageFilter.blur(
+                  sigmaX: halo ? 13 : 7,
+                  sigmaY: halo ? 13 : 7,
+                ),
+                child: Stack(clipBehavior: Clip.none, children: children),
               ),
             ),
           ),
@@ -485,7 +673,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
 
   // ── 左右两瓣（首页 / 收藏）───────────────────────────────────────
 
-  Widget _lobes(double t, double totalWidth) {
+  Widget _lobes(double totalWidth) {
     return Positioned.fill(
       child: Row(
         children: [
@@ -528,7 +716,11 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     );
   }
 
-  // ── 图标层（＋/× 旋转 + 子滴图标淡入）───────────────────────────
+  // ── 图标层（＋/× 旋转 + 子滴图标淡入；玻璃上白字加暗投影）─────────
+
+  static const List<Shadow> _iconShadows = [
+    Shadow(color: Color(0x59000000), blurRadius: 4),
+  ];
 
   Widget _icons(double t, double totalWidth) {
     final rot = FluidGlassNavBar.interval(
@@ -544,14 +736,15 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     final children = <Widget>[
       // ＋↔×：一枚 + 图标旋转 45° 即 ×（视频同机制）。
       Positioned(
-        left: totalWidth / 2 - 14,
-        top: FluidGlassNavBar.motherCenterY - 14,
-        width: 28,
-        height: 28,
+        left: totalWidth / 2 - 12,
+        top: FluidGlassNavBar.motherCenterY - 12,
+        width: 24,
+        height: 24,
         child: IgnorePointer(
           child: Transform.rotate(
             angle: rot * math.pi / 4,
-            child: const Icon(Icons.add, size: 28, color: Colors.white),
+            child: const Icon(Icons.add,
+                size: 24, color: Colors.white, shadows: _iconShadows),
           ),
         ),
       ),
@@ -560,20 +753,21 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
       final target = FluidGlassNavBar.childTarget(i, totalWidth: totalWidth);
       children.add(
         Positioned(
-          left: target.dx - 13,
-          top: target.dy - 13,
-          width: 26,
-          height: 26,
+          left: target.dx - 12,
+          top: target.dy - 12,
+          width: 24,
+          height: 24,
           child: IgnorePointer(
             child: Opacity(
               opacity: iconOp,
               child: Icon(
                 ShellNavBar.tabIcons[FluidGlassNavBar.actionBranch(i)],
-                size: 26,
-                color: widget.currentIndex ==
-                        FluidGlassNavBar.actionBranch(i)
-                    ? Colors.white
-                    : Colors.white70,
+                size: 24,
+                color:
+                    widget.currentIndex == FluidGlassNavBar.actionBranch(i)
+                        ? Colors.white
+                        : Colors.white70,
+                shadows: _iconShadows,
               ),
             ),
           ),
@@ -679,7 +873,8 @@ class _FrostedBar extends StatelessWidget {
   }
 }
 
-/// 液滴视觉层：涟漪环（内收蓄力 + 淡波外散）+ 液滴高光/光晕（玻璃态）。
+/// 液滴视觉层：rim 描边 + 高光月牙 + 底部内影 + 丝轴高光 + 涟漪环
+/// （玻璃质感的「厚度」，goo 层只管形）。
 class _LiquidVisualPainter extends CustomPainter {
   const _LiquidVisualPainter({
     required this.t,
@@ -703,8 +898,7 @@ class _LiquidVisualPainter extends CustomPainter {
       FluidGlassNavBar.ringShrinkStart,
       FluidGlassNavBar.ringShrinkEnd,
     );
-    final shrinkFade =
-        1 - FluidGlassNavBar.interval(t, 0.18, 0.30);
+    final shrinkFade = 1 - FluidGlassNavBar.interval(t, 0.16, 0.28);
     if (shrink > 0 && shrinkFade > 0) {
       final radius = rM * (1.9 - 0.88 * Curves.easeOut.transform(shrink));
       canvas.drawCircle(
@@ -713,7 +907,7 @@ class _LiquidVisualPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.2 + 2.0 * shrink
-          ..color = Colors.white.withValues(alpha: 0.55 * shrinkFade + 0.35 * shrink * shrinkFade),
+          ..color = Colors.white.withValues(alpha: 0.55 * shrinkFade),
       );
     }
     // 淡波外散。
@@ -733,60 +927,92 @@ class _LiquidVisualPainter extends CustomPainter {
       );
     }
 
-    // 母滴高光/光晕（玻璃态；磨砂态仅淡光晕）。
-    _dropGlow(canvas, Offset(cx, mcy), rM, glassOn ? 1 : 0.5);
-    for (var i = 0; i < 3; i++) {
-      final p = FluidGlassNavBar.interval(
-        t,
-        FluidGlassNavBar.childStarts[i],
-        FluidGlassNavBar.childEnds[i],
-      );
-      if (p <= 0) continue;
-      final target = FluidGlassNavBar.childTarget(i, totalWidth: totalWidth);
-      final eased = Curves.elasticOut.transform(p);
-      final pos = Offset.lerp(Offset(cx, mcy), target, eased)!;
-      _dropGlow(canvas, pos, FluidGlassNavBar.childSize / 2, glassOn ? 1 : 0.5);
-    }
-    // 卫星液滴微光。
-    final sat = FluidGlassNavBar.interval(
+    // 母滴空心环（展开态玻璃环，视频同款）。
+    final hollow = FluidGlassNavBar.interval(
       t,
-      FluidGlassNavBar.satelliteStart,
-      FluidGlassNavBar.satelliteEnd,
+      FluidGlassNavBar.hollowStart,
+      FluidGlassNavBar.hollowEnd,
     );
-    if (sat > 0 && sat < 1) {
-      final pos = Offset.lerp(
-        Offset(cx + 8, mcy - 8),
-        FluidGlassNavBar.satelliteTarget(totalWidth: totalWidth),
-        sat,
-      )!;
-      _dropGlow(canvas, pos, FluidGlassNavBar.satelliteRadius, 0.6);
+    if (hollow > 0) {
+      canvas.drawCircle(
+        Offset(cx, mcy),
+        rM,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..color = Colors.white.withValues(alpha: 0.55 * hollow),
+      );
+    }
+
+    // 液滴玻璃质感：rim + 高光月牙 + 底部内影（含细丝轴高光）。
+    for (final d in _computeDrops(t, totalWidth)) {
+      _dropGlass(canvas, d);
     }
   }
 
-  void _dropGlow(Canvas canvas, Offset c, double r, double strength) {
-    // 外圈柔光。
-    canvas.drawCircle(
-      c,
-      r + 6,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6
-        ..color = Colors.white.withValues(alpha: 0.10 * strength),
-    );
-    if (strength >= 1) {
-      // 玻璃态高光弧（左上月牙）。
+  void _dropGlass(Canvas canvas, _DropState d) {
+    canvas.save();
+    canvas.translate(d.center.dx, d.center.dy);
+    canvas.rotate(d.angle);
+    canvas.scale(1 + d.stretchK, 1 - 0.6 * d.stretchK);
+    final r = d.radius;
+    if (d.isWire) {
+      // 丝 rim + 轴向高光（玻璃反光沿丝拉长变细）。
+      final half = d.wireLen / 2;
+      final rect = Rect.fromLTRB(-half, -r, half, r);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, Radius.circular(r)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.8
+          ..color = Colors.white.withValues(alpha: 0.35 * d.opacity),
+      );
+      canvas.drawLine(
+        Offset(-half * 0.8, -r * 0.35),
+        Offset(half * 0.8, -r * 0.35),
+        Paint()
+          ..strokeWidth = math.max(r * 0.35, 0.6)
+          ..strokeCap = StrokeCap.round
+          ..color = Colors.white.withValues(alpha: 0.40 * d.opacity),
+      );
+    } else {
+      // rim 描边（玻璃边缘）。
+      canvas.drawCircle(
+        Offset.zero,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = Colors.white.withValues(alpha: 0.55 * d.opacity),
+      );
+      if (glassOn && d.opacity > 0.5) {
+        // 高光月牙（左上，玻璃反光）。
+        canvas.drawArc(
+          Rect.fromCircle(center: Offset.zero, radius: r * 0.72),
+          math.pi * 0.85,
+          math.pi * 0.55,
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round
+            ..color = Colors.white.withValues(alpha: 0.45 * d.opacity),
+        );
+      }
+      // 底部内影（液体厚度）。
       canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r * 0.72),
-        math.pi * 0.85,
+        Rect.fromCircle(center: Offset.zero, radius: r * 0.82),
+        math.pi * 0.15,
         math.pi * 0.55,
         false,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
+          ..strokeWidth = 2.2
           ..strokeCap = StrokeCap.round
-          ..color = Colors.white.withValues(alpha: 0.35),
+          ..color = Colors.black.withValues(alpha: 0.10 * d.opacity),
       );
     }
+    canvas.restore();
   }
 
   @override
