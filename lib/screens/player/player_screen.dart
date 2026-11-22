@@ -2082,6 +2082,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     PlayerHotkeyBridge.togglePlayPause = _handleHotkeyTogglePlayPause;
     PlayerHotkeyBridge.isWindowFullscreen = () => _isWindowFullscreen;
     PlayerHotkeyBridge.exitWindowFullscreen = _exitWindowFullscreen;
+    // 698 N12-A：TV 遥控全局兜底——焦点悬空（重载/面板重建拆掉焦点节点）
+    // 时 PlayerHotkey 收不到按键 →「卡住时调不出任何控件」。硬件键盘层
+    // 直接兜底：控件隐藏时 OK/上/下 必达唤出（与焦点无关），并按键留痕
+    //（N12-E：闪退取证看 himi_runtime.log 的最后按键序列）。
+    HardwareKeyboard.instance.addHandler(_tvGlobalKeyGuard);
     // 695：媒体信息预热——等播放器实例就绪（`_player` 在 initState 后段
     // 创建）再刷徽章/条目，避免 early access。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2435,13 +2440,25 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final decoders =
         DecodeModeService.resolveDecoders(_effectiveDecodeMode(settings.decodeMode));
     _player.videoDecoders = decoders;
-    // 695：缓冲双滑杆（设置→播放器配置→MPV；三端统一默认 256MB/60s）——
+    // 695：缓冲双滑杆（设置→播放器配置→MPV）——
     // load 前写入（demuxer 选项在媒体打开时生效），覆盖各端 native 硬编码。
+    // 698 N12-D：TV 模式保护上限 200MB/30s——TV 盒低内存，卡住时缓存涨满
+    // 是「遥控闪退」（LMK 低内存杀进程）头号嫌疑；桌面/手机按设置值。
+    final isTvBuf = ref.read(settingsProvider.select((s) => s.tvMode));
+    final bufMb =
+        isTvBuf && settings.mpvMaxBufferMb > 200 ? 200 : settings.mpvMaxBufferMb;
+    final bufSecs = isTvBuf && settings.mpvMaxBufferSecs > 30
+        ? 30
+        : settings.mpvMaxBufferSecs;
+    _player.setProperty('demuxer-max-bytes', '${bufMb * 1024 * 1024}');
     _player.setProperty(
-        'demuxer-max-bytes', '${settings.mpvMaxBufferMb * 1024 * 1024}');
-    _player.setProperty('demuxer-max-back-bytes',
-        '${(settings.mpvMaxBufferMb ~/ 2) * 1024 * 1024}');
-    _player.setProperty('cache-secs', '${settings.mpvMaxBufferSecs}');
+        'demuxer-max-back-bytes', '${(bufMb ~/ 2) * 1024 * 1024}');
+    _player.setProperty('cache-secs', '$bufSecs');
+    if (bufMb != settings.mpvMaxBufferMb || bufSecs != settings.mpvMaxBufferSecs) {
+      // TV 保护上限实际生效值取证（用户配置 500 但 TV 上限 200 时看这里）。
+      LogService().log(
+          'Player', 'TV 缓冲保护上限: ${bufMb}MB/${bufSecs}s（设置值已钳制）');
+    }
     final audioDecoders =
         DecodeModeService.resolveAudioDecoders(settings.decodeMode);
     _player.audioDecoders = audioDecoders;
@@ -7195,6 +7212,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   }
 
   void _togglePlayPause() {
+    // 698 N12-C：同线路重载进行中忽略播放/暂停（操作打在半初始化的流上
+    // 易出错；重载落定后状态自会还原）。
+    if (_streamReload.inFlight) {
+      LogService().log('Player', '重载进行中，忽略播放/暂停');
+      return;
+    }
     // 689：统一走 `_reportEngine`（含 Windows + Qt 存活判定）。
     // 旧写法只在房间模式用真实引擎，单人模式操作空闲 `_player` →
     // Windows Qt 接管时「播放/暂停」点了没反应。
@@ -8475,6 +8498,41 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     _resetHideTimer();
   }
 
+  /// 698 N12-A：TV 遥控全局兜底（HardwareKeyboard 层，与焦点无关）。
+  ///
+  /// 焦点悬空（同线路重载/面板重建把焦点节点拆掉）时 PlayerHotkey 收不到
+  /// 按键——「画面卡住时调不出任何控件」。这里保证：控件隐藏时 OK/上/下
+  /// 必达唤出；已显示则放行给焦点链正常处理（不抢按钮交互）。
+  /// 仅 TV 模式；每次按键留痕（N12-E 闪退取证）。
+  bool _tvGlobalKeyGuard(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (_disposed || !mounted) return false;
+    final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
+    if (!tvMode) return false;
+    final key = event.logicalKey;
+    final isShowKey = key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown;
+    if (!isShowKey) return false;
+    LogService().log(
+        'Diag', 'TV按键 $key（控件${_showControls ? '显' : '隐'}）');
+    if (_showControls) return false;
+    _showControlsForTv();
+    return true;
+  }
+
+  /// 698 N12-B：遥控路径防逃逸护栏——任何 Dart 异常绝不外逃成闪退
+  ///（同步回调抛出会中断按键分发链），落 FATAL 留痕后吞掉。
+  void _guardedRun(String what, void Function() fn) {
+    try {
+      fn();
+    } catch (e, s) {
+      LogService().log('FATAL', '遥控[$what]异常: $e\n$s', sync: true);
+    }
+  }
+
   /// TV 唤出控制条：隐藏时显示 + 重置自动隐藏计时 + 焦点落进度滑杆
   /// （焦点在滑杆时左右键调进度，上下键移动到控制条按钮）；
   /// 已可见时仅顺延自动隐藏——不抢焦点，否则按钮上按 OK 打开菜单后
@@ -9221,6 +9279,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
     PlayerHotkeyBridge.isWindowFullscreen = null;
     PlayerHotkeyBridge.exitWindowFullscreen = null;
+    // 698 N12-A：注销 TV 遥控全局兜底。
+    HardwareKeyboard.instance.removeHandler(_tvGlobalKeyGuard);
     // 640：RTM 清理参数必须在 dispose **开头**捕获——此时 `ref` 仍有效。
     //
     // 真机回归「观众退房后房主人数完全不变」：旧实现在 dispose 末尾的
@@ -9701,13 +9761,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         if (shouldPop) await _safePopPlayerPage();
       },
       child: PlayerHotkey(
-        onTogglePlayPause: _handleHotkeyTogglePlayPause,
-        onEscape: _isWindowFullscreen ? _exitWindowFullscreen : null,
+        // 698 N12-B：遥控回调全走防逃逸护栏（异常落 FATAL 不闪退）。
+        onTogglePlayPause: () =>
+            _guardedRun('播放暂停', _handleHotkeyTogglePlayPause),
+        onEscape: _isWindowFullscreen
+            ? () => _guardedRun('退全屏', _exitWindowFullscreen)
+            : null,
         tvMode: ref.watch(settingsProvider.select((s) => s.tvMode)),
         controlsVisible: _showControls,
-        onSeekRelative: (deltaMs) => _seekRelative(deltaMs),
-        onVolumeDelta: _handleHotkeyVolumeDelta,
-        onShowControls: _showControlsForTv,
+        onSeekRelative: (deltaMs) =>
+            _guardedRun('快进退', () => _seekRelative(deltaMs)),
+        onVolumeDelta: (delta) =>
+            _guardedRun('音量', () => _handleHotkeyVolumeDelta(delta)),
+        onShowControls: () => _guardedRun('唤出控件', _showControlsForTv),
         focusNode: _hotkeyFocusNode,
         seekFocusNode: _controlsFocusNode,
         playPauseFocusNode: _playPauseFocusNode,
@@ -12062,6 +12128,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   void _seekRelative(int deltaMs) {
     if (_lockController.locked) return;
+    // 698 N12-C：同线路重载进行中忽略快进退（半初始化流上 seek 易出错）。
+    if (_streamReload.inFlight) {
+      LogService().log('Player', '重载进行中，忽略快进退');
+      return;
+    }
     _resetHideTimer();
     // 限制最大跳转 ±60 秒
     final clampedDelta = deltaMs.clamp(-60000, 60000);

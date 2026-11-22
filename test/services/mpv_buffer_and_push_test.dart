@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 
 /// 695 追补守卫：
-/// - F：MPV 缓冲双滑杆（三端统一默认 500MB/60s）+ load 前统一下发；
+/// - F：MPV 缓冲双滑杆（三端统一默认 200MB/30s；698 N12-D 防 TV 低内存杀）
+///   + load 前统一下发 + TV 保护上限；
 /// - A：网速 1s tick 走轻量 statePatch（「跑一秒停顿一下」根因）；
 /// - E：鸿蒙详情面板可滚动（真机回归）。
 void main() {
@@ -20,11 +21,12 @@ void main() {
   final ohosPanel = read(
       'plugins/himi_mpv_ohos/ohos/src/main/ets/components/native/NativePlayerPanel.ets');
 
-  group('① F 缓冲双滑杆（默认 500MB/60s 三端统一）', () {
+  group('① F 缓冲双滑杆（默认 200MB/30s 三端统一，698 N12-D）', () {
     test('AppSettings 默认值与钳位', () {
       const s = AppSettings();
-      expect(s.mpvMaxBufferMb, 500);
-      expect(s.mpvMaxBufferSecs, 60);
+      expect(s.mpvMaxBufferMb, 200,
+          reason: '698 N12-D：TV 低内存闪退（LMK）风险项，500→200');
+      expect(s.mpvMaxBufferSecs, 30);
       final j = AppSettings.fromJson(
           const {'mpvMaxBufferMb': 99999, 'mpvMaxBufferSecs': 1});
       expect(j.mpvMaxBufferMb, 2048, reason: '上限钳位 2048');
@@ -39,6 +41,13 @@ void main() {
           reason: '写入值跟随滑杆设置');
     });
 
+    test('TV 保护上限（698 N12-D）：TV 模式缓冲钳 200MB/30s', () {
+      expect(screen, contains('TV 缓冲保护上限'),
+          reason: 'TV 盒低内存：卡住时 500MB 缓存涨满 = LMK 杀进程闪退');
+      expect(screen, contains('settings.mpvMaxBufferMb > 200'));
+      expect(screen, contains('settings.mpvMaxBufferSecs > 30'));
+    });
+
     test('设置页两个滑杆（TV 遥控：settingsTvSliderRow 既有范式）', () {
       expect(engineCfg, contains("sliderKey: 'mpvMaxBufferMb'"));
       expect(engineCfg, contains("sliderKey: 'mpvMaxBufferSecs'"));
@@ -46,10 +55,39 @@ void main() {
           reason: 'TV 整行聚焦 + 左右键 ±step（settings_common 既有）');
     });
 
-    test('鸿蒙 native 硬编码对齐 256/128MiB', () {
-      expect(ohosPlugin, isNot(contains("'1024MiB'")));
-      expect(ohosPlugin, contains("'500MiB'"));
-      expect(ohosPlugin, contains("'250MiB'"));
+    test('鸿蒙 native 硬编码对齐 200/100MiB（698 N12-D）', () {
+      expect(ohosPlugin, isNot(contains("'500MiB'")));
+      expect(ohosPlugin, contains("'200MiB'"));
+      expect(ohosPlugin, contains("'100MiB'"));
+    });
+  });
+
+  group('⑥ N12 TV 卡死防闪退（遥控可靠性，698）', () {
+    test('遥控全局兜底：HardwareKeyboard 注册/注销成对', () {
+      expect(screen,
+          contains('HardwareKeyboard.instance.addHandler(_tvGlobalKeyGuard)'));
+      expect(screen,
+          contains('HardwareKeyboard.instance.removeHandler(_tvGlobalKeyGuard)'));
+    });
+
+    test('兜底语义：控件隐藏时 OK/上/下 必达唤出（与焦点无关）', () {
+      expect(screen, contains('_tvGlobalKeyGuard'));
+      expect(screen, contains('_showControlsForTv();'),
+          reason: '隐藏时直接唤出；已显示放行焦点链不抢按钮');
+    });
+
+    test('遥控路径防逃逸护栏：异常落 FATAL 不闪退', () {
+      expect(screen, contains('_guardedRun('), reason: 'PlayerHotkey 回调全包护栏');
+      expect(screen, contains('遥控[\$what]异常'));
+    });
+
+    test('重载竞态防护：inFlight 忽略播放/暂停与快进退', () {
+      expect(screen, contains('重载进行中，忽略播放/暂停'));
+      expect(screen, contains('重载进行中，忽略快进退'));
+    });
+
+    test('按键留痕（N12-E 闪退取证：himi_runtime.log 最后按键序列）', () {
+      expect(screen, contains('TV按键 '));
     });
   });
 

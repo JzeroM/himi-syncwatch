@@ -580,11 +580,12 @@ class HimiMpvAndroidSession implements MpvSession {
                   : 'auto')),
       'hwdec-software-fallback': 'yes',
       'cache': 'yes',
-      // 695：创建期默认 500MB/250MB/60s（三端统一）；Dart 在 load 前按
-      // 设置（缓冲双滑杆）覆盖写入，此为窗口期兜底。
-      'demuxer-max-bytes': '${500 * 1024 * 1024}',
-      'demuxer-max-back-bytes': '${250 * 1024 * 1024}',
-      'cache-secs': '60',
+      // 698 N12-D：创建期默认 200MB/100MB/30s（三端统一；旧 500MB 是
+      // TV 低内存「遥控闪退」LMK 风险项）；Dart 在 load 前按设置
+      //（缓冲双滑杆 + TV 保护上限）覆盖写入，此为窗口期兜底。
+      'demuxer-max-bytes': '${200 * 1024 * 1024}',
+      'demuxer-max-back-bytes': '${100 * 1024 * 1024}',
+      'cache-secs': '30',
       'sub-ass': 'yes',
       'sub-visibility': 'yes',
       'osd-level': '0',

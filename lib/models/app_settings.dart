@@ -212,11 +212,15 @@ class AppSettings {
   /// 手动选择，用于 texture 档对照实验与用户自主逃生）。
   final bool videoOutputUserSet;
 
-  /// 695：MPV 最大缓冲大小（MB，三端统一默认 500）→ `demuxer-max-bytes`
+  /// 695：MPV 最大缓冲大小（MB）→ `demuxer-max-bytes`
   ///（`demuxer-max-back-bytes` 取半联动）。设置 → 播放器配置 → MPV。
+  /// 698 N12-D：默认 500→200——TV 盒低内存，卡住时缓存涨满是「遥控闪退」
+  ///（LMK 低内存杀进程）头号嫌疑；TV 模式另有 200MB 保护上限（见播放器
+  /// 应用处），桌面/手机按设置值。
   final int mpvMaxBufferMb;
 
-  /// 695：MPV 最大缓冲时长（秒，三端统一默认 60）→ `cache-secs`。
+  /// 695：MPV 最大缓冲时长（秒，三端统一默认 30）→ `cache-secs`
+  ///（698 N12-D 默认 60→30，同上防低内存杀进程）。
   final int mpvMaxBufferSecs;
 
   /// MPV 专属视频路径：'surface' = 原生 Surface 直出；'texture' = Flutter 纹理。
@@ -518,8 +522,8 @@ class AppSettings {
     this.tvModeUserSet = false,
     this.videoOutput = 'surfaceView',
     this.videoOutputUserSet = false,
-    this.mpvMaxBufferMb = 500,
-    this.mpvMaxBufferSecs = 60,
+    this.mpvMaxBufferMb = 200,
+    this.mpvMaxBufferSecs = 30,
     this.mpvVideoOutput = 'surface',
     this.mpvVideoOutputUserSet = false,
     this.mpvRenderer = defaultMpvRenderer,
@@ -1080,9 +1084,9 @@ class AppSettings {
       // 旧数据无此字段 → 默认 false（未手动设置）
       videoOutputUserSet: json['videoOutputUserSet'] as bool? ?? false,
       mpvMaxBufferMb:
-          ((json['mpvMaxBufferMb'] as num?) ?? 500).toInt().clamp(32, 2048),
+          ((json['mpvMaxBufferMb'] as num?) ?? 200).toInt().clamp(32, 2048),
       mpvMaxBufferSecs:
-          ((json['mpvMaxBufferSecs'] as num?) ?? 60).toInt().clamp(5, 600),
+          ((json['mpvMaxBufferSecs'] as num?) ?? 30).toInt().clamp(5, 600),
       // 旧数据无此字段 → 默认 Surface；Windows 未手动设置时按 Texture 生效
       //
       // 655：`mpvVideoOutput` / `mpvVideoOutputUserSet` /
