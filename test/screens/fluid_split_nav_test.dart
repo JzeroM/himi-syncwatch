@@ -10,9 +10,9 @@ import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 
 import '../helpers/test_fakes.dart';
 
-/// 698 N17/N18「水滴分裂」动效守卫（用户上传视频逐帧规格 + 真机反馈）：
-/// 涟漪蓄力 → 母滴预拉伸 → gooey 拉丝错峰分裂（长出/细丝/收腰）→ ＋旋× →
-/// 卫星液滴 → 图标落位后淡入 → 收回反序吸收（探丝先行）。
+/// 698 N17-N19「水滴分裂」动效守卫（jurajkusnier/fluid-bottom-navigation
+/// 机制 1:1 + 用户上传视频观感）：三滴常驻融合/裂开、blur+硬阈值液桥、
+/// 225° 旋钮、空滴缩没、环脉冲、图标随滴飞。
 void main() {
   Widget host({
     AppSettings settings = const AppSettings(),
@@ -60,8 +60,8 @@ void main() {
     return tr.transform.storage[0]; // cos(θ)
   }
 
-  group('展开/收起（视频时序：展开 1150ms / 收回 850ms）', () {
-    testWidgets('点＋展开：＋旋 45° 成 ×、三动作钮可点；再点收回禁用',
+  group('展开/收起（展开 1150ms / 收回 850ms）', () {
+    testWidgets('点＋展开：＋旋 225°（视觉成 ×）、三动作钮可点；再点收回禁用',
         (tester) async {
       final calls = <int>[];
       await tester.pumpWidget(host(onSelect: calls.add));
@@ -76,8 +76,11 @@ void main() {
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1200));
-      expect(centerRotation(tester), closeTo(math.cos(math.pi / 4), 0.02),
-          reason: '＋ 旋转 45° 成 ×（视频 f27）');
+      expect(
+        centerRotation(tester),
+        closeTo(math.cos(225 * math.pi / 180), 0.02),
+        reason: '＋ 旋转 225°（≡45° 视觉成 ×，jurajkusnier 拧劲）',
+      );
 
       // 三动作钮从左到右 = Emby(2) / 声网(3) / 设置(4)。
       // 视频语义：点动作钮即跳页并收起 → 逐次展开逐次点。
@@ -94,14 +97,14 @@ void main() {
       expect(calls, [2, 3, 4], reason: '动作语义：Emby/声网/设置');
       await tester.pump(const Duration(milliseconds: 900));
 
-      // 收起后动作钮禁用、× 逆旋回 ＋（视频 f80）。
+      // 收起后动作钮禁用、× 逆旋回 ＋。
       final before = calls.length;
       await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
           warnIfMissed: false);
       await tester.pump();
       expect(calls.length, before, reason: '收回后动作钮禁用');
       expect(centerRotation(tester), closeTo(1.0, 0.02),
-          reason: '× 逆旋回 ＋（收回吸收，视频 f80）');
+          reason: '× 逆旋回 ＋（收回吸收）');
     });
 
     testWidgets('外部选中动作分支（Emby/声网/设置）自动展开', (tester) async {
@@ -117,51 +120,41 @@ void main() {
     });
   });
 
-  group('水滴分裂（gooey 拉丝，视频逐帧规格 + N18 高级拉丝）', () {
-    testWidgets('错峰：左→中→右依次甩出（中途行程 0 > 1 > 2）', (tester) async {
+  group('水滴分裂（jurajkusnier 三滴常驻机制）', () {
+    testWidgets('收起态三滴常驻叠母滴（blur 融合成一滴）', (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));
-      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
-      // t ≈ 0.42：Emby 滴已甩出大半、设置滴刚起步（视频 f31/f33）。
-      await tester.pump(const Duration(milliseconds: 480));
-      for (final k in FluidGlassNavBar.dropChildKeys) {
-        expect(find.byKey(k), findsOneWidget, reason: '三子滴在液层');
-      }
       final m = dropCenter(tester, FluidGlassNavBar.dropMotherKey);
-      double travel(Key k) => (dropCenter(tester, k) - m).distance;
-
-      expect(travel(FluidGlassNavBar.dropChildKeys[0]),
-          greaterThan(travel(FluidGlassNavBar.dropChildKeys[1])),
-          reason: 'Emby(左) 行程 > 声网(中)');
-      expect(travel(FluidGlassNavBar.dropChildKeys[1]),
-          greaterThan(travel(FluidGlassNavBar.dropChildKeys[2])),
-          reason: '声网(中) 行程 > 设置(右)（错峰左→右）');
+      for (final k in FluidGlassNavBar.dropChildKeys) {
+        expect(find.byKey(k), findsOneWidget, reason: '三滴常驻（非淡入）');
+        final c = dropCenter(tester, k);
+        expect((c - m).distance, lessThan(0.5),
+            reason: '收起时三滴叠在母滴位置 → 融合成「一滴」');
+      }
     });
 
-    testWidgets('细丝 pinch-off：行程 75% 断丝（Emby 丝已断、后两滴仍有丝）',
+    testWidgets('错峰裂开：左→中→右依次飞出（行程投影 0 > 1 > 2）',
         (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 620)); // t≈0.54
-      expect(find.byKey(FluidGlassNavBar.wireKeys[0]), findsNothing,
-          reason: 'Emby 滴行程 >75% → 细丝已 pinch-off（发丝级断开）');
-      expect(find.byKey(FluidGlassNavBar.wireKeys[1]), findsOneWidget,
-          reason: '声网滴细丝仍在（metaball 断后丝相连）');
-      expect(find.byKey(FluidGlassNavBar.wireKeys[2]), findsOneWidget,
-          reason: '设置滴细丝仍在');
+      // t ≈ 0.35：左滴已裂出、右滴刚起步。
+      await tester.pump(const Duration(milliseconds: 403));
+      final m = dropCenter(tester, FluidGlassNavBar.dropMotherKey);
+      double prog(int i) {
+        final tv = FluidGlassNavBar.childTarget(i, totalWidth: 800) -
+            FluidGlassNavBar.motherCenter(totalWidth: 800);
+        final c = dropCenter(tester, FluidGlassNavBar.dropChildKeys[i]) - m;
+        return (c.dx * tv.dx + c.dy * tv.dy) / tv.distanceSquared;
+      }
+
+      expect(prog(0), greaterThan(prog(1)),
+          reason: 'Emby(左) 先裂出 > 声网(中)');
+      expect(prog(1), greaterThan(prog(2)),
+          reason: '声网(中) > 设置(右)（错峰左→右）');
     });
 
-    testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
-      await tester.pumpWidget(host(onSelect: (_) {}));
-      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 770)); // t≈0.67
-      expect(find.byKey(FluidGlassNavBar.dropSatKey), findsOneWidget,
-          reason: '视频 f39：分裂末段卫星液滴飞散');
-    });
-
-    testWidgets('落位：三子滴扇形排开（中心略高），图标落位后淡入',
+    testWidgets('展开落位：三滴扇形排开（中心略高），图标随滴渐显',
         (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
@@ -174,7 +167,7 @@ void main() {
       expect(c.dy, lessThan(r.dy));
       expect(l.dx, lessThan(c.dx));
       expect(r.dx, greaterThan(c.dx));
-      // 图标淡入完成（Opacity ≈ 1）。
+      // 图标渐显完成（Opacity ≈ 1，jurajkusnier 线性错峰 0.2/0.3/0.4 起）。
       final iconOpacity = tester.widget<Opacity>(find
           .ancestor(
             of: find.byIcon(ShellNavBar.tabIcons[2]),
@@ -182,65 +175,74 @@ void main() {
           )
           .first);
       expect(iconOpacity.opacity, greaterThan(0.9),
-          reason: '图标落位后淡入（视频 f41-f45）');
+          reason: '图标随滴渐显（落位后全亮）');
+    });
+
+    testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 770)); // t≈0.67
+      expect(find.byKey(FluidGlassNavBar.dropSatKey), findsOneWidget,
+          reason: '视频 f39：分裂末段卫星液滴飞散');
     });
   });
 
-  group('时间线与拉丝语义（纯函数守卫）', () {
-    test('错峰单调：子滴 start 递增（左→右），区间互不倒挂', () {
-      final s = FluidGlassNavBar.childStarts;
-      final e = FluidGlassNavBar.childEnds;
-      expect(s.length, 3);
-      expect(s[0], lessThan(s[1]));
-      expect(s[1], lessThan(s[2]));
+  group('液桥与机制语义（纯函数守卫）', () {
+    test('液桥 = 超大 blur + 硬阈值（jurajkusnier 1:1，无细丝）', () {
+      // σ 对子滴视觉半径 ≈0.77×（jurajkusnier σ/R=0.83 同档厚桥）。
+      expect(
+        FluidGlassNavBar.gooBlurSigma /
+            (FluidGlassNavBar.childSize / 2),
+        inInclusiveRange(0.5, 1.0),
+        reason: '厚液桥：两滴模糊场叠加过阈值才断',
+      );
+      // Android ColorMatrix(0,0,0,50,-5000) 等价移植（阈值 0.39、极硬边）。
+      expect(FluidGlassNavBar.gooAlphaRow, [0, 0, 0, 50, -19.6],
+          reason: 'jurajkusnier 原值等价（0..255 → 0..1）');
+      // 绘制半径补偿：阈值切回视觉尺寸。
+      expect(
+        FluidGlassNavBar.gooRadius(FluidGlassNavBar.childSize / 2),
+        greaterThan(FluidGlassNavBar.childSize / 2),
+        reason: '补偿半径 > 视觉半径',
+      );
+    });
+
+    test('三滴常驻区间：起点 <1（收起叠母滴融合），左→右错峰', () {
+      final s = FluidGlassNavBar.splitStarts;
+      final e = FluidGlassNavBar.splitEnds;
+      expect(s, [0.0, 0.1, 0.2], reason: 'jurajkusnier 错峰区间（起点即常驻）');
+      expect(e, [0.8, 0.9, 1.0]);
       for (var i = 0; i < 3; i++) {
-        expect(s[i], lessThan(e[i]), reason: '第 $i 滴起止有序');
+        expect(s[i], lessThan(1.0), reason: '收起时 e=0 叠母滴（非消失）');
+        expect(s[i], lessThan(e[i]));
       }
     });
 
-    test('涟漪蓄力先于分裂；图标晚于分裂起步（落位后淡入）', () {
-      expect(FluidGlassNavBar.ringShrinkEnd,
-          lessThanOrEqualTo(FluidGlassNavBar.childStarts[0]),
-          reason: '涟漪内收蓄力在分裂之前（视频 f18-f23）');
-      expect(FluidGlassNavBar.childIconStart,
-          greaterThan(FluidGlassNavBar.childStarts[2]),
-          reason: '图标淡入晚于全部分裂起步');
+    test('＋ 旋转 225°（jurajkusnier 拧劲）+ 空滴缩没区间', () {
+      expect(FluidGlassNavBar.iconRotateDegrees, 225);
       expect(FluidGlassNavBar.iconRotateStart,
-          greaterThanOrEqualTo(FluidGlassNavBar.ringShrinkStart),
-          reason: '＋→× 旋转随分裂进行');
+          lessThan(FluidGlassNavBar.iconRotateEnd));
+      expect(FluidGlassNavBar.shrinkStart,
+          lessThan(FluidGlassNavBar.shrinkEnd),
+          reason: '中央空滴展开缩没（0.5-0.85）');
+      expect(FluidGlassNavBar.shrinkEnd, lessThanOrEqualTo(1.0));
     });
 
-    test('收回反序 + 放慢：start 最大者先脱离，收回快于展开', () {
-      expect(FluidGlassNavBar.childStarts[2],
-          greaterThan(FluidGlassNavBar.childStarts[0]));
-      expect(FluidGlassNavBar.collapseDuration,
-          lessThan(FluidGlassNavBar.expandDuration),
-          reason: '收回 850ms 快于展开 1150ms（N18 放慢灵动）');
-    });
-
-    test('细丝宽度单调收细 + pinch-off 发丝级断开', () {
-      final w0 = FluidGlassNavBar.wireWidth(0.2);
-      final w1 = FluidGlassNavBar.wireWidth(0.5);
-      final w2 = FluidGlassNavBar.wireWidth(0.74);
-      expect(w0, greaterThan(w1), reason: '单调收细');
-      expect(w1, greaterThan(w2));
-      expect(w2, lessThan(4), reason: 'pinch 前发丝级（<4dp）');
-      expect(FluidGlassNavBar.wireWidth(0.75), 0,
-          reason: '行程 75% pinch-off');
-      expect(FluidGlassNavBar.wireWidth(0.9), 0);
-      expect(FluidGlassNavBar.wirePinch, greaterThan(0.5),
-          reason: '细丝晚于行程半程才断（metaball 断后仍有丝相连）');
+    test('图标渐显区间错峰（0.2/0.3/0.4 → 0.7/0.8/0.9）', () {
+      expect(FluidGlassNavBar.iconFadeStarts, [0.2, 0.3, 0.4]);
+      expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
     test('玻璃液体透明度：折射/磨砂均半透明（非实心白块）', () {
-      expect(FluidGlassNavBar.liquidOpacity(true), 0.32,
-          reason: '折射态玻璃透感');
-      expect(FluidGlassNavBar.liquidOpacity(false), 0.48,
-          reason: '磨砂态微浓但仍透');
-      expect(FluidGlassNavBar.liquidOpacity(true), lessThan(0.5));
+      expect(FluidGlassNavBar.liquidOpacity(true), 0.50);
+      expect(FluidGlassNavBar.liquidOpacity(false), 0.65);
+      expect(FluidGlassNavBar.liquidOpacity(true), lessThan(0.7));
     });
 
-    test('卫星液滴向右上飞散（视频 f39-f43）', () {
+    test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {
+      expect(FluidGlassNavBar.collapseDuration,
+          lessThan(FluidGlassNavBar.expandDuration));
       final t = FluidGlassNavBar.satelliteTarget(totalWidth: 800);
       expect(t.dx, greaterThan(400), reason: '向右飞散');
       expect(t.dy, lessThan(FluidGlassNavBar.motherCenterY),
