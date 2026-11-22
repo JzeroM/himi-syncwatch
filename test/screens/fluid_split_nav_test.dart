@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -178,6 +179,25 @@ void main() {
           reason: '图标随滴渐显（落位后全亮）');
     });
 
+    testWidgets('折射球去重：收起 4 滴叠位 → 1 个 GlassEffect；落位 → 3 个',
+        (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pump();
+      expect(
+        find.byType(GlassEffect).evaluate().length,
+        1,
+        reason: '收起态母滴+三子滴同心叠位 → 去重只渲 1 个折射球',
+      );
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(
+        find.byType(GlassEffect).evaluate().length,
+        3,
+        reason: '展开落位：空滴缩没 + 三子滴分位 → 3 个折射球',
+      );
+    });
+
     testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
@@ -236,19 +256,18 @@ void main() {
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
-    test('玻璃色板（N22）：玻璃球渐变 0.55→0.28 + 磨砂滴 0.38→0.22 + 白 30% 条体', () {
-      expect(FluidGlassNavBar.dropGlassTop, const Color(0x8CFFFFFF),
-          reason: '玻璃球滴顶左白 0.55（玻璃厚度高光位）');
-      expect(FluidGlassNavBar.dropGlassBottom, const Color(0x47FFFFFF),
-          reason: '玻璃球滴底右白 0.28（磨砂透底）');
+    test('真折射参数（N23）：白纱 0.05 透亮 + 色散 1.0 物理加强', () {
+      expect(FluidGlassNavBar.dropGlassTintAlpha, 0.05,
+          reason: '透亮水滴：白纱压到 0.05（折射滴后内容为主）');
+      expect(FluidGlassNavBar.dropChroma, 1.0,
+          reason: '滴缘红蓝真物理色散（shader 内 ×4.0 加强）');
+      expect(FluidGlassNavBar.dropGlassIntensity, greaterThan(0.01),
+          reason: 'GlassEffect 捕获门槛 interactionIntensity > 0.01');
+      expect(FluidGlassNavBar.dropFrostTop.opacity, lessThan(0.15),
+          reason: '磨砂态平涂滴也是透明水滴（白 <0.15）');
       expect(FluidGlassNavBar.dropFrostTop.opacity,
           greaterThan(FluidGlassNavBar.dropFrostBottom.opacity),
-          reason: '磨砂滴渐变顶左亮于底右（体积感）');
-      expect(FluidGlassNavBar.barFrostAlpha, 0.30,
-          reason: '条体白 30% 叠底');
-      expect(FluidGlassNavBar.gooOpacityFrost,
-          greaterThan(FluidGlassNavBar.gooOpacityGlass),
-          reason: '磨砂态液体更实（无玻璃球叠层时的分量）');
+          reason: '微渐变顶左亮于底右（体积感）');
     });
 
     test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {

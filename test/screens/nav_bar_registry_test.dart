@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -58,13 +59,15 @@ void main() {
   group('悬浮凹口款（698 N17）', () {
     testWidgets('双玻璃形态（N22 回归）：开=折射条+玻璃球滴，关=磨砂条+平涂滴',
         (tester) async {
-      // 开：液态玻璃（GlassContainer 折射胶囊 + ClipOval 玻璃球滴）。
+      // 开：液态玻璃（GlassContainer 折射胶囊 + GlassEffect 真折射水滴）。
       await tester.pumpWidget(host(
         settings: const AppSettings(glassUi: true),
         nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
       ));
       expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget,
-          reason: '玻璃开 = BackdropFilter 玻璃球滴层');
+          reason: '玻璃开 = GlassEffect 真折射水滴层');
+      expect(find.byType(GlassEffect), findsWidgets,
+          reason: '真折射（透亮 + 色散），非磨砂');
       expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsNothing);
       expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget);
       expect(
