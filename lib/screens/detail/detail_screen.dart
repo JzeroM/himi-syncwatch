@@ -2108,24 +2108,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        // 698 N13：简介 2 行居中（TV 1 行防溢出），三点省略号
-                        // 仅末行行尾；简介胶囊贴第二行右下角（文本左右内缩 92
-                        // 空槽 ≥ 胶囊宽，胶囊不压字；点开浮层展开全部简介）。
+                        // 698 N13/N16：简介 2 行居中（TV 1 行防溢出），三点
+                        // 省略号仅末行行尾；**首行满宽**、末行延伸到「全部」
+                        // 胶囊为止（lastLineInset 避让胶囊，省略号画在胶囊
+                        // 前）；胶囊贴第二行右下角（点开浮层展开全部简介）。
                         Stack(
                           children: [
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 92),
-                              child: DotsEllipsisText(
-                                item.overview!,
-                                maxLines: tv ? 1 : 2,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  height: 1.5,
-                                  shadows: DetailScreen.heroTextShadows,
-                                ),
+                            DotsEllipsisText(
+                              item.overview!,
+                              maxLines: tv ? 1 : 2,
+                              textAlign: TextAlign.center,
+                              lastLineInset: 92,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                height: 1.5,
+                                shadows: DetailScreen.heroTextShadows,
                               ),
                             ),
                             Positioned(

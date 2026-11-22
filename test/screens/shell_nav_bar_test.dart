@@ -259,8 +259,8 @@ void main() {
       expect(tester.renderObject<RenderBox>(inner).size.height, 44);
     } else {
       expect(_blob(tester).height, 45);
-      // 698 N15-C：水滴正椭圆（OvalBorder，取代圆角矩形）。
-      expect(_blobDecoration(tester).shape, isA<OvalBorder>());
+      // 698 N17-A：水滴超椭圆 Squircle（拍板 A，取代正椭圆）。
+      expect(_blobDecoration(tester).shape, isA<RoundedSuperellipseBorder>());
     }
   });
 

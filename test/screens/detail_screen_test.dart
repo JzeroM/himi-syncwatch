@@ -3685,12 +3685,16 @@ void main() {
       final overviewY = tester.getTopLeft(overview).dy;
       expect(badgeY, greaterThan(overviewY),
           reason: '评分行移到简介行下方（698 N13）');
-      // 胶囊贴简介块右下角：在文本右侧空槽内（左右内缩 72，不压字）、
-      // 底缘与简介块对齐（bottom: 0 锚定）。
+      // 698 N16：简介首行满宽（不再左右内缩）；末行延伸到「全部」胶囊
+      // 为止（lastLineInset 92 截断位 → 胶囊不压字）；胶囊贴块右下角。
       final overviewRect = tester.getRect(overview);
       final capsuleRect = tester.getRect(overviewBtn);
-      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right),
-          reason: '胶囊在简介文本右侧空槽内（不压字）');
+      expect(overviewRect.width, greaterThan(300),
+          reason: 'N16 简介满宽（取消 92 内缩）');
+      expect(capsuleRect.right, closeTo(overviewRect.right, 1.0),
+          reason: '胶囊贴简介块右缘');
+      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right - 92),
+          reason: '胶囊整体在末行截断位（92）内 → 不压字');
       expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 1.0),
           reason: '胶囊贴简介块下缘（右下角）');
     });

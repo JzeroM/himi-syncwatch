@@ -268,11 +268,13 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
         height: blobHeight,
         child: DecoratedBox(
           key: const ValueKey('navBlob'),
-          // 698 N15-C：正椭圆水滴（OvalBorder）。
+          // 698 N17-A：水滴超椭圆 Squircle（用户拍板 A：连续曲率，
+          // 苹果式 squircle，比椭圆有型、比圆角矩形柔和）。
           decoration: ShapeDecoration(
             color: Colors.white.withValues(alpha: 0.10),
-            // 698 N15-C：水滴椭圆（用户拍板：圆角矩形 → 正椭圆）。
-            shape: OvalBorder(
+            shape: RoundedSuperellipseBorder(
+              borderRadius:
+                  const BorderRadius.all(Radius.circular(blobHeight / 2)),
               side: BorderSide(
                 color: Colors.white.withValues(alpha: 0.42),
                 width: 1,

@@ -54,4 +54,96 @@ void main() {
           reason: '读屏仍可全文朗读');
     });
   });
+
+  group('末行截断位 lastLineInset（698 N16 简介加长）', () {
+    const style = TextStyle(fontSize: 13, height: 1.5);
+
+    test('首行断点切分：长文本一分为二，短文本余下为空', () {
+      const text = '八仙在成仙和成功之间选择了成团，在搞钱和搞事业之间选择了搞事情，八个身份各异的凡人';
+      final (first, rest) = DotsEllipsisText.splitAfterFirstLine(
+        text: text,
+        maxWidth: 300,
+        style: style,
+        textDirection: TextDirection.ltr,
+      );
+      expect(first, isNotEmpty);
+      expect(rest, isNotEmpty);
+      expect('$first$rest'.replaceAll(' ', ''), text.replaceAll(' ', ''),
+          reason: '切分无丢失（仅去换行处空白）');
+
+      const short = '短简介';
+      final (f2, r2) = DotsEllipsisText.splitAfterFirstLine(
+        text: short,
+        maxWidth: 300,
+        style: style,
+        textDirection: TextDirection.ltr,
+      );
+      expect(f2, short);
+      expect(r2, isEmpty, reason: '单行文本无余下 → 按末行处理');
+    });
+
+    test('末行绘制 x：居中钳位——不进右侧避让区，超宽行从 0 起画', () {
+      // 超宽末行（占满 W−inset）→ 起画 0（右端恰在截断位）。
+      expect(
+        DotsEllipsisText.lastLineX(maxWidth: 300, lineWidth: 208, lastLineInset: 92),
+        0.0,
+      );
+      // 短行居中无碰撞 → 正居中。
+      expect(
+        DotsEllipsisText.lastLineX(maxWidth: 300, lineWidth: 60, lastLineInset: 92),
+        120.0,
+        reason: '短行居中不歪',
+      );
+      // 居中会进避让区 → 左推到避让区外（右端 ≤ 300-92）。
+      final x = DotsEllipsisText.lastLineX(
+          maxWidth: 300, lineWidth: 150, lastLineInset: 92);
+      expect(x, lessThanOrEqualTo(300 - 92 - 150),
+          reason: '钳位到不进胶囊区');
+      expect(x, greaterThanOrEqualTo(0));
+    });
+
+    testWidgets('渲染：双行时首行满宽、末行截断在 inset 前；语义全文', (tester) async {
+      const text =
+          '八仙在成仙和成功之间选择了成团，在搞钱和搞事业之间选择了搞事情，八个身份各异的凡人最终携手';
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: DotsEllipsisText(
+              text,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              lastLineInset: 92,
+              style: style,
+            ),
+          ),
+        ),
+      ));
+      expect(find.bySemanticsLabel(text), findsOneWidget,
+          reason: '读屏仍可全文朗读');
+      final box = tester.renderObject<RenderBox>(find.byType(CustomPaint).last);
+      expect(box.size.width, 300, reason: 'N16：文本框满宽（首行满宽前提）');
+      expect(box.size.height, greaterThan(15),
+          reason: '两行排版（首行 + 截断末行）');
+    });
+
+    testWidgets('单行文本按末行处理（同高并排胶囊避让）', (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: DotsEllipsisText(
+              '短简介',
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              lastLineInset: 92,
+              style: style,
+            ),
+          ),
+        ),
+      ));
+      final box = tester.renderObject<RenderBox>(find.byType(CustomPaint).last);
+      expect(box.size.height, lessThan(25), reason: '单行高度');
+    });
+  });
 }
