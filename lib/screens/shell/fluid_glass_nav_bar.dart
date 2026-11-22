@@ -3,40 +3,36 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
-/// 流体液态导航（698 N17-N21，样式注册表第②款）：Dribbble「Bottom
-/// Navigation Micro Interaction」**整条 1:1 复刻**（用户拍板 N21：
-/// 形状/配色/材质/动效全照搬视频，仅图标用我们自己的；颜色风格后续再调）。
+/// 流体液态导航（698 N17-N22，样式注册表第②款）：Dribbble「Bottom
+/// Navigation Micro Interaction」**几何/动效/图标 1:1 复刻**（N21 真机
+/// 验证「已完整复刻」），**N22 材质换项目液态玻璃风**（用户拍板）。
 ///
-/// **N21 复刻色板（视频帧实测取色）**：
-/// - 液滴 = 实心粉渐变（核心 RGB 233,114,197、底缘 240,107,208），
-///   顶左 `dropPinkLight` → 底右 `dropPinkDeep`，完全不透明；
-/// - 条体 = 磨砂半透明白 30%（视频 146,131,189 ≈ 白 30% 叠底观感）；
-/// - 环 = 细白环（常驻细环 + 400ms 点击涟漪，视频 f18-f25）。
+/// **N22 玻璃滴配方**（吸取 N18-N21 真机教训）：
+/// - 平涂实心白 = 塑料感 → 滴 = **真玻璃球**：`ClipOval + BackdropFilter`
+///   （背景磨砂透出）+ 白径向渐变（顶左 0.55 → 底右 0.28）+ 细 rim——
+///   有「厚度」的奶白玻璃；
+/// - 太透 = 鬼影 → 渐变实底 0.28-0.55 叠磨砂背景，分量感足；
+/// - 悬浮弧线 = 抽象标记 → 零装饰弧，体积感全靠渐变 + rim + 磨砂透底；
+/// - 阈值 bug（N21 已修）：`ColorFilter.matrix` 偏移列 0..255 制，
+///   jurajkusnier 原值 `0,0,0,50,-5000` 直用（阈值 0.39 硬边）。
 ///
-/// **N21 不再有自定义玻璃感**：此款式与「液态玻璃」开关解耦（用户
-/// 拍板：先实现一样效果，后面再调整颜色/风格）。
+/// **双玻璃形态（N5-G，回归「液态玻璃」开关）**：
+/// - 开 = 液态玻璃：条体 `GlassContainer` 真折射（N19 下缘修复保留：
+///   OverflowBox 外扩 + 无自投影）+ 玻璃球滴（BackdropFilter 磨砂透底）；
+/// - 关 = 轻量磨砂：条体磨砂白 30% + 平涂白渐变滴（零 blur 省性能）。
 ///
-/// **拉丝 = blur + 硬阈值**（jurajkusnier/fluid-bottom-navigation
-/// 源码 1:1：`BlurEffect + ColorMatrix(0,0,0,50,-5000)`）。N21 根因
-/// 修复：Flutter [ColorFilter.matrix] 偏移列是 **0..255 制**，此前
-/// 按 0..1 制写 -19.6 → 实际阈值 0.0015 → 整个模糊场全过阈值
-/// （真机「巨型白圈/奶雾」）；现 jurajkusnier 原值直用（阈值 0.392、
-/// 过渡带 0.02 极硬边）+ σ15 校准（静止互不粘连、近触才厚颈拉丝）
-/// + 绘制半径补偿（轮廓落在视觉尺寸）。
-///
-/// **三滴常驻分裂（jurajkusnier 机制）**：三颗子滴一直存在，收起叠
-/// 母滴位置被 blur 融成「一滴」；展开 = 这颗滴裂开飞散（区间错峰
-/// 0/0.1/0.2 → 0.8/0.9/1.0，FastOutSlowIn，左→中→右）。
-///
-/// 其余机制：＋ 旋转 225°（≡45° 视觉成 × 带拧劲）；中央空滴展开
-/// 缩没（0.5-0.85）→ 展开态中央只剩 ×+细环（视频 f45）；图标随滴
-/// 飞、透明度线性错峰渐显（0.2/0.3/0.4 → 0.7/0.8/0.9）；卫星小液滴
-/// （视频 f39）。条形 = 透镜叶形（顶缘八字拱/底缘微下拱）+ 凹口弧与
-/// 母滴同心恒距 4dp（视频像素实测）。
-class FluidGlassNavBar extends StatefulWidget {
+/// **几何/动效（视频逐帧 + jurajkusnier 源码 1:1，N22 不动）**：
+/// 三滴常驻融合/裂开（区间 0/0.1/0.2 → 0.8/0.9/1.0，FastOutSlowIn）、
+/// blur σ15 + 硬阈值液桥（近触厚颈拉丝）、＋ 旋 225°、中央空滴缩没、
+/// 400ms 环脉冲、图标随滴飞（我们自己的图标）、卫星小液滴、
+/// 透镜叶形条（顶缘八字拱/底缘微下拱）+ 凹口弧与母滴同心恒距 4dp。
+class FluidGlassNavBar extends ConsumerStatefulWidget {
   const FluidGlassNavBar({
     super.key,
     required this.currentIndex,
@@ -46,16 +42,29 @@ class FluidGlassNavBar extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
 
-  // ── 复刻色板（视频实测取色，698 N21，守卫直查）──────────────────
+  // ── 玻璃色板（698 N22，守卫直查）────────────────────────────────
 
-  /// 液滴粉渐变顶左亮色（≈ RGB 245,184,227）。
-  static const Color dropPinkLight = Color(0xFFF5B8E3);
+  /// 玻璃球滴渐变顶左（白 0.55，玻璃厚度高光位）。
+  static const Color dropGlassTop = Color(0x8CFFFFFF);
 
-  /// 液滴粉渐变底右深色（≈ RGB 226,94,190）。
-  static const Color dropPinkDeep = Color(0xFFE25EBE);
+  /// 玻璃球滴渐变底右（白 0.28，磨砂透底）。
+  static const Color dropGlassBottom = Color(0x47FFFFFF);
 
-  /// 条体磨砂白叠色（视频条体 146,131,189 ≈ 白 30% 叠底）。
+  /// 磨砂态平涂滴渐变顶左（白 0.38）。
+  static const Color dropFrostTop = Color(0x61FFFFFF);
+
+  /// 磨砂态平涂滴渐变底右（白 0.22）。
+  static const Color dropFrostBottom = Color(0x38FFFFFF);
+
+  /// goo 液体层透明度（玻璃 0.55 / 磨砂 0.70——液桥与滴体同族白）。
+  static const double gooOpacityGlass = 0.55;
+  static const double gooOpacityFrost = 0.70;
+
+  /// 条体磨砂白叠色（磨砂形态；视频条体 146,131,189 ≈ 白 30% 叠底）。
   static const double barFrostAlpha = 0.30;
+
+  /// 玻璃球内磨砂模糊（背景透出的磨砂质感）。
+  static const double ballBlurSigma = 7;
 
   // ── 几何常量（视频像素实测，守卫直查）───────────────────────────
 
@@ -107,9 +116,8 @@ class FluidGlassNavBar extends StatefulWidget {
   static const double gooBlurSigma = 15;
 
   /// 阈值矩阵 alpha 行 = jurajkusnier Android 原值 `0,0,0,50,-5000`
-  /// **原样直用**（[ColorFilter.matrix] 偏移列 0..255 制；阈值 0.392、
-  /// 过渡带 0.02 极硬边）。N21 根因：此前误按 0..1 制写 -19.6，
-  /// 实际阈值 0.0015 → 整个模糊场全过阈值（巨型白圈/奶雾）。
+  /// **原样直用**（[ColorFilter.matrix] 偏移列 0..255 制；阈值 0.39、
+  /// 过渡带 0.02 极硬边）。
   static const List<double> gooAlphaRow = [0, 0, 0, 50, -5000];
 
   /// goo 绘制半径补偿：阈值切回视觉尺寸
@@ -245,11 +253,15 @@ class FluidGlassNavBar extends StatefulWidget {
 
   // ── 测试钥匙（守卫直查）─────────────────────────────────────────
 
-  /// 凹口胶囊（磨砂皮肤容器）。
+  /// 凹口胶囊（玻璃/磨砂皮肤容器）。
   static const Key barKey = ValueKey('fluidNotchBar');
 
   /// gooey 液层（单层：jurajkusnier 链 = blur + 阈值）。
   static const Key gooKey = ValueKey('fluidGooLayer');
+
+  /// 玻璃球滴层（玻璃开）/ 平涂滴层（玻璃关）——双形态判别。
+  static const Key glassBallsKey = ValueKey('fluidGlassBalls');
+  static const Key flatDropsKey = ValueKey('fluidFlatDrops');
 
   /// 液滴逐滴钥匙（goo 层）。
   static const Key dropMotherKey = ValueKey('fluidDropMother');
@@ -275,10 +287,10 @@ class FluidGlassNavBar extends StatefulWidget {
   static int actionBranch(int i) => 2 + i;
 
   @override
-  State<FluidGlassNavBar> createState() => _FluidGlassNavBarState();
+  ConsumerState<FluidGlassNavBar> createState() => _FluidGlassNavBarState();
 }
 
-/// 单个液滴的动画状态（goo 层与视觉层同源，几何只算一次）。
+/// 单个液滴的动画状态（goo 层、玻璃球层与视觉层同源，几何只算一次）。
 class _DropState {
   const _DropState({
     required this.key,
@@ -365,7 +377,7 @@ List<_DropState> _computeDrops(double t, double totalWidth) {
   return out;
 }
 
-class _FluidGlassNavBarState extends State<FluidGlassNavBar>
+class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     with TickerProviderStateMixin {
   /// 主时序（展开/收起，reverse 即反序吸收）。
   late final AnimationController _controller = AnimationController(
@@ -427,6 +439,8 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
 
   @override
   Widget build(BuildContext context) {
+    final glassOn = ref.watch(settingsProvider.select((s) => s.glassUi));
+
     return SizedBox(
       // 盒子含飞行区：展开三钮在凹口上方，命中不被 54 高盒子截断；
       // 空白区不命中（hitTestSelf false）→ 手势穿透给正文滚动。
@@ -440,7 +454,7 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
             return Stack(
               clipBehavior: Clip.none,
               children: [
-                // 绘制层：磨砂条 + gooey 液体 + 环 + 图标（Clip.none 上溢）。
+                // 绘制层：胶囊 + gooey 液体 + 滴层 + 环 + 图标（Clip.none 上溢）。
                 Positioned(
                   left: 0,
                   right: 0,
@@ -449,8 +463,9 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      _bar(totalWidth),
-                      _gooLayer(t, totalWidth),
+                      _bar(glassOn, totalWidth),
+                      _gooLayer(t, totalWidth, glassOn),
+                      _dropLayer(t, totalWidth, glassOn),
                       IgnorePointer(
                         child: CustomPaint(
                           size: Size(totalWidth, FluidGlassNavBar.navHeight),
@@ -477,9 +492,9 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
     );
   }
 
-  // ── 磨砂条（视频 146,131,189 ≈ 白 30% 叠底；叶形 + 同心凹口）─────
+  // ── 凹口胶囊（双玻璃皮肤；下缘直线修复 = 外扩 + 去自投影）─────────
 
-  Widget _bar(double totalWidth) {
+  Widget _bar(bool glassOn, double totalWidth) {
     final path = FluidGlassNavBar.notchBarPath(
       size: Size(totalWidth, FluidGlassNavBar.navHeight),
     );
@@ -495,16 +510,26 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
           children: [
             ClipPath(
               clipper: _NotchClipper(path),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: ColoredBox(
-                  color: Colors.white.withValues(
-                      alpha: FluidGlassNavBar.barFrostAlpha),
-                  child: const SizedBox.expand(),
-                ),
+              // 698 N19 下缘直线修复：玻璃皮肤盒子外扩 14dp →
+              // lg.GlassContainer 自带菲涅尔直边/圆角 rim 全部落在
+              // 叶形裁剪之外（rim 唯一由 _RimPainter 沿叶形路径描）。
+              child: OverflowBox(
+                minWidth: totalWidth + 28,
+                maxWidth: totalWidth + 28,
+                minHeight: FluidGlassNavBar.navHeight + 28,
+                maxHeight: FluidGlassNavBar.navHeight + 28,
+                child: glassOn
+                    ? const GlassContainer(
+                        borderRadius: BorderRadius.all(Radius.circular(25)),
+                        padding: EdgeInsets.zero,
+                        // 悬浮投影画在盒缘 → 叶形内显直边，禁用。
+                        showShadow: false,
+                        child: SizedBox.expand(),
+                      )
+                    : const _FrostedBar(),
               ),
             ),
-            // 叶形缘描边（视频条体亮边）。
+            // 叶形缘描边（玻璃/磨砂同轮廓）。
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -518,9 +543,9 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
     );
   }
 
-  // ── gooey 液层（jurajkusnier 链：blur + 硬阈值，粉渐变实心滴）────
+  // ── gooey 液层（jurajkusnier 链：blur + 硬阈值，白液体 + 液桥）────
 
-  Widget _gooLayer(double t, double totalWidth) {
+  Widget _gooLayer(double t, double totalWidth, bool glassOn) {
     final drops = _computeDrops(t, totalWidth);
     final children = <Widget>[
       for (final d in drops)
@@ -533,20 +558,7 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
             key: d.key,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: RadialGradient(
-                center: const Alignment(-0.45, -0.5),
-                colors: d.opacity >= 1
-                    ? const [
-                        FluidGlassNavBar.dropPinkLight,
-                        FluidGlassNavBar.dropPinkDeep,
-                      ]
-                    : [
-                        FluidGlassNavBar.dropPinkLight
-                            .withValues(alpha: d.opacity),
-                        FluidGlassNavBar.dropPinkDeep
-                            .withValues(alpha: d.opacity),
-                      ],
-              ),
+              color: Colors.white.withValues(alpha: d.opacity),
             ),
           ),
         ),
@@ -558,21 +570,57 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
       child: IgnorePointer(
         child: KeyedSubtree(
           key: FluidGlassNavBar.gooKey,
-          child: ColorFiltered(
-            colorFilter: ColorFilter.matrix([
-              1, 0, 0, 0, 0,
-              0, 1, 0, 0, 0,
-              0, 0, 1, 0, 0,
-              ...FluidGlassNavBar.gooAlphaRow,
-            ]),
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(
-                sigmaX: FluidGlassNavBar.gooBlurSigma,
-                sigmaY: FluidGlassNavBar.gooBlurSigma,
+          child: Opacity(
+            opacity: glassOn
+                ? FluidGlassNavBar.gooOpacityGlass
+                : FluidGlassNavBar.gooOpacityFrost,
+            child: ColorFiltered(
+              colorFilter: ColorFilter.matrix([
+                1, 0, 0, 0, 0,
+                0, 1, 0, 0, 0,
+                0, 0, 1, 0, 0,
+                ...FluidGlassNavBar.gooAlphaRow,
+              ]),
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(
+                  sigmaX: FluidGlassNavBar.gooBlurSigma,
+                  sigmaY: FluidGlassNavBar.gooBlurSigma,
+                ),
+                child: Stack(clipBehavior: Clip.none, children: children),
               ),
-              child: Stack(clipBehavior: Clip.none, children: children),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── 滴层（玻璃球 / 平涂，双形态）────────────────────────────────
+
+  Widget _dropLayer(double t, double totalWidth, bool glassOn) {
+    final drops = _computeDrops(t, totalWidth);
+    final children = <Widget>[
+      for (final d in drops)
+        Positioned(
+          left: d.center.dx - d.radius,
+          top: d.center.dy - d.radius,
+          width: d.radius * 2,
+          height: d.radius * 2,
+          child: Opacity(
+            opacity: d.opacity,
+            child: glassOn
+                ? _GlassBall(radius: d.radius)
+                : _FlatDrop(radius: d.radius),
+          ),
+        ),
+    ];
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: KeyedSubtree(
+          key: glassOn
+              ? FluidGlassNavBar.glassBallsKey
+              : FluidGlassNavBar.flatDropsKey,
+          child: Stack(clipBehavior: Clip.none, children: children),
         ),
       ),
     );
@@ -742,6 +790,76 @@ class _FluidGlassNavBarState extends State<FluidGlassNavBar>
   }
 }
 
+/// 玻璃球滴（698 N22：ClipOval + BackdropFilter 磨砂透底 + 白径向渐变
+/// 0.55→0.28 + 细 rim——真玻璃球，非平涂白块）。
+class _GlassBall extends StatelessWidget {
+  const _GlassBall({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: OvalBorder(
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: 0.45),
+            width: 1,
+          ),
+        ),
+      ),
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(
+            sigmaX: FluidGlassNavBar.ballBlurSigma,
+            sigmaY: FluidGlassNavBar.ballBlurSigma,
+          ),
+          child: const DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: Alignment(-0.45, -0.5),
+                colors: [
+                  FluidGlassNavBar.dropGlassTop,
+                  FluidGlassNavBar.dropGlassBottom,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 平涂磨砂滴（玻璃关：白径向渐变 0.38→0.22 + 细 rim，零 blur 省性能）。
+class _FlatDrop extends StatelessWidget {
+  const _FlatDrop({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: OvalBorder(
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: 0.40),
+            width: 1,
+          ),
+        ),
+        gradient: const RadialGradient(
+          center: Alignment(-0.45, -0.5),
+          colors: [
+            FluidGlassNavBar.dropFrostTop,
+            FluidGlassNavBar.dropFrostBottom,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 凹口胶囊裁剪（[FluidGlassNavBar.notchBarPath] 同源路径）。
 class _NotchClipper extends CustomClipper<Path> {
   const _NotchClipper(this.path);
@@ -755,7 +873,7 @@ class _NotchClipper extends CustomClipper<Path> {
   bool shouldReclip(_NotchClipper oldClipper) => oldClipper.path != path;
 }
 
-/// 叶形缘描边（视频条体亮边）。
+/// 叶形缘描边（玻璃/磨砂同轮廓）。
 class _RimPainter extends CustomPainter {
   const _RimPainter(this.path);
 
@@ -768,12 +886,29 @@ class _RimPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1
-        ..color = Colors.white.withValues(alpha: 0.35),
+        ..color = Colors.white.withValues(alpha: 0.32),
     );
   }
 
   @override
   bool shouldRepaint(_RimPainter oldDelegate) => oldDelegate.path != path;
+}
+
+/// 轻量磨砂胶囊皮肤（「液态玻璃」关：模糊 + 半透明，零折射计算）。
+class _FrostedBar extends StatelessWidget {
+  const _FrostedBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return BackdropFilter(
+      filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+      child: ColoredBox(
+        color:
+            Colors.white.withValues(alpha: FluidGlassNavBar.barFrostAlpha),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
 }
 
 /// 环视觉层：常驻细环 + 点击涟漪环（jurajkusnier Circle 机制，视频 f18-f25）。

@@ -56,32 +56,37 @@ void main() {
   });
 
   group('悬浮凹口款（698 N17）', () {
-    testWidgets('复刻款与「液态玻璃」开关无关（N21：先实现一样效果）',
+    testWidgets('双玻璃形态（N22 回归）：开=折射条+玻璃球滴，关=磨砂条+平涂滴',
         (tester) async {
-      for (final glassOn in [true, false]) {
-        await tester.pumpWidget(host(
-          settings: AppSettings(glassUi: glassOn),
-          nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
-        ));
-        expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget,
-            reason: '玻璃开关=$glassOn：粉渐变滴恒在（复刻不受开关影响）');
-        expect(find.byType(GlassContainer), findsNothing,
-            reason: 'N21 去自定义玻璃感：不用 GlassContainer');
-        expect(find.byType(BackdropFilter), findsOneWidget,
-            reason: '条体恒为磨砂白 30%（视频条体观感）');
-      }
-    });
-
-    test('液滴为实心粉渐变（视频实测取色，非玻璃白）', () {
-      const deco = BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [FluidGlassNavBar.dropPinkLight, FluidGlassNavBar.dropPinkDeep],
+      // 开：液态玻璃（GlassContainer 折射胶囊 + ClipOval 玻璃球滴）。
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: true),
+        nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
+      ));
+      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget,
+          reason: '玻璃开 = BackdropFilter 玻璃球滴层');
+      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsNothing);
+      expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(FluidGlassNavBar.barKey),
+          matching: find.byType(GlassContainer),
         ),
+        findsOneWidget,
+        reason: '玻璃开 = 折射胶囊（N19 下缘修复保留）',
       );
-      final g = deco.gradient as RadialGradient;
-      expect(g.colors.first, FluidGlassNavBar.dropPinkLight);
-      expect(g.colors.last, FluidGlassNavBar.dropPinkDeep);
+
+      // 关：轻量磨砂（磨砂白 30% 条 + 平涂滴，零折射/球内 blur）。
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: false),
+        nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
+      ));
+      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsOneWidget,
+          reason: '玻璃关 = 平涂磨砂滴层（零 blur 省性能）');
+      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsNothing);
+      expect(find.byType(GlassContainer), findsNothing);
+      expect(find.byType(BackdropFilter), findsOneWidget,
+          reason: '玻璃关 = 条体轻量磨砂（球内无 blur）');
     });
 
     test('凹口弧与母滴同心、恒距 4dp（正好包裹下半部分）', () {

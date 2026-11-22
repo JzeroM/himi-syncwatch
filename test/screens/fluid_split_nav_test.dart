@@ -236,13 +236,19 @@ void main() {
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
-    test('复刻色板（视频实测取色）：实心粉渐变 + 磨砂白 30% 条体', () {
-      expect(FluidGlassNavBar.dropPinkLight, const Color(0xFFF5B8E3),
-          reason: '液滴顶左亮粉（视频核心 233,114,197 同族）');
-      expect(FluidGlassNavBar.dropPinkDeep, const Color(0xFFE25EBE),
-          reason: '液滴底右深粉（视频底缘 240,107,208 同族）');
+    test('玻璃色板（N22）：玻璃球渐变 0.55→0.28 + 磨砂滴 0.38→0.22 + 白 30% 条体', () {
+      expect(FluidGlassNavBar.dropGlassTop, const Color(0x8CFFFFFF),
+          reason: '玻璃球滴顶左白 0.55（玻璃厚度高光位）');
+      expect(FluidGlassNavBar.dropGlassBottom, const Color(0x47FFFFFF),
+          reason: '玻璃球滴底右白 0.28（磨砂透底）');
+      expect(FluidGlassNavBar.dropFrostTop.opacity,
+          greaterThan(FluidGlassNavBar.dropFrostBottom.opacity),
+          reason: '磨砂滴渐变顶左亮于底右（体积感）');
       expect(FluidGlassNavBar.barFrostAlpha, 0.30,
-          reason: '条体白 30% 叠底（视频 146,131,189 等价）');
+          reason: '条体白 30% 叠底');
+      expect(FluidGlassNavBar.gooOpacityFrost,
+          greaterThan(FluidGlassNavBar.gooOpacityGlass),
+          reason: '磨砂态液体更实（无玻璃球叠层时的分量）');
     });
 
     test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {
