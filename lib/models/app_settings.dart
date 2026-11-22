@@ -123,7 +123,11 @@ class AppSettings {
   /// 迁移为新默认 'auto'，同时保护用户主动选择的 AudioTrack）。
   final bool audioRendererUserSet;
   final bool deepDiagnostics; // 深度诊断：抓取 mdk 内部日志以获取实测帧率
-  final bool glassUi; // 液态玻璃特效开关（低端设备可关闭）
+  final bool glassUi;
+
+  /// 698 N15-E：底部导航栏样式（NavBarStyle.name，注册表式）。
+  /// 默认 `glassCapsule`（玻璃水滴款）；未知值容错回默认。
+  final String navBarStyle; // 液态玻璃特效开关（低端设备可关闭）
 
   // ── 液态玻璃可调参数（v1.1.84，null = 使用 liquid_glass_widgets 默认）──
   /// 磨砂模糊强度（逻辑像素，包默认 5）。
@@ -495,6 +499,7 @@ class AppSettings {
     this.audioRendererUserSet = false,
     this.deepDiagnostics = false,
     this.glassUi = true,
+    this.navBarStyle = 'glassCapsule',
     this.glassBlur,
     this.glassThickness,
     this.glassEdgeZone,
@@ -634,6 +639,7 @@ class AppSettings {
     bool? audioRendererUserSet,
     bool? deepDiagnostics,
     bool? glassUi,
+    String? navBarStyle,
     String? versionPreference,
     String? serverViewMode,
     String? homeSourceMode,
@@ -720,6 +726,7 @@ class AppSettings {
       audioRendererUserSet: audioRendererUserSet ?? this.audioRendererUserSet,
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
+      navBarStyle: navBarStyle ?? this.navBarStyle,
       versionPreference: versionPreference ?? this.versionPreference,
       serverViewMode: serverViewMode ?? this.serverViewMode,
       homeSourceMode: homeSourceMode ?? this.homeSourceMode,
@@ -832,6 +839,7 @@ class AppSettings {
         'audioRendererUserSet': audioRendererUserSet,
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
+        'navBarStyle': navBarStyle,
         'versionPreference': versionPreference,
         'serverViewMode': serverViewMode,
         'homeSourceMode': homeSourceMode,
@@ -1038,6 +1046,10 @@ class AppSettings {
       audioRendererUserSet: rendererUserSet,
       deepDiagnostics: json['deepDiagnostics'] as bool? ?? false,
       glassUi: json['glassUi'] as bool? ?? true,
+      navBarStyle: switch (json['navBarStyle'] as String?) {
+        'fluidGlass' => 'fluidGlass',
+        _ => 'glassCapsule', // 未知值/缺省容错回默认款（698 N15-E）
+      },
       versionPreference: json['versionPreference'] as String? ?? '',
       // 旧数据无此字段 / 非法值 → 列表视图
       serverViewMode: const ['list', 'grid'].contains(json['serverViewMode'])

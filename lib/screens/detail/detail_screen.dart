@@ -2145,7 +2145,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                           size: 14, color: Colors.white70),
                                       const SizedBox(width: 5),
                                       Text(
-                                        _overviewVisible ? '收起' : '简介',
+                                        _overviewVisible ? '收起' : '全部',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.white,

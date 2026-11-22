@@ -44,7 +44,6 @@ class LiquidBlobLens extends StatelessWidget {
     ],
     this.paddingV = 5,
     this.expansionV = 11,
-    this.borderRadius = 25,
   });
 
   /// 水珠左沿（导航局部坐标）。
@@ -87,7 +86,6 @@ class LiquidBlobLens extends StatelessWidget {
   final double expansionV;
 
   /// 水珠圆角（25 = 50 高半圆直边）。
-  final double borderRadius;
 
   /// 画质：全平台固定 `standard`（单通道 `interactive_indicator.frag` +
   /// RepaintBoundary 截帧采样，含 [PATCH himi] 调校）。
@@ -138,9 +136,7 @@ class LiquidBlobLens extends StatelessWidget {
                               child: DecoratedBox(
                                 decoration: ShapeDecoration(
                                   color: pillColor,
-                                  shape: lg.LiquidRoundedRectangle(
-                                    borderRadius: borderRadius,
-                                  ),
+                                  shape: const lg.LiquidOval(),
                                   shadows: pillShadows,
                                 ),
                                 child: const SizedBox.expand(),
@@ -160,9 +156,7 @@ class LiquidBlobLens extends StatelessWidget {
                               velocityScale: 10,
                             ),
                             child: GlassEffect(
-                              shape: lg.LiquidRoundedRectangle(
-                                borderRadius: borderRadius,
-                              ),
+                              shape: const lg.LiquidOval(),
                               settings: settings.copyWith(visibility: activity),
                               quality: q,
                               interactionIntensity: activity,

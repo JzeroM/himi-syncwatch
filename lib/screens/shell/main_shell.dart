@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/himi_platform.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
-import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
@@ -308,7 +308,7 @@ class _MainShellState extends ConsumerState<MainShell> {
             child: Padding(
               key: const ValueKey('shellNavBarPadding'),
               padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
-              child: ShellNavBar(
+              child: NavBarStyleHost(
                 currentIndex: widget.shell.currentIndex,
                 onSelect: _goBranch,
               ),

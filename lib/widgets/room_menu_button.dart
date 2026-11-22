@@ -54,10 +54,10 @@ class RoomMenuButton extends ConsumerWidget {
       );
     }
     return IconButton(
-      icon: const Icon(Icons.meeting_room_outlined),
+      icon: const Icon(Icons.meeting_room_outlined, size: 22),
       tooltip: '房间',
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       onPressed: open,
     );
   }

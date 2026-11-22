@@ -671,8 +671,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
                   child: GlassContainer(
-                    borderRadius: const BorderRadius.all(Radius.circular(24)),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    // 698 N15-B：顶栏胶囊缩 ~10%（圆角 20、内边距 2）。
+                    borderRadius: const BorderRadius.all(Radius.circular(20)),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
                     showShadow: false,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

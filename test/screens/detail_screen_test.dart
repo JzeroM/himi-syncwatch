@@ -448,7 +448,7 @@ void main() {
       );
 
       // 简介入口已移至海报（页面顶部），位于开始播放上方
-      final desc = tester.getRect(find.text('简介'));
+      final desc = tester.getRect(find.text('全部'));
       final btn = tester.getRect(find.text('播放'));
       expect(desc.top, lessThan(btn.top), reason: '简介控件在海报上，操作区在正文（其下方）');
 
@@ -510,7 +510,7 @@ void main() {
         findsNothing,
       );
       // 简介控件在海报（顶部），位于开始播放上方
-      final desc = tester.getRect(find.text('简介'));
+      final desc = tester.getRect(find.text('全部'));
       final btn = tester.getRect(find.text('开始播放'));
       expect(desc.top, lessThan(btn.top), reason: '简介入口已移至海报，正文区不再渲染简介块');
     });
@@ -2693,7 +2693,7 @@ void main() {
       expect(find.byType(DotsEllipsisText), findsOneWidget,
           reason: 'TV 简介 1 行预览');
 
-      await tester.tap(find.text('简介'));
+      await tester.tap(find.text('全部'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final title = tester.widget<Text>(find.text('简介')).style;
@@ -2705,7 +2705,7 @@ void main() {
 
     testWidgets('非 TV 浮层标题 18、简介正文 14', (tester) async {
       await _pumpDetail(tester, tv: false);
-      await tester.tap(find.text('简介'));
+      await tester.tap(find.text('全部'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final title = tester.widget<Text>(find.text('简介')).style;
@@ -2719,13 +2719,13 @@ void main() {
   group('海报内简介浮层（v1.1.83 默认隐藏）', () {
     testWidgets('默认隐藏：海报有「简介」控件，正文无简介文字', (tester) async {
       await _pumpDetail(tester);
-      expect(find.text('简介'), findsOneWidget, reason: '海报入口控件');
+      expect(find.text('全部'), findsOneWidget, reason: '海报入口控件');
       expect(find.text('这是一段测试简介。'), findsNothing);
     });
 
     testWidgets('点「简介」展开浮层；点「收起」关闭', (tester) async {
       await _pumpDetail(tester);
-      await tester.tap(find.text('简介'));
+      await tester.tap(find.text('全部'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('这是一段测试简介。'), findsOneWidget, reason: '浮层内显示完整简介');
@@ -2736,12 +2736,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('这是一段测试简介。'), findsNothing);
-      expect(find.text('简介'), findsOneWidget, reason: '回到海报入口');
+      expect(find.text('全部'), findsOneWidget, reason: '回到海报入口');
     });
 
     testWidgets('点浮层遮罩空白区收起', (tester) async {
       await _pumpDetail(tester);
-      await tester.tap(find.text('简介'));
+      await tester.tap(find.text('全部'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -2768,7 +2768,7 @@ void main() {
 
     testWidgets('TV 打开后焦点移入浮层收起按钮', (tester) async {
       await _pumpDetail(tester, tv: true);
-      await tester.tap(find.text('简介'));
+      await tester.tap(find.text('全部'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final closeFinder = find.byWidgetPredicate((w) =>
@@ -3677,7 +3677,7 @@ void main() {
         matching: find.byType(RatingsBadgeRow),
       );
       final overview = find.byType(DotsEllipsisText);
-      final overviewBtn = find.widgetWithText(GlassContainer, '简介');
+      final overviewBtn = find.widgetWithText(GlassContainer, '全部');
       expect(badgeRow, findsOneWidget);
       expect(overview, findsOneWidget);
       expect(overviewBtn, findsOneWidget);

@@ -35,25 +35,34 @@ class ShellNavBar extends ConsumerStatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onSelect;
 
+  /// 样式注册表共享常量（698 N15-E）：tab 组/尺寸档全款式同源。
+  static const int tabCount = _ShellNavBarState.tabCount;
+  static const double navHeight = _ShellNavBarState.navHeight;
+  static const double blobHeight = _ShellNavBarState.blobHeight;
+  static const List<String> tabLabels = _ShellNavBarState.tabLabels;
+  static const List<IconData> tabIcons = _ShellNavBarState.tabIcons;
+  static const List<IconData> tabSelectedIcons =
+      _ShellNavBarState.tabSelectedIcons;
+
   @override
   ConsumerState<ShellNavBar> createState() => _ShellNavBarState();
 }
 
 class _ShellNavBarState extends ConsumerState<ShellNavBar>
     with SingleTickerProviderStateMixin {
-  static const int _tabCount = 5;
-  static const double _navHeight = 60;
-  static const double _blobHeight = 50;
+  static const int tabCount = 5;
+  static const double navHeight = 54;
+  static const double blobHeight = 45;
 
-  static const List<String> _labels = ['首页', '收藏', 'Emby', '声网', '设置'];
-  static const List<IconData> _icons = [
+  static const List<String> tabLabels = ['首页', '收藏', 'Emby', '声网', '设置'];
+  static const List<IconData> tabIcons = [
     Icons.home_outlined,
     Icons.favorite_border,
     Icons.dns_outlined,
     Icons.key_outlined,
     Icons.settings_outlined,
   ];
-  static const List<IconData> _selectedIcons = [
+  static const List<IconData> tabSelectedIcons = [
     Icons.home,
     Icons.favorite,
     Icons.dns,
@@ -81,7 +90,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
 
   /// 移动态整体放大倍数（宽高同倍，与镜片外扩 50→72 = ×1.44 对齐，
   /// 纯整体放大、不拉长不压扁）。
-  static const double _activeScale = 1.44;
+  static const double activeScale = 1.40;
 
   double _fromT = 0;
   double _toT = 0;
@@ -100,10 +109,10 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   int _velLastUs = 0;
   double _velLastT = 0;
 
-  static double _centerT(int index) => (index + 0.5) / _tabCount;
+  static double _centerT(int index) => (index + 0.5) / tabCount;
 
   /// 视觉激活格：以水珠中心所在格为准（拖动/飞行中实时跟随）。
-  int get _activeIndex => (_blobT * _tabCount).floor().clamp(0, _tabCount - 1);
+  int get _activeIndex => (_blobT * tabCount).floor().clamp(0, tabCount - 1);
 
   @override
   void initState() {
@@ -190,7 +199,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     final x = _relativeX(globalX);
     final center = _blobT * _totalWidth;
     // 手指落在当前格内即相对跟手（与旧版静止半宽一致），别格则吸附手指
-    final halfW = (_totalWidth / _tabCount) / 2;
+    final halfW = (_totalWidth / tabCount) / 2;
     _grabOffset = (x - center).abs() <= halfW ? center - x : 0;
     setState(() => _dragging = true);
     _applyDrag(x);
@@ -216,7 +225,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     setState(() => _dragging = false);
     if (_totalWidth <= 0) return;
     final t = (_relativeX(globalX) / _totalWidth).clamp(0.0, 1.0);
-    final index = (t * _tabCount).floor().clamp(0, _tabCount - 1);
+    final index = (t * tabCount).floor().clamp(0, tabCount - 1);
     _select(index);
   }
 
@@ -232,7 +241,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// `glassUi` 开启时经 [lg.SpringBuilder] 弹簧驱动 [LiquidBlobLens]：
   /// - 静止：宽 = 格宽 × [_restWidthRatio]（~1.37:1 圆润不显扁），
   ///   activity=0 扁平实心胶囊（无明显边框、镜片不挂载、零 shader 开销）；
-  /// - 拖动/点击飞行 activity→1：宽高同弹簧放大 ×[_activeScale]
+  /// - 拖动/点击飞行 activity→1：宽高同弹簧放大 ×[activeScale]
   ///   （纯整体放大，不拉长不压扁），真折射镜片挂载（`blur: 0.01`
   ///   打开 Skia 背景捕获），矩形上下各外扩 6px 超出胶囊；采样
   ///   [_navCaptureKey] 导航边界（胶囊+图标）→ 图标被物理折射弯折，
@@ -254,21 +263,24 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     if (!glassEnabled) {
       return Positioned(
         left: left,
-        top: (_navHeight - _blobHeight) / 2,
+        top: (navHeight - blobHeight) / 2,
         width: width,
-        height: _blobHeight,
+        height: blobHeight,
         child: DecoratedBox(
           key: const ValueKey('navBlob'),
-          decoration: BoxDecoration(
+          // 698 N15-C：正椭圆水滴（OvalBorder）。
+          decoration: ShapeDecoration(
             color: Colors.white.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.all(Radius.circular(_blobHeight / 2)),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.42),
-              width: 1,
+            // 698 N15-C：水滴椭圆（用户拍板：圆角矩形 → 正椭圆）。
+            shape: OvalBorder(
+              side: BorderSide(
+                color: Colors.white.withValues(alpha: 0.42),
+                width: 1,
+              ),
             ),
-            boxShadow: [
+            shadows: const [
               BoxShadow(
-                color: Colors.white.withValues(alpha: 0.16),
+                color: Color(0x29FFFFFF),
                 blurRadius: 14,
               ),
             ],
@@ -312,7 +324,7 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       value: activity,
       builder: (context, value, child) {
         // 宽高同倍整体放大（宽与镜片外扩高度同比例），中心保持不动
-        final scale = 1 + (_activeScale - 1) * value;
+        final scale = 1 + (activeScale - 1) * value;
         final w = width * scale;
         return LiquidBlobLens(
           key: const ValueKey('navBlob'),
@@ -334,12 +346,12 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     return LayoutBuilder(
       builder: (context, constraints) {
         _totalWidth = constraints.maxWidth;
-        final tabW = _totalWidth / _tabCount;
+        final tabW = _totalWidth / tabCount;
         final restWidth = (tabW * _restWidthRatio).clamp(0.0, _totalWidth);
         final restLeft = _blobT * _totalWidth - restWidth / 2;
 
         return SizedBox(
-          height: _navHeight,
+          height: navHeight,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -355,14 +367,14 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
                       Positioned.fill(
                         child: GlassContainer(
                           borderRadius:
-                              const BorderRadius.all(Radius.circular(28)),
+                              const BorderRadius.all(Radius.circular(25)),
                           padding: EdgeInsets.zero,
                           child: const SizedBox.expand(),
                         ),
                       ),
                       Positioned.fill(
                         child: Row(
-                          children: List.generate(_tabCount, (i) {
+                          children: List.generate(tabCount, (i) {
                             final selected = i == _activeIndex;
                             final color =
                                 selected ? kNavBlobColor : Colors.white70;
@@ -385,21 +397,21 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
                                   onLongPressEnd: (d) =>
                                       _endDrag(d.globalPosition.dx),
                                   child: SizedBox(
-                                    height: _navHeight,
+                                    height: navHeight,
                                     child: Column(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
                                         Icon(
                                           selected
-                                              ? _selectedIcons[i]
-                                              : _icons[i],
-                                          size: 24,
+                                              ? tabSelectedIcons[i]
+                                              : tabIcons[i],
+                                          size: 22,
                                           color: color,
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          _labels[i],
+                                          tabLabels[i],
                                           textAlign: TextAlign.center,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,

@@ -24,9 +24,9 @@ class MediaSearchButton extends ConsumerWidget {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     if (!tvMode) {
       return IconButton(
-        icon: const Icon(Icons.search),
+        icon: const Icon(Icons.search, size: 22),
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         onPressed: () => _openSearch(context, tvMode: false),
       );
     }

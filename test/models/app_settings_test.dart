@@ -1532,4 +1532,23 @@ void main() {
       );
     });
   });
+
+  group('navBarStyle（698 N15-E 导航栏样式）', () {
+    test('默认玻璃水滴款；JSON 往返与未知值容错', () {
+      const d = AppSettings();
+      expect(d.navBarStyle, 'glassCapsule');
+      final round =
+          AppSettings.fromJson(const {'navBarStyle': 'fluidGlass'});
+      expect(round.navBarStyle, 'fluidGlass');
+      expect(AppSettings.fromJson(const {'navBarStyle': 'x'}).navBarStyle,
+          'glassCapsule', reason: '未知值回默认款');
+    });
+
+    test('copyWith 更新与 null 保持', () {
+      const base = AppSettings(navBarStyle: 'fluidGlass');
+      expect(base.copyWith().navBarStyle, 'fluidGlass');
+      expect(base.copyWith(navBarStyle: 'glassCapsule').navBarStyle,
+          'glassCapsule');
+    });
+  });
 }

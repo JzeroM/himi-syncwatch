@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/screens/settings/version_preference_sheet.dart';
@@ -87,6 +88,25 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ),
             ),
             const _CategoryColumnsSection(),
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => _showNavBarStyleSheet(context, ref),
+              child: ListTile(
+                key: const ValueKey('navBarStyleEntry'),
+                leading: const Icon(Icons.view_carousel_outlined),
+                title: const Text('导航栏样式'),
+                subtitle: Text(
+                  '底部导航栏形态与动效（液态玻璃质感）· 当前：'
+                  '${NavBarStyle.parse(settings.navBarStyle).label}',
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: () => _showNavBarStyleSheet(context, ref),
+              ),
+            ),
           ],
         ),
         SettingsGroupCard(
@@ -679,4 +699,43 @@ class _AppIconTile extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// 「导航栏样式」选择弹层（698 N15-E）：注册表枚举单选，选中即生效。
+void _showNavBarStyleSheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Consumer(
+        builder: (context, ref, _) {
+          final current = NavBarStyle.parse(
+            ref.watch(settingsProvider.select((s) => s.navBarStyle)),
+          );
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final style in NavBarStyle.values)
+                RadioListTile<NavBarStyle>(
+                  value: style,
+                  groupValue: current,
+                  title: Text(style.label),
+                  subtitle: Text(switch (style) {
+                    NavBarStyle.glassCapsule => '液滴安静跟随，可拖动切换标签',
+                    NavBarStyle.fluidGlass => '弹簧过冲 + 液滴拉伸 + 图标弹跳（液态玻璃开关控制双形态）',
+                  }),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    ref
+                        .read(settingsProvider.notifier)
+                        .update(navBarStyle: v.name);
+                    Navigator.of(sheetContext).pop();
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
 }
