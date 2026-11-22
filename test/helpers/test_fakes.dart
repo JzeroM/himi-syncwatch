@@ -22,6 +22,11 @@ import 'package:himi_syncwatch/services/player/player_adapter.dart';
 /// 需要验证徽章行为的用例请自建注入式 service（见 hero_ratings_service_test）。
 HeroRatingsService fakeHeroRatingsService() => HeroRatingsService(
       httpGet: (url, {headers = const {}}) async => '{}',
+      // 698 N14：豆瓣 API 层直接判失败（回落爬页 → httpGet stub 空响应），
+      // 防默认 Dio POST 在 FakeAsync 下产生挂起 Timer。
+      httpPost: (url, {headers = const {}, required form}) async {
+        throw StateError('api down');
+      },
     );
 
 class FakeSettingsNotifier extends SettingsNotifier {

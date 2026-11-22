@@ -7,6 +7,11 @@ import 'package:himi_syncwatch/services/hero_ratings_service.dart';
 import 'package:himi_syncwatch/services/ratings_cache_store.dart';
 
 void main() {
+  /// API 全挂假件：_fetchDouban 的 API 层抛错 → 回落爬页（爬页组语义保持）。
+  RatingsHttpPost _apiDown = (url, {headers = const {}, required form}) async {
+    throw StateError('api down');
+  };
+
   group('parseOmdb（698 OMDb 一枚 key 三枚徽章）', () {
     test('imdbRating + Ratings[] 解析出 IMDb/烂番茄影评/Metacritic', () {
       final body = jsonEncode({
@@ -83,6 +88,7 @@ void main() {
     test('用户 key 为空 → 用内置 key 发请求', () async {
       final urls = <String>[];
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           urls.add(url.toString());
           return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
@@ -96,6 +102,7 @@ void main() {
     test('用户 key 非空 → 覆盖内置 key', () async {
       final urls = <String>[];
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         omdbApiKey: 'my-own-key',
         httpGet: (url, {headers = const {}}) async {
           urls.add(url.toString());
@@ -114,6 +121,7 @@ void main() {
   group('豆瓣爬页（698 ② 免 key）', () {
     test('subject 页 JSON-LD 抽豆瓣分', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           expect(url.toString(), contains('movie.douban.com/subject/3541415'));
           return '<script type="application/ld+json">'
@@ -130,6 +138,7 @@ void main() {
 
     test('meta 降级：v:average 取分', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           return '<meta property="v:average" content="8.9">';
         },
@@ -145,7 +154,9 @@ void main() {
     test('搜索兜底：subject 候选 + 相似度匹配（宁缺勿错）', () async {
       final urls = <String>[];
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
+          if (!url.host.endsWith('douban.com')) return '{}';
           urls.add(url.toString());
           if (url.host == 'search.douban.com') {
             return '<a href="https://movie.douban.com/subject/111/">搏击俱乐部</a>'
@@ -168,6 +179,7 @@ void main() {
 
     test('搜索匹配不确定（相似度低）→ 不上徽章', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           return '<a href="https://movie.douban.com/subject/111/">完全不相干的片子</a>';
         },
@@ -181,6 +193,7 @@ void main() {
     test('已有服务端刮削种子分 → 不爬页（省流量）', () async {
       var httpCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
           return '';
@@ -220,6 +233,7 @@ void main() {
           return '{}';
         },
         httpPost: (url, {headers = const {}, required form}) async {
+          if (url.host == 'api.douban.com') throw StateError('api down');
           postUrl = url;
           postForm = form;
           return const RatingsHttpPostResult(
@@ -253,6 +267,7 @@ void main() {
     test('豆瓣请求头：完整浏览器头组（UA/语言/Referer/bid Cookie）', () async {
       final headersSeen = <Map<String, String>>[];
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           headersSeen.add(headers);
           return ratingHtml;
@@ -333,6 +348,7 @@ void main() {
           return url.host == 'movie.douban.com' ? ratingHtml : '{}';
         },
         httpPost: (url, {headers = const {}, required form}) async {
+          if (url.host == 'api.douban.com') throw StateError('api down');
           postCalls++;
           return const RatingsHttpPostResult(setCookie: 'a=b');
         },
@@ -359,6 +375,7 @@ void main() {
           return '{}';
         },
         httpPost: (url, {headers = const {}, required form}) async {
+          if (url.host == 'api.douban.com') throw StateError('api down');
           postUrl = url;
           return const RatingsHttpPostResult(setCookie: 'a=b');
         },
@@ -383,6 +400,7 @@ void main() {
           return '{}';
         },
         httpPost: (url, {headers = const {}, required form}) async {
+          if (url.host == 'api.douban.com') throw StateError('api down');
           postUrls.add(url.toString());
           return const RatingsHttpPostResult(setCookie: 'a=b');
         },
@@ -400,6 +418,7 @@ void main() {
     test('搜索反爬空壳 → 源失败不缓存（自动重试，698 N7-E）', () async {
       var searchCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host == 'search.douban.com') {
             searchCalls++;
@@ -420,6 +439,7 @@ void main() {
     test('搜索真无匹配 → 缓存空（不再重查）', () async {
       var searchCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host == 'search.douban.com') {
             searchCalls++;
@@ -439,6 +459,7 @@ void main() {
   group('Letterboxd 爬页（698 ② 免 key）', () {
     test('/imdb/{tt}/ 路由取分，5 分制 ×2', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('letterboxd')) {
             expect(url.toString(), contains('letterboxd.com/imdb/tt0133093'));
@@ -457,6 +478,7 @@ void main() {
 
     test('无 tt id 时走 /tmdb/{id}/ 路由', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('letterboxd')) {
             expect(url.toString(), contains('letterboxd.com/tmdb/603'));
@@ -474,6 +496,7 @@ void main() {
     test('缺 id / 解析不出 → 静默空', () async {
       var httpCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
           return '<html>no rating</html>';
@@ -494,6 +517,7 @@ void main() {
     test('同条目二次 fetch 命中缓存（每源 HTTP 只打一次）', () async {
       final calls = <String, int>{};
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           calls[url.host] = (calls[url.host] ?? 0) + 1;
           return jsonEncode({
@@ -514,6 +538,7 @@ void main() {
       var omdbCalls = 0;
       var failOmdb = true;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           throw StateError('trakt down');
         },
@@ -547,6 +572,7 @@ void main() {
       var doubanCalls = 0;
       var failDouban = true;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) {
             omdbCalls++;
@@ -582,6 +608,7 @@ void main() {
       var omdbInFlight = 0;
       var omdbMaxInFlight = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (!url.host.contains('omdbapi')) return '{}';
           omdbInFlight++;
@@ -602,6 +629,7 @@ void main() {
     test('双 id 皆缺：不发网络，仅种子徽章', () async {
       var httpCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
           return '{}';
@@ -616,6 +644,7 @@ void main() {
 
     test('Trakt 评分桥：有分出 Trakt 徽章（百分比），无分跳过', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           expect(imdbId, 'tt0133093');
@@ -629,6 +658,7 @@ void main() {
       ));
 
       final noTrakt = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           return Future<double?>.value();
@@ -640,6 +670,7 @@ void main() {
 
     test('Trakt 桥异常按该源失败处理，不影响种子徽章', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async => '{}',
         traktRating: ({String? imdbId, String? tmdbId, required bool isMovie}) {
           throw StateError('trakt down');
@@ -657,6 +688,7 @@ void main() {
 
     test('watch：种子首帧先出，逐源补位（帧单调递增）', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) {
             return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
@@ -678,6 +710,7 @@ void main() {
     test('watch：慢源不挡快源（IMDb 先上，豆瓣落地再补）', () async {
       final doubanGate = Completer<String>();
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) {
           if (url.host == 'movie.douban.com') return doubanGate.future;
           return Future.value(
@@ -710,6 +743,7 @@ void main() {
     test('watch：会话缓存命中首帧即全量（零网络）', () async {
       var httpCalls = 0;
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
           return jsonEncode({'Response': 'True', 'imdbRating': '7.6'});
@@ -739,6 +773,7 @@ void main() {
       }
 
       final service1 = HeroRatingsService(
+        httpPost: _apiDown,
         cacheStore: store,
         httpGet: (url, {headers = const {}}) async => body(),
       );
@@ -748,6 +783,7 @@ void main() {
 
       // 新服务实例（provider 重建语义）+ 同一 store：零网络出全量。
       final service2 = HeroRatingsService(
+        httpPost: _apiDown,
         cacheStore: store,
         httpGet: (url, {headers = const {}}) async => body(),
       );
@@ -761,6 +797,7 @@ void main() {
       var fail = true;
       final store = MemoryRatingsCacheStore();
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         cacheStore: store,
         httpGet: (url, {headers = const {}}) async {
           httpCalls++;
@@ -782,6 +819,7 @@ void main() {
       var omdbCalls = 0;
       final store = MemoryRatingsCacheStore();
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         cacheStore: store,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) omdbCalls++;
@@ -817,6 +855,7 @@ void main() {
   group('HeroRatingsService.selfCheck（设置页测试按钮）', () {
     test('标准片自检：OMDb 三枚 + 爬页双枚', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           if (url.host.contains('omdbapi')) {
             return jsonEncode({
@@ -851,6 +890,7 @@ void main() {
 
     test('key 错误透出 Response: False 的 Error 文案', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         omdbApiKey: 'bad',
         httpGet: (url, {headers = const {}}) async {
           return jsonEncode({
@@ -865,6 +905,7 @@ void main() {
 
     test('爬页全挂 → bridgeError 提示反爬/改版', () async {
       final service = HeroRatingsService(
+        httpPost: _apiDown,
         httpGet: (url, {headers = const {}}) async {
           throw StateError('blocked');
         },
@@ -872,6 +913,149 @@ void main() {
       final result = await service.selfCheck();
       expect(result.omdbError, '网络错误');
       expect(result.bridgeError, contains('反爬'));
+    });
+  });
+
+  group('豆瓣 API（698 N14：api.douban.com v2 + Frodo 兜底）', () {
+    RatingsHttpPost apiReply(String body) =>
+        (url, {headers = const {}, required form}) async {
+          if (url.host == 'api.douban.com') {
+            return RatingsHttpPostResult(body: body);
+          }
+          throw StateError('unexpected post ${url.host}');
+        };
+
+    test('key 常量在位（用户拍板内置）+ Frodo 微信头', () {
+      expect(HeroRatingsService.builtInDoubanAppKey, isNotEmpty);
+      expect(HeroRatingsService.builtInFrodoKey, isNotEmpty);
+      expect(HeroRatingsService.frodoHeaders['User-Agent'], 'MicroMessenger/',
+          reason: '缺微信头 Frodo 报 997（真机实测）');
+    });
+
+    test('subject id 直查解析 rating.average（免反爬毫秒级）', () async {
+      final posts = <String>[];
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          throw StateError('不应打 GET（API 直查命中）');
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          posts.add(url.toString());
+          return RatingsHttpPostResult(
+              body: jsonEncode({'rating': {'average': 9.4}}));
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415'),
+      );
+      expect(posts.single, 'https://api.douban.com/v2/movie/subject/3541415');
+      expect(badges, [const HeroRatingBadge(RatingPlatform.douban, '9.4')]);
+    });
+
+    test('imdb id 直查（average 字符串兼容）', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
+        httpPost: apiReply(
+            jsonEncode({'rating': {'average': '8.8'}})),
+      );
+      final badges =
+          await service.fetch(const HeroRatingQuery(imdbId: 'tt1'));
+      expect(badges, [const HeroRatingBadge(RatingPlatform.douban, '8.8')]);
+    });
+
+    test('搜索匹配：标题+年份命中出分；不相似宁缺勿错', () async {
+      String searchBody(List<Map<String, Object?>> subjects) =>
+          jsonEncode({'subjects': subjects});
+      // 命中。
+      var service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
+        httpPost: apiReply(searchBody([
+          {
+            'title': '盗梦空间',
+            'year': '2010',
+            'rating': {'average': 9.4},
+          },
+          {
+            'title': '完全不相干',
+            'year': '1999',
+            'rating': {'average': 1.0},
+          },
+        ])),
+      );
+      var badges = await service.fetch(
+        const HeroRatingQuery(title: '盗梦空间', year: '2010', tmdbId: '603'),
+      );
+      expect(badges, [const HeroRatingBadge(RatingPlatform.douban, '9.4')]);
+
+      // 不相似（低分候选也不认）。
+      service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async => '{}',
+        httpPost: apiReply(searchBody([
+          {'title': '完全不相干', 'year': '1999', 'rating': {'average': 1.0}},
+        ])),
+      );
+      badges = await service
+          .fetch(const HeroRatingQuery(title: '盗梦空间', tmdbId: '603'));
+      expect(badges, isEmpty);
+    });
+
+    test('v2 搜索无匹配 → Frodo 兜底（微信头 + rating.value）', () async {
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          expect(url.host, 'frodo.douban.com');
+          expect(headers['User-Agent'], 'MicroMessenger/');
+          return jsonEncode({
+            'items': [
+              {
+                'target': {
+                  'title': '盗梦空间',
+                  'year': 2010,
+                  'rating': {'value': 9.4},
+                },
+              },
+            ],
+          });
+        },
+        httpPost: apiReply(jsonEncode({'subjects': []})),
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(title: '盗梦空间', tmdbId: '603'),
+      );
+      expect(badges, [const HeroRatingBadge(RatingPlatform.douban, '9.4')]);
+    });
+
+    test('API 抛错回落爬页（PoW 挑战流保底）', () async {
+      var posts = 0;
+      final service = HeroRatingsService(
+        httpGet: (url, {headers = const {}}) async {
+          // 仅豆瓣宿主回爬页响应；其余源（Letterboxd 等）回空。
+          if (url.host.endsWith('douban.com')) {
+            return '<meta property="v:average" content="8.9">'; // 爬页直取
+          }
+          return '{}';
+        },
+        httpPost: (url, {headers = const {}, required form}) async {
+          posts++;
+          throw StateError('api down');
+        },
+      );
+      final badges = await service.fetch(
+        const HeroRatingQuery(doubanId: '3541415', tmdbId: '603'),
+      );
+      expect(posts, greaterThan(0), reason: 'API 先试');
+      expect(badges, [const HeroRatingBadge(RatingPlatform.douban, '8.9')],
+          reason: 'API 挂了爬页兜底出分');
+    });
+
+    test('评分边界：0 / 超 10 不出徽章', () async {
+      for (final raw in [0, 11.0]) {
+        final service = HeroRatingsService(
+          httpGet: (url, {headers = const {}}) async => '{}',
+          httpPost: apiReply(jsonEncode({'rating': {'average': raw}})),
+        );
+        final badges =
+            await service.fetch(const HeroRatingQuery(doubanId: '3541415'));
+        expect(badges, isEmpty, reason: 'average=$raw 非法不出分');
+      }
     });
   });
 }

@@ -115,6 +115,21 @@ class HeroRatingsService implements HeroRatingsSource {
   /// 用户配置的 `omdbApiKey` 非空时覆盖；被限流/吊销时换自己的 key。
   static const String builtInOmdbKey = 'bed542e5';
 
+  /// 豆瓣 API 内置 key（698 N14，用户拍板硬编码——同 OMDb 内置 key 先例）：
+  /// - [builtInDoubanAppKey]：`api.douban.com` v2 POST（豆瓣 App 抓包 key，
+  ///   形态见 feizhaojun.com/?p=3813——POST 只验 apikey）；subject/imdb/
+  ///   search 三路直查评分，免反爬、毫秒级；
+  /// - [builtInFrodoKey]：`frodo.douban.com` 微信小程序「豆瓣评分」key
+  ///   （用户提供），须带 [frodoHeaders] 微信头（缺头报 997）。
+  static const String builtInDoubanAppKey = '0ab215a8b1977939201640fa14c66bab';
+  static const String builtInFrodoKey = '0ac44ae016490db2204ce0a042db2916';
+
+  /// Frodo（微信小程序）必需请求头（698 N14）。
+  static const Map<String, String> frodoHeaders = {
+    'User-Agent': 'MicroMessenger/',
+    'Referer': 'https://servicewechat.com/wx2f9b06c1de1ccfca/91/page-frame.html',
+  };
+
   /// 爬页 UA（豆瓣/Letterboxd 对非浏览器 UA 有风控，伪装浏览器）。
   static const Map<String, String> _browserHeaders = {
     'User-Agent':
@@ -379,12 +394,154 @@ class HeroRatingsService implements HeroRatingsSource {
     }
   }
 
-  /// 豆瓣爬页（免 key）：subject 页直查 → 搜索兜底。
-  ///
-  /// 已有服务端刮削种子分（[HeroRatingQuery.doubanScore]）时不爬（种子优先，
-  /// 省流量）。爬取失败静默返回空。
+  /// 豆瓣评分（698 N14）：**API 优先**（api.douban.com v2 POST 三路直查，
+  /// 免反爬毫秒级）；API 不可用/无分时回落旧反爬爬页流（PoW 挑战）。
   Future<List<HeroRatingBadge>?> _fetchDouban(HeroRatingQuery query) async {
     if (query.doubanScore != null && query.doubanScore! > 0) return const [];
+    try {
+      final rating = await _fetchDoubanApi(query);
+      if (_validDouban(rating)) return [_doubanBadge(rating!)];
+    } catch (_) {
+      // API 网络失败 → 回落爬页流。
+    }
+    return _fetchDoubanCrawl(query);
+  }
+
+  static HeroRatingBadge _doubanBadge(double rating) => HeroRatingBadge(
+        RatingPlatform.douban,
+        formatRatingScore(RatingPlatform.douban, rating),
+      );
+
+  static bool _validDouban(double? v) => v != null && v > 0 && v <= 10;
+
+  /// 豆瓣 API 直查（698 N14，真机验证 rating 9.4 ✓）：
+  /// `POST api.douban.com/v2/movie/subject/{id}` → `.../imdb/{tt}` →
+  /// `.../movie/search`（标题搜索，film-bridge 相似度匹配宁缺勿错）→
+  /// Frodo 搜索兜底（微信小程序接口）。返回 null = 确认无匹配/无分；
+  /// 网络失败抛错（由调用方回落爬页）。
+  Future<double?> _fetchDoubanApi(HeroRatingQuery query) async {
+    final subjectId = query.doubanId?.trim();
+    if (subjectId != null && subjectId.isNotEmpty) {
+      final rating = _doubanRatingOf(
+          await _doubanV2Post('/v2/movie/subject/$subjectId', const {}));
+      if (_validDouban(rating)) return rating;
+    }
+    final imdbId = query.imdbId?.trim();
+    if (imdbId != null && imdbId.isNotEmpty) {
+      final rating = _doubanRatingOf(
+          await _doubanV2Post('/v2/movie/imdb/$imdbId', const {}));
+      if (_validDouban(rating)) return rating;
+    }
+    final title = query.title?.trim();
+    if (title != null && title.isNotEmpty) {
+      final rating = await _doubanApiSearch(title, query.year);
+      if (_validDouban(rating)) return rating;
+    }
+    return null;
+  }
+
+  /// API 搜索匹配（698 N14）：v2 `movie/search` 候选 + Frodo 搜索兜底，
+  /// 与爬页搜索同规则（标题相似度 + 年份加权 + 0.6 宁缺勿错）。
+  Future<double?> _doubanApiSearch(String title, String? year) async {
+    final json = await _doubanV2Post('/v2/movie/search', {
+      'q': title,
+      'count': '10',
+    });
+    final best = _bestDoubanMatch(
+      title,
+      year,
+      [
+        for (final s in (json['subjects'] as List? ?? const []))
+          if (s is Map)
+            {
+              'title': '${s['title'] ?? ''}',
+              'year': '${s['year'] ?? ''}',
+              'rating': _doubanRatingOf(s),
+            },
+      ],
+    );
+    if (best != null) return best;
+    // Frodo 兜底（微信小程序接口，key/头不同源）。
+    return _frodoSearch(title, year);
+  }
+
+  /// 候选里挑最佳（相似度 ≥ 0.6 才认，宁缺勿错）；返回其评分。
+  double? _bestDoubanMatch(
+    String title,
+    String? year,
+    List<Map<String, Object?>> candidates,
+  ) {
+    var bestScore = 0.0;
+    double? bestRating;
+    for (final c in candidates) {
+      var score = BridgeParsers.titleSimilarity(title, '${c['title'] ?? ''}');
+      final y = BridgeParsers.parseYear(year);
+      final cy = BridgeParsers.parseYear('${c['year']}');
+      if (y != null && cy == y) score += 0.15;
+      if (score > bestScore) {
+        bestScore = score;
+        bestRating = (c['rating'] as double?) ?? _doubanRatingOf(c);
+      }
+    }
+    return bestScore >= 0.6 && _validDouban(bestRating) ? bestRating : null;
+  }
+
+  /// Frodo 搜索（698 N14）：`frodo.douban.com/api/v2/search/movie` +
+  /// 微信小程序头（缺头报 997）；候选 `items[].target.{title,year,rating}`。
+  Future<double?> _frodoSearch(String title, String? year) async {
+    final body = await _get(
+      Uri.parse(
+        'https://frodo.douban.com/api/v2/search/movie'
+        '?q=${Uri.encodeComponent(title)}&count=10&apiKey=$builtInFrodoKey',
+      ),
+      headers: frodoHeaders,
+      throttled: false,
+    );
+    final json = jsonDecode(body);
+    if (json is! Map) return null;
+    final items = json['items'];
+    if (items is! List) return null;
+    return _bestDoubanMatch(title, year, [
+      for (final it in items)
+        if (it is Map && it['target'] is Map)
+          {
+            'title': '${(it['target'] as Map)['title'] ?? ''}',
+            'year': '${(it['target'] as Map)['year'] ?? ''}',
+            'rating': _doubanRatingOf(it['target']),
+          },
+    ]);
+  }
+
+  /// 评分抽取：`rating.average`（v2）或 `rating.value`（Frodo），数字/字符串兼容。
+  static double? _doubanRatingOf(Object? json) {
+    if (json is! Map) return null;
+    final rating = json['rating'];
+    final raw = rating is Map ? (rating['average'] ?? rating['value']) : null;
+    return double.tryParse('${raw ?? ''}');
+  }
+
+  /// v2 POST（698 N14）：`api.douban.com` 表单 POST（body: apikey=…），
+  /// 文章验证形态（feizhaojun.com/?p=3813：POST 只验 apikey）。
+  Future<Map<String, dynamic>> _doubanV2Post(
+    String path,
+    Map<String, String> params,
+  ) async {
+    final result = await _httpPost(
+      Uri.parse('https://api.douban.com$path'),
+      headers: const {
+        'User-Agent': 'api-client/1 com.douban.frodo/7.22.0(231)',
+      },
+      form: {'apikey': builtInDoubanAppKey, ...params},
+    );
+    final body = result.body.trim();
+    if (body.isEmpty) throw StateError('douban api empty');
+    final json = jsonDecode(body);
+    if (json is! Map) throw StateError('douban api bad body');
+    return Map<String, dynamic>.from(json);
+  }
+
+  /// 豆瓣爬页兜底（旧反爬挑战流，698 N5-C/N7-E）：API 不可用时保底。
+  Future<List<HeroRatingBadge>?> _fetchDoubanCrawl(HeroRatingQuery query) async {
     try {
       String? subjectId = query.doubanId?.trim();
       subjectId = (subjectId == null || subjectId.isEmpty) ? null : subjectId;
@@ -400,12 +557,7 @@ class HeroRatingsService implements HeroRatingsSource {
       );
       final rating = BridgeParsers.extractRating(html);
       if (rating == null || rating <= 0 || rating > 10) return const [];
-      return [
-        HeroRatingBadge(
-          RatingPlatform.douban,
-          formatRatingScore(RatingPlatform.douban, rating),
-        ),
-      ];
+      return [_doubanBadge(rating)];
     } catch (_) {
       return null;
     }
@@ -599,20 +751,33 @@ class HeroRatingsService implements HeroRatingsSource {
     var doubanBlocked = false;
     try {
       final badges = <HeroRatingBadge>[];
-      // 豆瓣标准片直查（subject 3541415，走挑战解决流）。
+      // 豆瓣标准片（698 N14）：API 优先（subject/imdb 直查，免反爬）；
+      // API 不可用/无分回落爬页（挑战流），仍被拦如实标记。
+      double? doubanRating;
       try {
-        final doubanHtml = await _doubanGet(
-          Uri.parse('https://movie.douban.com/subject/$selfCheckDoubanId/'),
-        );
-        final doubanRating = BridgeParsers.extractRating(doubanHtml);
-        if (doubanRating != null && doubanRating > 0) {
-          badges.add(HeroRatingBadge(
-            RatingPlatform.douban,
-            formatRatingScore(RatingPlatform.douban, doubanRating),
-          ));
+        doubanRating = await _fetchDoubanApi(const HeroRatingQuery(
+          doubanId: selfCheckDoubanId,
+          imdbId: selfCheckImdbId,
+          title: '盗梦空间',
+          year: '2010',
+        ));
+      } catch (_) {
+        doubanRating = null;
+      }
+      if (_validDouban(doubanRating)) {
+        badges.add(_doubanBadge(doubanRating!));
+      } else {
+        try {
+          final doubanHtml = await _doubanGet(
+            Uri.parse('https://movie.douban.com/subject/$selfCheckDoubanId/'),
+          );
+          final crawlRating = BridgeParsers.extractRating(doubanHtml);
+          if (crawlRating != null && crawlRating > 0) {
+            badges.add(_doubanBadge(crawlRating));
+          }
+        } on DoubanChallengeException {
+          doubanBlocked = true;
         }
-      } on DoubanChallengeException {
-        doubanBlocked = true;
       }
       // Letterboxd 标准片（/imdb/{tt}/ 路由）。
       final lbHtml = await _get(
