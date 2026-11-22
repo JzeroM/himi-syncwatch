@@ -15,6 +15,7 @@ import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
+import 'package:himi_syncwatch/widgets/dots_ellipsis_text.dart';
 import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -2104,7 +2105,69 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         ),
                       const SizedBox(height: 8),
                       _buildMetaRow(item),
-                      // 多平台评分行（698，N7-G 移位到简介胶囊上方）：与首页
+                      if (item.overview != null &&
+                          item.overview!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        // 698 N13：简介 2 行居中（TV 1 行防溢出），三点省略号
+                        // 仅末行行尾；简介胶囊贴第二行右下角（文本左右内缩 92
+                        // 空槽 ≥ 胶囊宽，胶囊不压字；点开浮层展开全部简介）。
+                        Stack(
+                          children: [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 92),
+                              child: DotsEllipsisText(
+                                item.overview!,
+                                maxLines: tv ? 1 : 2,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  shadows: DetailScreen.heroTextShadows,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: TvFocusable(
+                                onTap: _toggleOverview,
+                                child: GlassContainer(
+                                  borderRadius: const BorderRadius.all(
+                                      Radius.circular(14)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 3),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.subject,
+                                          size: 14, color: Colors.white70),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        _overviewVisible ? '收起' : '简介',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Icon(
+                                        _overviewVisible
+                                            ? Icons.expand_less
+                                            : Icons.expand_more,
+                                        size: 14,
+                                        color: Colors.white70,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      // 多平台评分行（698，N13 移位到简介行下方）：与首页
                       // 轮播同款「品牌图标 + 分数」，缺哪枚隐藏哪枚；异步补位
                       // （种子分首帧即出，网络源渐进到达）。
                       Padding(
@@ -2122,47 +2185,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ),
                         ),
                       ),
-                      if (item.overview != null &&
-                          item.overview!.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        // 简介入口（v1.1.83：默认隐藏，浮层展开在海报内）
-                        Row(
-                          children: [
-                            TvFocusable(
-                              onTap: _toggleOverview,
-                              child: GlassContainer(
-                                borderRadius:
-                                    const BorderRadius.all(Radius.circular(14)),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 3),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.subject,
-                                        size: 14, color: Colors.white70),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      _overviewVisible ? '收起' : '简介',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Icon(
-                                      _overviewVisible
-                                          ? Icons.expand_less
-                                          : Icons.expand_more,
-                                      size: 14,
-                                      color: Colors.white70,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),

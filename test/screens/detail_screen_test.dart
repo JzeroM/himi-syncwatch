@@ -21,6 +21,7 @@ import 'package:himi_syncwatch/screens/detail/detail_screen.dart';
 import 'package:himi_syncwatch/screens/detail/series_sections.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:himi_syncwatch/widgets/dots_ellipsis_text.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -2685,7 +2686,12 @@ void main() {
 
     testWidgets('TV 浮层标题 16、简介正文 14（默认隐藏）', (tester) async {
       await _pumpDetail(tester, tv: true);
-      expect(find.text('这是一段测试简介。'), findsNothing, reason: '简介默认隐藏在海报上');
+      // 698 N13：hero 显示简介预览（DotsEllipsisText 自绘，TV 1 行防溢出）；
+      // 完整正文 Text 只在浮层内。
+      expect(find.text('这是一段测试简介。'), findsNothing,
+          reason: '完整正文只在浮层（hero 预览是自绘文本）');
+      expect(find.byType(DotsEllipsisText), findsOneWidget,
+          reason: 'TV 简介 1 行预览');
 
       await tester.tap(find.text('简介'));
       await tester.pump();
@@ -3664,19 +3670,29 @@ void main() {
       expect(img.url, contains('Backdrop'), reason: '优先横版背景图');
     });
 
-    testWidgets('详情评分行在简介胶囊上方（698 N7-G 移位）', (tester) async {
+    testWidgets('详情评分行在简介行下方 + 胶囊贴简介右下（698 N13）', (tester) async {
       await _pumpDetail(tester, item: _item);
       final badgeRow = find.descendant(
         of: find.byType(HeroRatingsLoader),
         matching: find.byType(RatingsBadgeRow),
       );
+      final overview = find.byType(DotsEllipsisText);
       final overviewBtn = find.widgetWithText(GlassContainer, '简介');
       expect(badgeRow, findsOneWidget);
+      expect(overview, findsOneWidget);
       expect(overviewBtn, findsOneWidget);
       final badgeY = tester.getTopLeft(badgeRow).dy;
-      final overviewY = tester.getTopLeft(overviewBtn).dy;
-      expect(badgeY, lessThan(overviewY),
-          reason: '评分行移位到简介胶囊上方（698 N7-G）');
+      final overviewY = tester.getTopLeft(overview).dy;
+      expect(badgeY, greaterThan(overviewY),
+          reason: '评分行移到简介行下方（698 N13）');
+      // 胶囊贴简介块右下角：在文本右侧空槽内（左右内缩 72，不压字）、
+      // 底缘与简介块对齐（bottom: 0 锚定）。
+      final overviewRect = tester.getRect(overview);
+      final capsuleRect = tester.getRect(overviewBtn);
+      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right),
+          reason: '胶囊在简介文本右侧空槽内（不压字）');
+      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 1.0),
+          reason: '胶囊贴简介块下缘（右下角）');
     });
   });
 }

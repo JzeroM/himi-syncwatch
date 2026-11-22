@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/services/hero_ratings_service.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
+import 'package:himi_syncwatch/widgets/dots_ellipsis_text.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/ratings_badge_row.dart';
 
@@ -426,11 +427,11 @@ class _HeroSlide extends StatelessWidget {
                 ],
                 if (overview != null && overview.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  // 简介：最多 2 行，省略号截断（698；对齐参考截图）。
-                  Text(
+                  // 简介：最多 2 行，三点省略号仅末行（698 N13；与详情简介
+                  // 同款 DotsEllipsisText）。
+                  DotsEllipsisText(
                     overview,
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white70,
