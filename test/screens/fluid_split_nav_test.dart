@@ -197,9 +197,11 @@ void main() {
         inInclusiveRange(0.5, 1.0),
         reason: '厚液桥：两滴模糊场叠加过阈值才断',
       );
-      // Android ColorMatrix(0,0,0,50,-5000) 等价移植（阈值 0.39、极硬边）。
-      expect(FluidGlassNavBar.gooAlphaRow, [0, 0, 0, 50, -19.6],
-          reason: 'jurajkusnier 原值等价（0..255 → 0..1）');
+      // jurajkusnier Android 原值**原样直用**（ColorFilter.matrix 偏移列
+      // 0..255 制；阈值 0.39、过渡带 0.02 极硬边）。N21 根因修复：
+      // 此前误按 0..1 制写 -19.6 → 阈值 0.0015 → 巨型白圈/奶雾。
+      expect(FluidGlassNavBar.gooAlphaRow, [0, 0, 0, 50, -5000],
+          reason: 'jurajkusnier 原值（0..255 制）');
       // 绘制半径补偿：阈值切回视觉尺寸。
       expect(
         FluidGlassNavBar.gooRadius(FluidGlassNavBar.childSize / 2),
@@ -234,10 +236,13 @@ void main() {
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
-    test('玻璃液体透明度：折射/磨砂均半透明（非实心白块）', () {
-      expect(FluidGlassNavBar.liquidOpacity(true), 0.50);
-      expect(FluidGlassNavBar.liquidOpacity(false), 0.65);
-      expect(FluidGlassNavBar.liquidOpacity(true), lessThan(0.7));
+    test('复刻色板（视频实测取色）：实心粉渐变 + 磨砂白 30% 条体', () {
+      expect(FluidGlassNavBar.dropPinkLight, const Color(0xFFF5B8E3),
+          reason: '液滴顶左亮粉（视频核心 233,114,197 同族）');
+      expect(FluidGlassNavBar.dropPinkDeep, const Color(0xFFE25EBE),
+          reason: '液滴底右深粉（视频底缘 240,107,208 同族）');
+      expect(FluidGlassNavBar.barFrostAlpha, 0.30,
+          reason: '条体白 30% 叠底（视频 146,131,189 等价）');
     });
 
     test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {
