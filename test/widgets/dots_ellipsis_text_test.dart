@@ -146,4 +146,54 @@ void main() {
       expect(box.size.height, lessThan(25), reason: '单行高度');
     });
   });
+
+  group('首行左截断位 firstLineInset（698 N24 胶囊行首）', () {
+    const style = TextStyle(fontSize: 13, height: 1.5);
+
+    test('首行绘制 x：居中钳位——不进左侧避让区', () {
+      // 超宽首行（占满 W−inset）→ 起画 inset（左端恰在胶囊后）。
+      expect(
+        DotsEllipsisText.firstLineX(
+            maxWidth: 300, lineWidth: 208, textAlign: TextAlign.center,
+            firstLineInset: 92),
+        92.0,
+      );
+      // 短行居中无碰撞 → 正居中。
+      expect(
+        DotsEllipsisText.firstLineX(
+            maxWidth: 300, lineWidth: 60, textAlign: TextAlign.center,
+            firstLineInset: 92),
+        120.0,
+        reason: '短行居中不歪',
+      );
+      // 居中会进左侧避让区 → 右推到避让区外。
+      final x = DotsEllipsisText.firstLineX(
+          maxWidth: 300, lineWidth: 150, textAlign: TextAlign.center,
+          firstLineInset: 92);
+      expect(x, greaterThanOrEqualTo(92), reason: '钳位到不进胶囊区');
+    });
+
+    testWidgets('渲染：首行左避让、末行满宽；语义全文', (tester) async {
+      const text =
+          '八仙在成仙和成功之间选择了成团，在搞钱和搞事业之间选择了搞事情，八个身份各异的凡人最终携手';
+      await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: DotsEllipsisText(
+              text,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              firstLineInset: 92,
+              style: style,
+            ),
+          ),
+        ),
+      ));
+      expect(find.bySemanticsLabel(text), findsOneWidget);
+      final box = tester.renderObject<RenderBox>(find.byType(CustomPaint).last);
+      expect(box.size.width, 300, reason: '文本框满宽（末行满宽）');
+      expect(box.size.height, greaterThan(15), reason: '两行排版');
+    });
+  });
 }

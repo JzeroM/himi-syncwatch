@@ -3685,18 +3685,18 @@ void main() {
       final overviewY = tester.getTopLeft(overview).dy;
       expect(badgeY, greaterThan(overviewY),
           reason: '评分行移到简介行下方（698 N13）');
-      // 698 N16：简介首行满宽（不再左右内缩）；末行延伸到「全部」胶囊
-      // 为止（lastLineInset 92 截断位 → 胶囊不压字）；胶囊贴块右下角。
+      // 698 N24：「全部」胶囊在第一行行首（左上）；首行左避让 92
+      //（firstLineInset → 不压字）；末行满宽。
       final overviewRect = tester.getRect(overview);
       final capsuleRect = tester.getRect(overviewBtn);
       expect(overviewRect.width, greaterThan(300),
-          reason: 'N16 简介满宽（取消 92 内缩）');
-      expect(capsuleRect.right, closeTo(overviewRect.right, 1.0),
-          reason: '胶囊贴简介块右缘');
-      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right - 92),
-          reason: '胶囊整体在末行截断位（92）内 → 不压字');
-      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 1.0),
-          reason: '胶囊贴简介块下缘（右下角）');
+          reason: '简介满宽（末行无内缩）');
+      expect(capsuleRect.left, closeTo(overviewRect.left, 1.0),
+          reason: '胶囊贴简介块左缘（第一行行首）');
+      expect(capsuleRect.top, closeTo(overviewRect.top, 3.0),
+          reason: '胶囊贴第一行行首');
+      expect(capsuleRect.right, lessThanOrEqualTo(overviewRect.left + 120),
+          reason: '胶囊整体在首行截断位（92+胶囊宽）内 → 不压字');
     });
   });
 }

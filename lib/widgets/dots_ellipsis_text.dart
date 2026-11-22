@@ -7,8 +7,10 @@ import 'package:flutter/rendering.dart';
 ///
 /// **末行右截断位（698 N16）**：[lastLineInset] > 0 时双 painter 分行排版——
 /// 首行满宽居中；末行按「满宽 − lastLineInset」量算截断（省略号画在截断位
-/// 之前），居中钳位到不进右侧避让区（如详情简介第二行延伸到「全部」胶囊为
-/// 止）。单行文本按末行处理（胶囊同高并排时避让）。
+/// 之前），居中钳位到不进右侧避让区。
+/// **首行左截断位（698 N24）**：[firstLineInset] > 0 时首行按「满宽 −
+/// firstLineInset」量算、居中钳位到不进左侧避让区（如详情简介「全部」
+/// 胶囊在第一行行首）。单行文本同时避让左右（胶囊同高并排时）。
 ///
 /// 居中/行距/字重随 [style] 与 [textAlign]；语义标签取原文本（截断可见性
 /// 由 maxLines 控制，读屏仍可全文朗读）。
@@ -20,6 +22,7 @@ class DotsEllipsisText extends StatelessWidget {
     this.maxLines = 2,
     this.textAlign = TextAlign.center,
     this.lastLineInset = 0,
+    this.firstLineInset = 0,
   });
 
   final String text;
@@ -30,6 +33,10 @@ class DotsEllipsisText extends StatelessWidget {
   /// 末行右截断位（逻辑 px）：末行可用宽 = 满宽 − lastLineInset。
   /// 0 = 不避让（旧行为，单 painter 整段排版）。
   final double lastLineInset;
+
+  /// 首行左截断位（逻辑 px，698 N24）：首行可用宽 = 满宽 − firstLineInset，
+  /// 居中钳位到不进左侧避让区。
+  final double firstLineInset;
 
   /// 三点省略号（守卫断言用；绘制即此字面量）。
   @visibleForTesting
@@ -92,18 +99,25 @@ class DotsEllipsisText extends StatelessWidget {
     return ((maxWidth - lineWidth) / 2).clamp(0.0, maxX);
   }
 
-  /// 首行绘制 x（按 [textAlign] 在满宽内定位）。
+  /// 首行绘制 x（按 [textAlign] 在满宽内定位；698 N24 钳位不进左侧
+  /// 避让区 firstLineInset）。
   @visibleForTesting
   static double firstLineX({
     required double maxWidth,
     required double lineWidth,
     required TextAlign textAlign,
+    double firstLineInset = 0,
   }) {
-    return switch (textAlign) {
+    final x = switch (textAlign) {
       TextAlign.center || TextAlign.justify => (maxWidth - lineWidth) / 2,
       TextAlign.right || TextAlign.end => maxWidth - lineWidth,
       _ => 0.0,
-    }.clamp(0.0, (maxWidth - lineWidth).clamp(0.0, double.infinity));
+    };
+    final minX = firstLineInset.clamp(0.0, double.infinity);
+    return x.clamp(
+      minX,
+      (maxWidth - lineWidth).clamp(minX, double.infinity),
+    );
   }
 
   @override
@@ -115,7 +129,7 @@ class DotsEllipsisText extends StatelessWidget {
       final w = constraints.maxWidth;
 
       // 旧行为（无避让）：单 painter 整段排版。
-      if (lastLineInset <= 0) {
+      if (lastLineInset <= 0 && firstLineInset <= 0) {
         final painter = buildPainter(
           text: text,
           maxWidth: w,
@@ -130,17 +144,17 @@ class DotsEllipsisText extends StatelessWidget {
         );
       }
 
-      // 单行文本按末行处理（胶囊同高并排，需避让）。
+      // 单行文本：同时避让左右（胶囊同高并排）。
       final (first, rest) = splitAfterFirstLine(
         text: text,
-        maxWidth: w,
+        maxWidth: w - firstLineInset,
         style: resolvedStyle,
         textDirection: direction,
       );
       if (rest.isEmpty || maxLines <= 1) {
         final painter = buildPainter(
           text: text,
-          maxWidth: w - lastLineInset,
+          maxWidth: w - lastLineInset - firstLineInset,
           style: resolvedStyle,
           maxLines: 1,
           textAlign: TextAlign.left,
@@ -149,18 +163,24 @@ class DotsEllipsisText extends StatelessWidget {
         return _wrap(
           painter: painter,
           size: Size(w, painter.height),
-          offsetX: lastLineX(
+          offsetX: firstLineX(
             maxWidth: w,
             lineWidth: painter.width,
-            lastLineInset: lastLineInset,
+            textAlign: TextAlign.center,
+            firstLineInset: firstLineInset,
+          ).clamp(
+            firstLineInset.clamp(0.0, double.infinity),
+            (w - lastLineInset - painter.width)
+                .clamp(firstLineInset.clamp(0.0, double.infinity),
+                    double.infinity),
           ),
         );
       }
 
-      // 双 painter 分行：首行满宽；末行截断位避让 + 居中钳位。
+      // 双 painter 分行：首行左避让（N24）；末行截断位避让 + 居中钳位。
       final painterA = buildPainter(
         text: first,
-        maxWidth: w,
+        maxWidth: w - firstLineInset,
         style: resolvedStyle,
         maxLines: 1,
         textAlign: TextAlign.left,
@@ -182,6 +202,7 @@ class DotsEllipsisText extends StatelessWidget {
           maxWidth: w,
           lineWidth: painterA.width,
           textAlign: textAlign,
+          firstLineInset: firstLineInset,
         ),
         offsetX2: lastLineX(
           maxWidth: w,

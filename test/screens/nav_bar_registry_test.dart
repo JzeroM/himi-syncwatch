@@ -7,7 +7,6 @@ import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -57,39 +56,18 @@ void main() {
   });
 
   group('悬浮凹口款（698 N17）', () {
-    testWidgets('双玻璃形态（N22 回归）：开=折射条+玻璃球滴，关=磨砂条+平涂滴',
-        (tester) async {
-      // 开：液态玻璃（GlassContainer 折射胶囊 + GlassEffect 真折射水滴）。
-      await tester.pumpWidget(host(
-        settings: const AppSettings(glassUi: true),
-        nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
-      ));
-      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget,
-          reason: '玻璃开 = GlassEffect 真折射水滴层');
-      expect(find.byType(GlassEffect), findsWidgets,
-          reason: '真折射（透亮 + 色散），非磨砂');
-      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsNothing);
-      expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byKey(FluidGlassNavBar.barKey),
-          matching: find.byType(GlassContainer),
-        ),
-        findsOneWidget,
-        reason: '玻璃开 = 折射胶囊（N19 下缘修复保留）',
-      );
-
-      // 关：轻量磨砂（磨砂白 30% 条 + 平涂滴，零折射/球内 blur）。
-      await tester.pumpWidget(host(
-        settings: const AppSettings(glassUi: false),
-        nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
-      ));
-      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsOneWidget,
-          reason: '玻璃关 = 平涂磨砂滴层（零 blur 省性能）');
-      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsNothing);
-      expect(find.byType(GlassContainer), findsNothing);
-      expect(find.byType(BackdropFilter), findsOneWidget,
-          reason: '玻璃关 = 条体轻量磨砂（球内无 blur）');
+    testWidgets('叶形条恒用 GlassContainer（①款同源观感，双形态由其内部'
+        '跟随开关）+ 滴恒为 goo 实体（原版方案）', (tester) async {
+      for (final glassOn in [true, false]) {
+        await tester.pumpWidget(host(
+          settings: AppSettings(glassUi: glassOn),
+          nav: const FluidGlassNavBar(currentIndex: 0, onSelect: _noop),
+        ));
+        expect(find.byType(GlassContainer), findsWidgets,
+            reason: '玻璃开关=$glassOn：条体均 GlassContainer（内部自降级）');
+        expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget,
+            reason: '滴恒为 goo 实体滴（N24 原版方案，非真折射）');
+      }
     });
 
     test('凹口弧与母滴同心、恒距 4dp（正好包裹下半部分）', () {

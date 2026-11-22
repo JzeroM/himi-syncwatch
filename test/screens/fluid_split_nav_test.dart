@@ -7,7 +7,6 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
-import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -179,23 +178,31 @@ void main() {
           reason: '图标随滴渐显（落位后全亮）');
     });
 
-    testWidgets('折射球去重：收起 4 滴叠位 → 1 个 GlassEffect；落位 → 3 个',
+    testWidgets('点任意子滴：跳页 + 所有子滴收回母滴（自动展开不得复开）',
         (tester) async {
-      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pumpWidget(harnessHost());
       await tester.pump();
-      expect(
-        find.byType(GlassEffect).evaluate().length,
-        1,
-        reason: '收起态母滴+三子滴同心叠位 → 去重只渲 1 个折射球',
-      );
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1200));
-      expect(
-        find.byType(GlassEffect).evaluate().length,
-        3,
-        reason: '展开落位：空滴缩没 + 三子滴分位 → 3 个折射球',
-      );
+      // 点声网子滴 → 跳页 3 + 全部收回。
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 950));
+
+      final st = tester.state<_NavHarnessState>(find.byType(_NavHarness));
+      expect(st.calls, [3], reason: '点子滴跳页（声网 → 分支 3）');
+      // 所有子滴收回母滴位（常驻滴叠位融合成一滴）。
+      final m = dropCenter(tester, FluidGlassNavBar.dropMotherKey);
+      for (final k in FluidGlassNavBar.dropChildKeys) {
+        expect((dropCenter(tester, k) - m).distance, lessThan(0.5),
+            reason: '点子滴后所有子滴收回母滴');
+      }
+      // 回归核心（N24 bug 修复）：didUpdateWidget 自动展开不得复开。
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(st.calls, [3], reason: '面板保持收起（子滴禁用）——收了不得又开');
     });
 
     testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
@@ -256,18 +263,16 @@ void main() {
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
-    test('真折射参数（N23）：白纱 0.05 透亮 + 色散 1.0 物理加强', () {
-      expect(FluidGlassNavBar.dropGlassTintAlpha, 0.05,
-          reason: '透亮水滴：白纱压到 0.05（折射滴后内容为主）');
-      expect(FluidGlassNavBar.dropChroma, 1.0,
-          reason: '滴缘红蓝真物理色散（shader 内 ×4.0 加强）');
-      expect(FluidGlassNavBar.dropGlassIntensity, greaterThan(0.01),
-          reason: 'GlassEffect 捕获门槛 interactionIntensity > 0.01');
-      expect(FluidGlassNavBar.dropFrostTop.opacity, lessThan(0.15),
-          reason: '磨砂态平涂滴也是透明水滴（白 <0.15）');
-      expect(FluidGlassNavBar.dropFrostTop.opacity,
-          greaterThan(FluidGlassNavBar.dropFrostBottom.opacity),
-          reason: '微渐变顶左亮于底右（体积感）');
+    test('滴色调跟随主题色（N24）：提亮渐变 + null 回退银白', () {
+      const theme = 0xFF6750A4;
+      final g = FluidGlassNavBar.dropGradient(theme);
+      expect(g.last, const Color(theme), reason: '底右 = 主题色本色');
+      expect(g.first.computeLuminance(), greaterThan(g.last.computeLuminance()),
+          reason: '顶左 = 主题色提亮 45%（体积渐变）');
+      final fb = FluidGlassNavBar.dropGradient(null);
+      expect(fb, [FluidGlassNavBar.dropFallbackLight,
+          FluidGlassNavBar.dropFallbackDeep],
+          reason: '主题色 null → 银白玻璃渐变回退');
     });
 
     test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {
@@ -279,4 +284,52 @@ void main() {
           reason: '向上飞散');
     });
   });
+}
+
+/// 带分支 index 状态的宿主（模拟壳层 onSelect 切分支回灌 currentIndex →
+/// 触发 didUpdateWidget，N24「自动展开不得复开」回归用）。
+Widget harnessHost() {
+  final container = ProviderContainer(overrides: [
+    settingsProvider.overrideWith(
+        (ref) => FakeSettingsNotifier(const AppSettings())),
+  ]);
+  addTearDown(container.dispose);
+  return UncontrolledProviderScope(
+    container: container,
+    child: const MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 800,
+          height: 400,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: _NavHarness(),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _NavHarness extends StatefulWidget {
+  const _NavHarness();
+
+  @override
+  State<_NavHarness> createState() => _NavHarnessState();
+}
+
+class _NavHarnessState extends State<_NavHarness> {
+  int index = 0;
+  final List<int> calls = [];
+
+  @override
+  Widget build(BuildContext context) {
+    return FluidGlassNavBar(
+      currentIndex: index,
+      onSelect: (i) => setState(() {
+        calls.add(i);
+        index = i;
+      }),
+    );
+  }
 }

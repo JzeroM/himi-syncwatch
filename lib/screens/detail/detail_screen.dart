@@ -2108,17 +2108,17 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        // 698 N13/N16：简介 2 行居中（TV 1 行防溢出），三点
-                        // 省略号仅末行行尾；**首行满宽**、末行延伸到「全部」
-                        // 胶囊为止（lastLineInset 避让胶囊，省略号画在胶囊
-                        // 前）；胶囊贴第二行右下角（点开浮层展开全部简介）。
+                        // 698 N13/N16/N24：简介 2 行居中（TV 1 行防溢出），
+                        // 三点省略号仅末行行尾；**「全部」胶囊在第一行行首**
+                        // （N24 用户拍板），首行左避让 92 不压字（firstLineInset），
+                        // 末行满宽；点开浮层展开全部简介。
                         Stack(
                           children: [
                             DotsEllipsisText(
                               item.overview!,
                               maxLines: tv ? 1 : 2,
                               textAlign: TextAlign.center,
-                              lastLineInset: 92,
+                              firstLineInset: 92,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 13,
@@ -2127,8 +2127,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                               ),
                             ),
                             Positioned(
-                              right: 0,
-                              bottom: 0,
+                              left: 0,
+                              top: 0,
                               child: TvFocusable(
                                 onTap: _toggleOverview,
                                 child: GlassContainer(
