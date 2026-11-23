@@ -52,7 +52,7 @@ void main() {
     });
 
     testWidgets('条体 = GlassContainer（①款同源双形态）+ 浮块玻璃水滴'
-        '（GlassEffect + 白图标，不跟主题色）', (tester) async {
+        '（GlassEffect + 立体感层，不跟主题色）', (tester) async {
       await tester.pumpWidget(host(
         settings: const AppSettings(
             glassUi: true, themeColor: 0xFF6750A4),
@@ -64,17 +64,23 @@ void main() {
       // 浮块 = ①款同源 GlassEffect 玻璃水滴（真折射镜片）。
       expect(find.byType(GlassEffect), findsWidgets,
           reason: '浮块/标签 = ①款 LiquidBlobLens 同管线真折射镜片');
-      // 图标白色（N34：不跟主题色）。
-      final icons = tester
-          .widgetList<Icon>(find.descendant(
-            of: find.byKey(SquircleNavBar.blockKey),
-            matching: find.byType(Icon),
-          ))
-          .toList();
-      expect(icons, isNotEmpty);
-      for (final icon in icons) {
-        expect(icon.color, Colors.white, reason: '浮块内图标白色（①款风格）');
-      }
+      // 立体饱满感（N35）：高光斑 + 内阴影层存在。
+      expect(
+        tester
+            .widgetList<DecoratedBox>(find.descendant(
+              of: find.byKey(SquircleNavBar.blockKey),
+              matching: find.byType(DecoratedBox),
+            ))
+            .length,
+        greaterThan(1),
+        reason: '浮块含玻璃底 + 高光斑 + 内阴影多层',
+      );
+      // 立体参数（N35）：折射厚度/折射率上调（中间鼓）。
+      final ls = SquircleNavBar.lensSettings();
+      expect(ls.refractiveIndex, greaterThanOrEqualTo(1.4),
+          reason: '折射率上调（透镜体量鼓感）');
+      expect(ls.thickness, greaterThanOrEqualTo(5),
+          reason: '折射厚度上调（中间鼓）');
     });
 
     testWidgets('玻璃关 = 平涂磨砂近似（零 GlassEffect）', (tester) async {
@@ -88,37 +94,65 @@ void main() {
           reason: '平涂磨砂浮块保持');
     });
 
-    testWidgets('跳槽弹滑：点第 4 槽 → 浮块/标签落位该槽 + onSelect',
+    testWidgets('跳槽弹滑：点视觉第 4 槽（设置分支 4）→ 浮块/标签落位',
         (tester) async {
       final calls = <int>[];
       await tester.pumpWidget(host(onSelect: calls.add));
       await tester.pump();
-      final slot4Center = Offset(800 / 5 * 4.5, 400 - 27); // 条体垂直中线（贴底）
-      await tester.tapAt(slot4Center);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500)); // 420ms 拉满
-      expect(calls, [4], reason: 'onSelect(4)');
-      final blockRect =
-          tester.getRect(find.byKey(SquircleNavBar.blockKey));
-      expect((blockRect.center.dx - 800 / 5 * 4.5).abs(), lessThan(2),
-          reason: '浮块落位第 4 槽中心');
-    });
-
-    testWidgets('图标接力：落位后浮块显示目标槽图标', (tester) async {
-      await tester.pumpWidget(host(onSelect: (_) {}));
-      await tester.pump();
-      await tester.tapAt(Offset(800 / 5 * 2.5, 400 - 27));
+      // N35 槽位公式：两端留 slotMargin、槽位区内均分。
+      final slot4Cx = SquircleNavBar.slotCx(4, 800);
+      await tester.tapAt(Offset(slot4Cx, 400 - 27));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      final block = find.byKey(SquircleNavBar.blockKey);
-      expect(
-        find.descendant(
-          of: block,
-          matching: find.byIcon(ShellNavBar.tabIcons[2]),
-        ),
-        findsOneWidget,
-        reason: '落位后浮块 = 目标槽图标（Emby）',
-      );
+      expect(calls, [4], reason: '视觉槽 4 = 分支 4（设置）');
+      final blockRect =
+          tester.getRect(find.byKey(SquircleNavBar.blockKey));
+      expect((blockRect.center.dx - slot4Cx).abs(), lessThan(2),
+          reason: '浮块落位该槽中心');
+    });
+
+    testWidgets('图标位移接力（N35）：落位后浮块位 = 填充形态图标、'
+        '中途升起位移', (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pump();
+      // 视觉槽 3 = 声网分支 3。
+      final slot3Cx = SquircleNavBar.slotCx(3, 800);
+      await tester.tapAt(Offset(slot3Cx, 400 - 27));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200)); // 升起中段
+      // 中段：描边图标在槽位↔浮块之间（位移接力，非瞬移）。
+      final midRect =
+          tester.getRect(find.byIcon(ShellNavBar.tabIcons[3]).last);
+      final blockCxMid =
+          tester.getRect(find.byKey(SquircleNavBar.blockKey)).center.dx;
+      expect(midRect.center.dx, greaterThan(slot3Cx - 2),
+          reason: '升起起点 = 槽位');
+      expect(midRect.center.dx, lessThan(blockCxMid + 40),
+          reason: '升起中（未瞬移到位）');
+      await tester.pump(const Duration(milliseconds: 300)); // 切填充段
+      expect(find.byIcon(ShellNavBar.tabSelectedIcons[3]), findsWidgets,
+          reason: '到达浮块（lift 0.85+）切填充形态');
+      await tester.pump(const Duration(milliseconds: 100)); // 拉满
+      // 落位：浮块位 = 填充形态（tabSelectedIcons）。
+      final blockRect =
+          tester.getRect(find.byKey(SquircleNavBar.blockKey));
+      final filled = tester.getRect(
+          find.byIcon(ShellNavBar.tabSelectedIcons[3]).last);
+      expect((filled.center - blockRect.center).distance, lessThan(2),
+          reason: '落位后填充图标在浮块中心');
+      // 旧图标降落回槽（描边形态常驻于槽位层）。
+      // 初始 _to = 分支 0（首页），在视觉槽 slotBranches.indexOf(0) = 2。
+      final homeSlotCx = SquircleNavBar.slotCx(2, 800);
+      expect(find.byIcon(ShellNavBar.tabIcons[0]), findsWidgets,
+          reason: '首页分支描边图标回槽（降落完成）');
+      // 图标 y = 盒顶 + barTop + 条中线（宿主 400 高、盒 88 贴底）。
+      final iconY = (400 - SquircleNavBar.boxHeight) +
+          SquircleNavBar.barTop +
+          SquircleNavBar.navHeight / 2;
+      final homeOutline =
+          tester.getRect(find.byIcon(ShellNavBar.tabIcons[0]).last).center;
+      expect((homeOutline - Offset(homeSlotCx, iconY)).distance, lessThan(60),
+          reason: '描边图标在视觉槽 2 附近（降落回槽）');
     });
 
     test('凹口恒距几何（N33）：入口宽 = 半宽 + 7、凹深 = 半高 + 7', () {
@@ -200,6 +234,58 @@ void main() {
           reason: '标签底部露出条外（骑跨下缘）');
       expect(lBottom, lessThanOrEqualTo(SquircleNavBar.boxHeight + 1),
           reason: '标签不出盒底（N33 防屏幕裁切）');
+    });
+
+    test('槽位映射（N35）：首页↔Emby 交换、首页居中默认锁定', () {
+      expect(SquircleNavBar.slotBranches, [2, 1, 0, 3, 4],
+          reason: '视觉槽 = Emby/收藏/首页/声网/设置（首页居中）');
+      expect(SquircleNavBar.slotOfBranch(0), 2,
+          reason: '首页在中心槽（默认锁定）');
+      // 两端留白：槽 0 中心 ≥ slotMargin + 半槽宽。
+      final cx0 = SquircleNavBar.slotCx(0, 390);
+      expect(cx0, greaterThanOrEqualTo(SquircleNavBar.slotMargin),
+          reason: '端部槽凹口不碰圆角区');
+      // 槽位公式：安全余量 47 = 块半宽 22 + 恒距 7 + 条圆角 18。
+      expect(SquircleNavBar.slotMargin, 22 + 7 + 18);
+    });
+
+    testWidgets('默认锁定首页（N35）：初始浮块停中心槽', (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pump();
+      final blockRect = tester.getRect(find.byKey(SquircleNavBar.blockKey));
+      final homeCx = SquircleNavBar.slotCx(2, 800);
+      expect((blockRect.center.dx - homeCx).abs(), lessThan(2),
+          reason: '初始浮块在首页中心槽');
+      expect(find.text('首页'), findsOneWidget, reason: '初始标签 = 首页');
+    });
+
+    testWidgets('拖动切换（N35）：横向拖动浮块跟手、松手吸附最近槽',
+        (tester) async {
+      final calls = <int>[];
+      await tester.pumpWidget(host(onSelect: calls.add));
+      await tester.pump();
+      final y = 400 - 27.0;
+      // 从中心拖到视觉槽 4 方向。
+      final startCx = SquircleNavBar.slotCx(2, 800);
+      final endCx = SquircleNavBar.slotCx(4, 800);
+      final gesture =
+          await tester.startGesture(Offset(startCx, y));
+      await tester.pump();
+      await gesture.moveTo(Offset((startCx + endCx) / 2, y));
+      await tester.pump();
+      // 拖动中：浮块跟手（中途位置）。
+      final midRect = tester.getRect(find.byKey(SquircleNavBar.blockKey));
+      expect((midRect.center.dx - (startCx + endCx) / 2).abs(), lessThan(24),
+          reason: '拖动中浮块跟手（凹口实时跟随）');
+      await gesture.moveTo(Offset(endCx, y));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(calls, [4], reason: '松手吸附视觉槽 4 → 分支 4（设置）');
+      final endRect = tester.getRect(find.byKey(SquircleNavBar.blockKey));
+      expect((endRect.center.dx - endCx).abs(), lessThan(2),
+          reason: '落位吸附槽中心');
     });
 
     testWidgets('命中区满槽宽（N29 教训）：每槽 = 1/5 条宽 × 满高',
