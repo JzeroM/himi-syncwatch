@@ -553,9 +553,10 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
             settings: SquircleNavBar.lensSettings(),
             quality: lg.GlassQuality.standard,
             interactionIntensity: 1.0,
-            edgeZone: 20,
-            clipExpansion: const EdgeInsets.all(12),
-            rimThickness: 2.0,
+            // N36：边缘区收敛（44×44 上 edgeZone 20 占半高 → 收 10）。
+            edgeZone: 10,
+            clipExpansion: const EdgeInsets.all(8),
+            rimThickness: 1.5,
             ambientRim: 0.12,
             baseAlphaMultiplier: 0.08,
             edgeAlphaMultiplier: 0.2,
@@ -594,10 +595,9 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
     // 文字平移过渡：旧文（_from）淡出、新文（_to）淡入（非瞬间换字）。
     final textFade = Curves.easeIn
         .transform(((labelT - 0.25) / 0.5).clamp(0.0, 1.0));
-    final width = math.max(
-      SquircleNavBar.labelWidthOf(ShellNavBar.tabLabels[_to]),
-      SquircleNavBar.labelWidthOf(ShellNavBar.tabLabels[_from]),
-    );
+    // N36：盒宽与 Positioned 定位同源（labelWidthOf(_to)）——双文
+    // crossfade 绝对居中不撑盒，标签中心恒 = 浮块中心（错位修复）。
+    final width = SquircleNavBar.labelWidthOf(ShellNavBar.tabLabels[_to]);
     final lens = glassOn
         ? GlassEffect(
             shape: const lg.LiquidRoundedSuperellipse(
@@ -606,9 +606,11 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
             settings: SquircleNavBar.lensSettings(),
             quality: lg.GlassQuality.standard,
             interactionIntensity: 1.0,
-            edgeZone: 20,
-            clipExpansion: const EdgeInsets.all(12),
-            rimThickness: 2.0,
+            // N36：参数按小尺寸收敛（edgeZone 20≥胶囊高 → 玻璃糊满
+            // 全形体 =「空心框/贴到条上」根因）。
+            edgeZone: 4,
+            clipExpansion: const EdgeInsets.all(2),
+            rimThickness: 1.2,
             ambientRim: 0.12,
             baseAlphaMultiplier: 0.08,
             edgeAlphaMultiplier: 0.2,

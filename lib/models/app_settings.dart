@@ -1048,6 +1048,7 @@ class AppSettings {
       glassUi: json['glassUi'] as bool? ?? true,
       navBarStyle: switch (json['navBarStyle'] as String?) {
         'fluidGlass' => 'fluidGlass',
+        'squircle' => 'squircle', // 698 N36：漏写此枚举 → 重启回退第一款 bug
         _ => 'glassCapsule', // 未知值/缺省容错回默认款（698 N15-E）
       },
       versionPreference: json['versionPreference'] as String? ?? '',

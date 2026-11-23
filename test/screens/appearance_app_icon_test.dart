@@ -16,6 +16,8 @@ Future<ProviderContainer> _pump(
   bool tvMode = false,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
+  // N36：测试末自动复位（原测试手动复位，双保险兼容）。
+  addTearDown(() => debugDefaultTargetPlatformOverride = null);
   // 高视口：让外观页所有分节都被布局（ListView 懒构建，矮视口下方分节不 attach）。
   tester.view.physicalSize = const Size(1000, 4000);
   tester.view.devicePixelRatio = 1.0;
@@ -38,6 +40,38 @@ Future<ProviderContainer> _pump(
 }
 
 void main() {
+  testWidgets('导航栏样式行（N36）：手机布局显示且紧随首页轮播下方',
+      (tester) async {
+    await _pump(tester, platform: TargetPlatform.android);
+    expect(find.byKey(const ValueKey('navBarStyleEntry')), findsOneWidget,
+        reason: '手机布局（底部导航生效处）显示');
+    // 排序：导航栏样式在首页轮播正下方（用户拍板）。
+    final carouselY = tester.getTopLeft(find.text('首页轮播')).dy;
+    final navY = tester.getTopLeft(find.text('导航栏样式')).dy;
+    expect(navY, greaterThan(carouselY), reason: '在首页轮播下方');
+    final carouselBottom = tester.getBottomLeft(find.text('首页轮播')).dy;
+    expect(navY - carouselBottom, lessThan(120),
+        reason: '紧随其后（中间无其他行）');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('导航栏样式行（N36）：TV 模式隐藏（TV 走顶栏无底部导航）',
+      (tester) async {
+    await _pump(tester, platform: TargetPlatform.android, tvMode: true);
+    expect(find.byKey(const ValueKey('navBarStyleEntry')), findsNothing,
+        reason: 'TV 模式无底部导航 → 隐藏');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('导航栏样式行（N36）：桌面布局隐藏（侧边栏无底部导航）',
+      (tester) async {
+    // 视口宽 1000 = 断点值 → 桌面侧边栏布局。
+    await _pump(tester, platform: TargetPlatform.windows);
+    expect(find.byKey(const ValueKey('navBarStyleEntry')), findsNothing,
+        reason: '桌面侧边栏布局 → 隐藏');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('Android 非 TV：显示应用图标分组与 4 个选项', (tester) async {
     await _pump(tester, platform: TargetPlatform.android);
 

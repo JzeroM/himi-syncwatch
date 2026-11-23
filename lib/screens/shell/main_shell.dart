@@ -32,6 +32,12 @@ bool get _isDesktopPlatform {
       defaultTargetPlatform == TargetPlatform.linux;
 }
 
+/// 当前是否走桌面侧边栏布局（698 N36 公开助手：设置页「导航栏样式」
+/// 可见性与底部导航生效条件同源——桌面/TV 无底部导航，隐藏该设置）。
+bool isDesktopLayout(BuildContext context) =>
+    _isDesktopPlatform &&
+    MediaQuery.sizeOf(context).width >= kShellDesktopBreakpoint;
+
 /// 四标签壳：首页 / Emby服务器 / 声网配置 / 设置。
 ///
 /// - TV 模式（任意宽度）：顶部横排导航栏（遥控器左右键切换，常驻不隐藏）

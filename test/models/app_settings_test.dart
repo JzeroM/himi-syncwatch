@@ -1534,6 +1534,16 @@ void main() {
   });
 
   group('navBarStyle（698 N15-E 导航栏样式）', () {
+    test('存档读回：squircle/fluidGlass/glassCapsule 不丢（N36 回归）', () {
+      for (final style in ['squircle', 'fluidGlass', 'glassCapsule']) {
+        final settings = AppSettings.fromJson({'navBarStyle': style});
+        expect(settings.navBarStyle, style, reason: '$style 读回不丢');
+      }
+      // 未知值/缺省容错回默认款。
+      expect(AppSettings.fromJson({'navBarStyle': 'unknown'}).navBarStyle,
+          'glassCapsule');
+      expect(AppSettings.fromJson(const {}).navBarStyle, 'glassCapsule');
+    });
     test('默认玻璃水滴款；JSON 往返与未知值容错', () {
       const d = AppSettings();
       expect(d.navBarStyle, 'glassCapsule');

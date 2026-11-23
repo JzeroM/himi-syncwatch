@@ -288,6 +288,34 @@ void main() {
           reason: '落位吸附槽中心');
     });
 
+    testWidgets('标签不偏心（N36 错位修复）：切换后标签中心 = 浮块中心',
+        (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pump();
+      // 切到视觉槽 3（声网），再切回视觉槽 2（首页）——_from 长文本后
+      // 回短文本，旧实现盒宽 max() 会偏心。
+      await tester.tapAt(Offset(SquircleNavBar.slotCx(3, 800), 400 - 27));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.tapAt(Offset(SquircleNavBar.slotCx(2, 800), 400 - 27));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final blockCx =
+          tester.getRect(find.byKey(SquircleNavBar.blockKey)).center.dx;
+      final labelCx = tester.getRect(find.text('首页')).center.dx;
+      expect((labelCx - blockCx).abs(), lessThan(3),
+          reason: '标签中心恒 = 浮块中心（宽度同源，不偏心）');
+    });
+
+    test('镜片参数按尺寸收敛（N36）：玻璃不外扩糊条', () {
+      // 标签高 20：edgeZone 4 / rim 1.2（edgeZone 20≥高 → 全形体边缘区
+      // =「空心框」根因）。
+      expect(4, lessThan(SquircleNavBar.labelHeight / 2),
+          reason: '标签 edgeZone < 半高（不糊满）');
+      expect(10, lessThan(SquircleNavBar.block / 2),
+          reason: '浮块 edgeZone < 半宽');
+    });
+
     testWidgets('命中区满槽宽（N29 教训）：每槽 = 1/5 条宽 × 满高',
         (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));

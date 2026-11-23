@@ -4,6 +4,7 @@ import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
+import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
@@ -71,6 +72,29 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                       .update(homeCarousel: v),
                 ),
               ),
+            // 698 N36：导航栏样式仅手机布局显示（底部导航生效处）——
+            // TV 走 TV 顶栏、桌面走侧边栏，均无底部导航，隐藏该行；
+            // 紧跟「首页轮播」下方（用户拍板排序）。
+            if (!settings.tvMode && !isDesktopLayout(context))
+              settingsTvWrapRow(
+                tvMode: settings.tvMode,
+                onTap: () => _showNavBarStyleSheet(context, ref),
+                child: ListTile(
+                  key: const ValueKey('navBarStyleEntry'),
+                  leading: const Icon(Icons.view_carousel_outlined),
+                  title: const Text('导航栏样式'),
+                  subtitle: Text(
+                    '底部导航栏形态与动效（液态玻璃质感）· 当前：'
+                    '${NavBarStyle.parse(settings.navBarStyle).label}',
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Colors.white54,
+                  ),
+                  onTap: () => _showNavBarStyleSheet(context, ref),
+                ),
+              ),
             settingsTvWrapRow(
               tvMode: settings.tvMode,
               onTap: () => context.push('/settings/general/tmdb'),
@@ -88,25 +112,6 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ),
             ),
             const _CategoryColumnsSection(),
-            settingsTvWrapRow(
-              tvMode: settings.tvMode,
-              onTap: () => _showNavBarStyleSheet(context, ref),
-              child: ListTile(
-                key: const ValueKey('navBarStyleEntry'),
-                leading: const Icon(Icons.view_carousel_outlined),
-                title: const Text('导航栏样式'),
-                subtitle: Text(
-                  '底部导航栏形态与动效（液态玻璃质感）· 当前：'
-                  '${NavBarStyle.parse(settings.navBarStyle).label}',
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Colors.white54,
-                ),
-                onTap: () => _showNavBarStyleSheet(context, ref),
-              ),
-            ),
           ],
         ),
         SettingsGroupCard(
