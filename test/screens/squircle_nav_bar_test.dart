@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/screens/shell/nav_palette.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/squircle_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -43,37 +43,49 @@ void main() {
   }
 
   group('悬浮方块（698 N32）', () {
-    test('主题色渐变 + 深图标压亮底 + null 回退', () {
-      const theme = 0xFF6750A4;
-      final g = NavPalette.dropGradient(theme);
-      expect(g.last, const Color(theme), reason: '底右 = 主题色本色');
-      expect(g.first.computeLuminance(), greaterThan(g.last.computeLuminance()),
-          reason: '顶左 = 主题色提亮 55%（体积渐变）');
-      final fb = NavPalette.dropGradient(null);
-      expect(fb, [NavPalette.dropFallbackLight, NavPalette.dropFallbackDeep],
-          reason: 'null 回退银白玻璃渐变');
-      final ink = NavPalette.dropInkColor(theme);
-      expect(ink.computeLuminance(), lessThan(g.first.computeLuminance()),
-          reason: '深图标压亮底（视频同构）');
-      expect(NavPalette.dropInkColor(null), NavPalette.inkFallback);
+    test('玻璃水滴镜片参数（N34）：无色中性（不跟随主题色）', () {
+      final settings = SquircleNavBar.lensSettings();
+      expect(settings.glassColor.opacity, lessThan(0.12),
+          reason: '无色中性白纱（α~0.08，折射透亮）');
+      expect(settings.blur, greaterThan(0),
+          reason: 'Skia 捕获钥匙（GlassEffect 门槛）');
     });
 
-    testWidgets('条体 = GlassContainer（①款同源双形态）+ 浮块主题色渐变',
-        (tester) async {
+    testWidgets('条体 = GlassContainer（①款同源双形态）+ 浮块玻璃水滴'
+        '（GlassEffect + 白图标，不跟主题色）', (tester) async {
       await tester.pumpWidget(host(
-        settings: const AppSettings(themeColor: 0xFF6750A4),
+        settings: const AppSettings(
+            glassUi: true, themeColor: 0xFF6750A4),
         onSelect: (_) {},
       ));
       expect(find.byKey(SquircleNavBar.barKey), findsOneWidget);
       expect(find.byType(GlassContainer), findsWidgets,
           reason: '条体①款同源 GlassContainer');
-      // 浮块渐变含主题色。
-      final block = tester.widget<DecoratedBox>(
-          find.byKey(SquircleNavBar.blockKey));
-      final shape = block.decoration as ShapeDecoration;
-      final grad = shape.gradient as LinearGradient;
-      expect(grad.colors.last, const Color(0xFF6750A4),
-          reason: '浮块渐变底右 = 主题色本色');
+      // 浮块 = ①款同源 GlassEffect 玻璃水滴（真折射镜片）。
+      expect(find.byType(GlassEffect), findsWidgets,
+          reason: '浮块/标签 = ①款 LiquidBlobLens 同管线真折射镜片');
+      // 图标白色（N34：不跟主题色）。
+      final icons = tester
+          .widgetList<Icon>(find.descendant(
+            of: find.byKey(SquircleNavBar.blockKey),
+            matching: find.byType(Icon),
+          ))
+          .toList();
+      expect(icons, isNotEmpty);
+      for (final icon in icons) {
+        expect(icon.color, Colors.white, reason: '浮块内图标白色（①款风格）');
+      }
+    });
+
+    testWidgets('玻璃关 = 平涂磨砂近似（零 GlassEffect）', (tester) async {
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: false),
+        onSelect: (_) {},
+      ));
+      expect(find.byType(GlassEffect), findsNothing,
+          reason: '玻璃关零 shader');
+      expect(find.byKey(SquircleNavBar.blockKey), findsOneWidget,
+          reason: '平涂磨砂浮块保持');
     });
 
     testWidgets('跳槽弹滑：点第 4 槽 → 浮块/标签落位该槽 + onSelect',
@@ -138,6 +150,12 @@ void main() {
           SquircleNavBar.notchGap;
       expect(topNotchY, closeTo(37, 0.5),
           reason: '顶凹口底 = 浮块底 + 7dp 间距');
+      // N34：凹口 = 形体外扩轮廓（缘距 7dp 平行）——块侧缘 x±22 处
+      // 凹口在 x±29（平行 7dp），点测验证。
+      expect(p0.contains(Offset(slot0 - 25, 10)), isFalse,
+          reason: '块左缘外 3dp 在凹口空腔内（外扩轮廓内侧）');
+      expect(p0.contains(Offset(slot0 - 33, 10)), isTrue,
+          reason: '块左缘外 11dp 已出凹口（外扩轮廓外侧实心）');
       // 凹口跟随：p0 在槽 0 → (80, 30) 处是凹口空腔（不在条内）；
       // p4 在槽 4 → 凹口移到 720，(80, 30) 变实心条体。
       expect(p0.contains(const Offset(80, 30)), isFalse,
@@ -171,14 +189,14 @@ void main() {
       expect(bTop, closeTo(14 + 8 - 22, 1), reason: '块心在条上缘附近');
       expect(bBottom, greaterThan(14),
           reason: '块底部叠入条体（顶凹口托住）');
-      expect(bBottom, lessThan(14 + 54),
+      expect(bBottom, lessThan(14 + SquircleNavBar.navHeight),
           reason: '块不穿出条下缘');
       final labelRect = tester.getRect(find.text('首页'));
       final lTop = labelRect.top - boxTop;
       final lBottom = labelRect.bottom - boxTop;
-      expect(lTop, lessThan(14 + 54),
+      expect(lTop, lessThan(14 + SquircleNavBar.navHeight),
           reason: '标签顶部在条内（骑跨下缘）');
-      expect(lBottom, greaterThan(14 + 54),
+      expect(lBottom, greaterThan(14 + SquircleNavBar.navHeight),
           reason: '标签底部露出条外（骑跨下缘）');
       expect(lBottom, lessThanOrEqualTo(SquircleNavBar.boxHeight + 1),
           reason: '标签不出盒底（N33 防屏幕裁切）');
