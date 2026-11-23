@@ -23,6 +23,8 @@ class DotsEllipsisText extends StatelessWidget {
     this.textAlign = TextAlign.center,
     this.lastLineInset = 0,
     this.firstLineInset = 0,
+    this.trailing,
+    this.trailingGap = 6,
   });
 
   final String text;
@@ -37,6 +39,14 @@ class DotsEllipsisText extends StatelessWidget {
   /// 首行左截断位（逻辑 px，698 N24）：首行可用宽 = 满宽 − firstLineInset，
   /// 居中钳位到不进左侧避让区。
   final double firstLineInset;
+
+  /// 末行行尾跟随件（698 N31）：如详情简介图标胶囊——紧跟末行实际行尾
+  /// + [trailingGap]（垂直居中于末行行盒），不再固定块角。调用方须传
+  /// [lastLineInset] ≥ 跟随件宽 + gap（防长文溢出右缘）。
+  final Widget? trailing;
+
+  /// 跟随件与末行行尾的间距（逻辑 px，默认 6）。
+  final double trailingGap;
 
   /// 三点省略号（守卫断言用；绘制即此字面量）。
   @visibleForTesting
@@ -222,11 +232,37 @@ class DotsEllipsisText extends StatelessWidget {
     double offsetX2 = 0,
     double offsetY2 = 0,
   }) {
-    return Semantics(
+    final textPaint = Semantics(
       label: text,
       child: CustomPaint(
         size: size,
         painter: _DotsTextPainter(painter, painterB, offsetX, offsetX2, offsetY2),
+      ),
+    );
+    final trail = trailing;
+    if (trail == null) return textPaint;
+    // 698 N31：跟随件贴末行实际行尾 + trailingGap，垂直居中于末行行盒
+    //（文字到哪跟到哪；右缘由 lastLineInset 避让区兜底不溢出）。
+    final lastPainter = painterB ?? painter;
+    final lineEndX = (painterB != null ? offsetX2 : offsetX) + lastPainter.width;
+    final lineTop = painterB != null ? offsetY2 : 0.0;
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(left: 0, top: 0, child: textPaint),
+          Positioned(
+            left: lineEndX + trailingGap,
+            top: lineTop,
+            height: lastPainter.height,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: trail,
+            ),
+          ),
+        ],
       ),
     );
   }

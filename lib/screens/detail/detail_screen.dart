@@ -2108,52 +2108,43 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        // 698 N13/N16/N24/N26：简介 2 行居中（TV 1 行防
-                        // 溢出），三点省略号仅末行行尾；**图标胶囊在第二行
-                        // 行尾**（N26 撤回 N24 行首），末行右避让 48 不压字
-                        // （lastLineInset，胶囊只留☰图标整体缩短）；点开
-                        // 浮层展开全部简介。
-                        Stack(
-                          children: [
-                            DotsEllipsisText(
-                              item.overview!,
-                              maxLines: tv ? 1 : 2,
-                              textAlign: TextAlign.center,
-                              lastLineInset: 48,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 13,
-                                height: 1.5,
-                                shadows: DetailScreen.heroTextShadows,
-                              ),
-                            ),
-                            // 698 N27：胶囊压进第二行行盒（高 ≈20 ≤ 行盒
-                            // 19.5），不侵第一行。
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: TvFocusable(
-                                onTap: _toggleOverview,
-                                child: GlassContainer(
-                                  borderRadius: const BorderRadius.all(
-                                      Radius.circular(10)),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 3),
-                                  child: Semantics(
-                                    button: true,
-                                    label: _overviewVisible ? '收起简介' : '展开简介',
-                                    child: Icon(
-                                      _overviewVisible
-                                          ? Icons.unfold_less
-                                          : Icons.subject,
-                                      size: 14,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
+                        // 698 N13/N16/N24/N26/N27/N31：简介 2 行居中
+                        // （TV 1 行防溢出），三点省略号仅末行行尾；图标胶囊
+                        // 由 trailing **紧跟第二行文字结尾 +6px**（N31
+                        // 用户拍板「不靠右」），末行右避让 48 防长文溢出；
+                        // 点开浮层展开全部简介。
+                        DotsEllipsisText(
+                          item.overview!,
+                          maxLines: tv ? 1 : 2,
+                          textAlign: TextAlign.center,
+                          lastLineInset: 48,
+                          trailing: TvFocusable(
+                            onTap: _toggleOverview,
+                            child: GlassContainer(
+                              borderRadius: const BorderRadius.all(
+                                  Radius.circular(10)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 3),
+                              child: Semantics(
+                                button: true,
+                                label:
+                                    _overviewVisible ? '收起简介' : '展开简介',
+                                child: Icon(
+                                  _overviewVisible
+                                      ? Icons.unfold_less
+                                      : Icons.subject,
+                                  size: 14,
+                                  color: Colors.white70,
                                 ),
                               ),
                             ),
-                          ],
+                          ),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            height: 1.5,
+                            shadows: DetailScreen.heroTextShadows,
+                          ),
                         ),
                       ],
                       // 多平台评分行（698，N13 移位到简介行下方）：与首页

@@ -297,6 +297,15 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   /// 设置子滴 → 壳层分支下标（ShellNavBar.tab 组）。
   static const int settingsBranch = 4;
 
+  /// 轴向拉丝滴（698 N31）：母滴↔右子滴连线轴中点的 goo-only 液滴盘——
+  /// N29 删掉的卫星滴曾沿该轴飞行（= goo alpha 轴向填充 = 右桥拉丝感
+  /// 来源）。此滴**不飞行不成球**：分裂中段出现→随分离缩小消失（扯断
+  /// 感），收回反向；只参与 goo 液桥，视觉上就是「丝」的一部分。
+  static const double strandStart = 0.45;
+  static const double strandEnd = 0.88;
+  static const double strandRadius = 6;
+  static const Key dropStrandKey = ValueKey('fluidDropStrand');
+
   /// 瓣叶钮分支分配（N28：左瓣 首页/收藏、右瓣 Emby/声网）。
   @visibleForTesting
   static const List<List<int>> lobeBranches = [[0, 1], [2, 3]];
@@ -312,6 +321,7 @@ class _DropState {
     required this.center,
     required this.radius,
     this.rimAlpha = 1,
+    this.gooOnly = false,
   });
 
   final Key key;
@@ -326,6 +336,9 @@ class _DropState {
   /// 滴体白框透明度（698 N30）：母滴恒 1（收起态融合大滴保留玻璃边缘
   /// 感）；三子滴 = 1 − 分裂进度（展开落位无框，收回淡回满框）。
   final double rimAlpha;
+
+  /// 仅参与 goo 液桥（698 N31 轴向拉丝滴）：不进滴层渲染。
+  final bool gooOnly;
 }
 
 /// 液滴几何（纯函数：goo 层与视觉层同源，jurajkusnier 机制）。
@@ -371,7 +384,31 @@ List<_DropState> _computeDrops(double t, double totalWidth) {
     ));
   }
 
-  // 卫星滴已移除（698 N29 用户拍板：原设计应是扯断滴，直接删）。
+  // 轴向拉丝滴（698 N31）：母↔右子滴轴中点的 goo-only 液滴盘——分裂
+  // 中段出现→随分离缩小消失（扯断感），收回反向（丝重新长出并回吸）。
+  final pStrand = FluidGlassNavBar.interval(
+    t,
+    FluidGlassNavBar.strandStart,
+    FluidGlassNavBar.strandEnd,
+  );
+  if (pStrand > 0 && pStrand < 1) {
+    final eR = Curves.fastOutSlowIn.transform(FluidGlassNavBar.interval(
+      t,
+      FluidGlassNavBar.splitStarts[2],
+      FluidGlassNavBar.splitEnds[2],
+    ));
+    final rightPos = Offset.lerp(
+      m,
+      FluidGlassNavBar.childTarget(2, totalWidth: totalWidth),
+      eR,
+    )!;
+    out.add(_DropState(
+      key: FluidGlassNavBar.dropStrandKey,
+      center: Offset.lerp(m, rightPos, 0.5)!,
+      radius: FluidGlassNavBar.strandRadius * (1 - pStrand),
+      gooOnly: true,
+    ));
+  }
   return out;
 }
 
@@ -650,7 +687,9 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
 
   Widget _dropLayer(
       double t, double totalWidth, bool glassOn, int? themeColor) {
-    final drops = _dedup(_computeDrops(t, totalWidth));
+    // gooOnly（轴向拉丝滴）只参与 goo 液桥，不进滴层。
+    final drops = _dedup(
+        _computeDrops(t, totalWidth).where((d) => !d.gooOnly).toList());
     final children = <Widget>[
       for (final d in drops)
         Positioned(

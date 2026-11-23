@@ -325,6 +325,61 @@ void main() {
       expect(sideOf(tester).width, 1, reason: '收回后白框恢复');
     });
 
+    testWidgets('轴向拉丝滴（N31）：goo 层有滴层无、母↔右子滴轴中点、'
+        '随分离缩小消失、收回反向', (tester) async {
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: false),
+        onSelect: (_) {},
+      ));
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 750)); // t≈0.65
+      final strand = find.byKey(FluidGlassNavBar.dropStrandKey);
+      expect(strand, findsOneWidget, reason: '分裂中段拉丝滴出现');
+
+      // gooOnly：只参与 goo 液桥，不进滴层。
+      expect(
+        find.descendant(
+            of: find.byKey(FluidGlassNavBar.gooKey), matching: strand),
+        findsOneWidget,
+        reason: 'goo 层含拉丝滴（液桥丝的一部分）',
+      );
+      expect(
+        find.descendant(
+            of: find.byKey(FluidGlassNavBar.flatDropsKey), matching: strand),
+        findsNothing,
+        reason: '滴层不含拉丝滴（不成独立小球）',
+      );
+
+      // 位置 = 母↔右子滴当前轴中点（条顶坐标 → 全局换算）。
+      final navTopLeft =
+          tester.getTopLeft(find.byType(FluidGlassNavBar));
+      final m = navTopLeft +
+          const Offset(0, FluidGlassNavBar.flyZone) +
+          FluidGlassNavBar.motherCenter(totalWidth: 800);
+      final rightPos = dropCenter(tester, FluidGlassNavBar.dropChildKeys[2]);
+      final strandPos = dropCenter(tester, FluidGlassNavBar.dropStrandKey);
+      expect((strandPos - (m + rightPos) / 2).distance, lessThan(2.0),
+          reason: '轴中点定位（随右子滴实时移动）');
+
+      // 随分离缩小（扯断感）。
+      final r1 = tester.renderObject<RenderBox>(strand).size.width / 2;
+      await tester.pump(const Duration(milliseconds: 180)); // t≈0.81
+      final r2 = tester.renderObject<RenderBox>(strand).size.width / 2;
+      expect(r2, lessThan(r1), reason: '随分离缩小');
+
+      // 分离完成消失。
+      await tester.pump(const Duration(milliseconds: 300)); // t=1
+      expect(strand, findsNothing, reason: '展开拉满后拉丝滴消失');
+
+      // 收回反向：丝重新长出。
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 380)); // 反向 t≈0.55
+      expect(find.byKey(FluidGlassNavBar.dropStrandKey), findsOneWidget,
+          reason: '收回经过断颈点时丝重新长出');
+    });
+
     testWidgets('goo 浓度后置（N28 拉丝回归修复）：液体满不透明参与阈值、'
         '整体浓度在阈值后 Opacity 层', (tester) async {
       await tester.pumpWidget(host(

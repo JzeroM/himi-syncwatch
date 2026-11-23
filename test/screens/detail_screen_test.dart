@@ -3690,25 +3690,41 @@ void main() {
       final overviewY = tester.getTopLeft(overview).dy;
       expect(badgeY, greaterThan(overviewY),
           reason: '评分行移到简介行下方（698 N13）');
-      // 698 N26：图标胶囊回第二行行尾（右下角，撤回 N24 行首）；只留
-      // ☰ 图标整体缩短（≤40 宽）；末行右避让 48（lastLineInset 不压字）。
+      // 698 N31：图标胶囊**紧跟末行文字结尾 +6px**（不再贴右缘固定位）。
       final overviewRect = tester.getRect(overview);
       final capsuleRect = tester.getRect(overviewBtn);
       expect(overviewRect.width, greaterThan(300),
           reason: '首行满宽（首行无内缩）');
-      expect(capsuleRect.right, closeTo(overviewRect.right, 1.0),
-          reason: '胶囊贴简介块右缘（第二行行尾）');
-      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 3.0),
-          reason: '胶囊贴第二行行尾');
+      // 期望末行行尾 = DotsEllipsisText 同源排版计算（fixture 短文本单行）。
+      const style = TextStyle(color: Colors.white70, fontSize: 13, height: 1.5);
+      final painter = DotsEllipsisText.buildPainter(
+        text: _item.overview!,
+        maxWidth: overviewRect.width - 48,
+        style: style,
+        maxLines: 1,
+        textAlign: TextAlign.left,
+        textDirection: TextDirection.ltr,
+      );
+      final offsetX = DotsEllipsisText.firstLineX(
+        maxWidth: overviewRect.width,
+        lineWidth: painter.width,
+        textAlign: TextAlign.center,
+      ).clamp(0.0, (overviewRect.width - 48 - painter.width)
+          .clamp(0.0, double.infinity));
+      final lineEnd = overviewRect.left + offsetX + painter.width;
+      expect(capsuleRect.left, closeTo(lineEnd + 6, 3.0),
+          reason: 'N31：胶囊紧跟末行行尾 +6px（间距不要太大）');
+      expect(capsuleRect.right, lessThan(overviewRect.right - 20),
+          reason: 'N31：短简介胶囊不贴右缘（跟随文字结尾）');
       expect(capsuleRect.width, lessThanOrEqualTo(44),
           reason: '只留☰图标整体缩短');
-      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right - 48),
-          reason: '胶囊整体在末行截断位（48）内 → 不压字');
       expect(capsuleRect.height, lessThanOrEqualTo(22),
-          reason: '胶囊压进第二行行盒（≈20 ≤ 行盒 19.5，N27 修正）');
-      // 本 fixture 简介短（单行）→ 胶囊与唯一行同高，不外溢块顶即可。
+          reason: '胶囊压进行盒（≈20 ≤ 行盒 19.5，N27）');
+      // 本 fixture 简介短（单行）→ 胶囊垂直居中于行盒、不外溢块顶。
       expect(capsuleRect.top, greaterThanOrEqualTo(overviewRect.top - 2),
           reason: '单行：胶囊不外溢块顶');
+      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 3.0),
+          reason: '胶囊垂直居中于末行行盒');
     });
 
     testWidgets('两行简介：胶囊压进第二行行盒不侵第一行（698 N27）',
