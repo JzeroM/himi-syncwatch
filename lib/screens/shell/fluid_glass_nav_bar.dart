@@ -30,7 +30,7 @@ import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 /// **几何/动效（视频逐帧 + jurajkusnier 源码 1:1，N22 不动）**：
 /// 三滴常驻融合/裂开（区间 0/0.1/0.2 → 0.8/0.9/1.0，FastOutSlowIn）、
 /// blur σ15 + 硬阈值液桥（近触厚颈拉丝）、＋ 旋 225°、中央空滴缩没、
-/// 400ms 环脉冲、图标随滴飞（我们自己的图标）、卫星小液滴、
+/// 400ms 环脉冲、图标随滴飞（我们自己的图标）、
 /// 透镜叶形条（顶缘八字拱/底缘微下拱）+ 凹口弧与母滴同心恒距 4dp。
 class FluidGlassNavBar extends ConsumerStatefulWidget {
   const FluidGlassNavBar({
@@ -126,8 +126,6 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   /// 子滴横向间距（±）。
   static const double childSpread = 92;
 
-  /// 卫星小液滴半径（视频 f39 细节）。
-  static const double satelliteRadius = 5;
 
   // ── 液桥参数（jurajkusnier 1:1，守卫直查）────────────────────────
 
@@ -172,11 +170,6 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   static const List<double> iconFadeStarts = [0.2, 0.3, 0.4];
   static const List<double> iconFadeEnds = [0.7, 0.8, 0.9];
 
-  /// 卫星液滴飞行/淡出（视频 f39 细节）。
-  static const double satelliteStart = 0.55;
-  static const double satelliteEnd = 0.78;
-  static const double satelliteFadeStart = 0.70;
-  static const double satelliteFadeEnd = 0.84;
 
   /// 归一化区间映射（@visibleForTesting：时间线语义单测直查）。
   @visibleForTesting
@@ -192,11 +185,6 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
     final dy = -childRise - (i == 1 ? centerExtraRise : 0);
     return Offset(cx + dx, motherCenterY + dy);
   }
-
-  /// 卫星液滴飞行终点（条顶坐标系）。
-  @visibleForTesting
-  static Offset satelliteTarget({required double totalWidth}) =>
-      Offset(totalWidth / 2 + 74, motherCenterY - 52);
 
   /// 母滴圆心（条顶坐标系）。
   @visibleForTesting
@@ -285,7 +273,6 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
     ValueKey('fluidDropChild1'),
     ValueKey('fluidDropChild2'),
   ];
-  static const Key dropSatKey = ValueKey('fluidDropSat');
 
   /// 中央悬浮钮（＋↔×）。
   static const Key centerKey = ValueKey('fluidCenterButton');
@@ -324,7 +311,6 @@ class _DropState {
     required this.key,
     required this.center,
     required this.radius,
-    this.opacity = 1,
   });
 
   final Key key;
@@ -333,7 +319,8 @@ class _DropState {
   /// 视觉半径（goo 层用 [FluidGlassNavBar.gooRadius] 补偿绘制）。
   final double radius;
 
-  final double opacity;
+  /// 光学不透明度（698 N29 卫星滴移除后恒 1，保留字段供淡入扩展）。
+  final double opacity = 1;
 }
 
 /// 液滴几何（纯函数：goo 层与视觉层同源，jurajkusnier 机制）。
@@ -377,31 +364,7 @@ List<_DropState> _computeDrops(double t, double totalWidth) {
     ));
   }
 
-  // 卫星小液滴（飞散 + 淡出，视频 f39 细节）。
-  final sat = FluidGlassNavBar.interval(
-    t,
-    FluidGlassNavBar.satelliteStart,
-    FluidGlassNavBar.satelliteEnd,
-  );
-  if (sat > 0 && sat < 1) {
-    final fade = 1 -
-        FluidGlassNavBar.interval(
-          t,
-          FluidGlassNavBar.satelliteFadeStart,
-          FluidGlassNavBar.satelliteFadeEnd,
-        );
-    final pos = Offset.lerp(
-      m + const Offset(8, -8),
-      FluidGlassNavBar.satelliteTarget(totalWidth: totalWidth),
-      sat,
-    )!;
-    out.add(_DropState(
-      key: FluidGlassNavBar.dropSatKey,
-      center: pos,
-      radius: FluidGlassNavBar.satelliteRadius * (0.6 + 0.4 * fade),
-      opacity: fade.clamp(0.0, 1.0),
-    ));
-  }
+  // 卫星滴已移除（698 N29 用户拍板：原设计应是扯断滴，直接删）。
   return out;
 }
 
@@ -724,11 +687,12 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   }
 
   Widget _lobePair(List<int> branches) {
+    // 698 N29：两钮各 Expanded 均分半瓣宽——命中区 = 半瓣宽 × 满 navHeight
+    //（原来只内容自适应 ~44px → 四周死区点不到）；视觉不变（内容仍居中）。
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         for (final b in branches)
-          _lobeTab(b, selected: widget.currentIndex == b),
+          Expanded(child: _lobeTab(b, selected: widget.currentIndex == b)),
       ],
     );
   }
@@ -739,27 +703,29 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _selectTab(i),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              selected
-                  ? ShellNavBar.tabSelectedIcons[i]
-                  : ShellNavBar.tabIcons[i],
-              // N28：两钮并排缩比（22→20 / 11→10）。
-              size: 20,
-              color: selected ? Colors.white : Colors.white70,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              ShellNavBar.tabLabels[i],
-              style: TextStyle(
-                fontSize: 10,
+        child: SizedBox.expand(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected
+                    ? ShellNavBar.tabSelectedIcons[i]
+                    : ShellNavBar.tabIcons[i],
+                // N28：两钮并排缩比（22→20 / 11→10）。
+                size: 20,
                 color: selected ? Colors.white : Colors.white70,
-                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                ShellNavBar.tabLabels[i],
+                style: TextStyle(
+                  fontSize: 10,
+                  color: selected ? Colors.white : Colors.white70,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

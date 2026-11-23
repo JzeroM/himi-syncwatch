@@ -237,13 +237,36 @@ void main() {
       expect(st.calls, [4], reason: '面板保持收起（子滴禁用）——收了不得又开');
     });
 
-    testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
+    testWidgets('卫星滴零残留（N29 移除）+ 分裂全程只有 3 子滴', (tester) async {
       await tester.pumpWidget(host(onSelect: (_) {}));
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 770)); // t≈0.67
-      expect(find.byKey(FluidGlassNavBar.dropSatKey), findsOneWidget,
-          reason: '视频 f39：分裂末段卫星液滴飞散');
+      await tester.pump(const Duration(milliseconds: 770)); // t≈0.67 原卫星窗
+      expect(find.byKey(const ValueKey('fluidDropSat')), findsNothing,
+          reason: '卫星滴已移除（N29 拍板）');
+      for (final k in FluidGlassNavBar.dropChildKeys) {
+        expect(find.byKey(k), findsOneWidget, reason: '三子滴本体不变');
+      }
+    });
+
+    testWidgets('瓣叶钮命中区（N29）：均分半瓣宽、满 navHeight——四周无死区',
+        (tester) async {
+      await tester.pumpWidget(host(onSelect: (_) {}));
+      await tester.pump();
+      final bar = tester.getRect(find.byType(FluidGlassNavBar));
+      final navH = FluidGlassNavBar.navHeight;
+      for (final label in ['首页', '收藏', 'Emby', '声网']) {
+        final hit = find.ancestor(
+          of: find.text(label),
+          matching: find.byType(GestureDetector),
+        );
+        final r = tester.getRect(hit.first);
+        expect(r.width, greaterThanOrEqualTo(60),
+            reason: '$label 命中区 ≥ 半瓣宽（原来 ~44px 内容宽点不到）');
+        expect(r.height, greaterThanOrEqualTo(navH - 2),
+            reason: '$label 命中区满 navHeight');
+        expect(r.bottom, closeTo(bar.bottom, 1.0));
+      }
     });
   });
 
@@ -395,13 +418,9 @@ void main() {
           reason: 'null → 银白单色回退');
     });
 
-    test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {
+    test('收起更快（反序吸收紧凑）', () {
       expect(FluidGlassNavBar.collapseDuration,
           lessThan(FluidGlassNavBar.expandDuration));
-      final t = FluidGlassNavBar.satelliteTarget(totalWidth: 800);
-      expect(t.dx, greaterThan(400), reason: '向右飞散');
-      expect(t.dy, lessThan(FluidGlassNavBar.motherCenterY),
-          reason: '向上飞散');
     });
   });
 }
