@@ -2127,6 +2127,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 shadows: DetailScreen.heroTextShadows,
                               ),
                             ),
+                            // 698 N27：胶囊压进第二行行盒（高 ≈20 ≤ 行盒
+                            // 19.5），不侵第一行。
                             Positioned(
                               right: 0,
                               bottom: 0,
@@ -2134,9 +2136,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 onTap: _toggleOverview,
                                 child: GlassContainer(
                                   borderRadius: const BorderRadius.all(
-                                      Radius.circular(12)),
+                                      Radius.circular(10)),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 5),
+                                      horizontal: 6, vertical: 3),
                                   child: Semantics(
                                     button: true,
                                     label: _overviewVisible ? '收起简介' : '展开简介',
@@ -2144,7 +2146,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                       _overviewVisible
                                           ? Icons.unfold_less
                                           : Icons.subject,
-                                      size: 16,
+                                      size: 14,
                                       color: Colors.white70,
                                     ),
                                   ),

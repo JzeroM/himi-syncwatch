@@ -7,10 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
-import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
-import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 /// 流体液态导航（698 N17-N22，样式注册表第②款）：Dribbble「Bottom
 /// Navigation Micro Interaction」**几何/动效/图标 1:1 复刻**（N21 真机
@@ -47,35 +44,37 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
 
   // ── 玻璃色板（698 N22，守卫直查）────────────────────────────────
 
-  /// 真折射滴主题色纱浓度（698 N26：**主题色 tint**——折射滴后页面内容
-  /// 染主题色调；设了主题色 α0.30、未设中性白纱 α0.20）。
-  static const double dropTintAlphaTheme = 0.30;
-  static const double dropTintAlphaFallback = 0.20;
+  /// 滴体主题色平涂浓度（698 N27：**主题色磨砂玻璃、无渐变**——
+  /// 平涂半透主题色叠轻磨砂透底；折射/色散全去）。
+  static const double dropFlatAlpha = 0.40;
 
-  /// 真物理色散强度（shader [PATCH himi] ×4.0 内部加强；1.0 = 滴缘
-  /// 红蓝色散明显）。
-  static const double dropChroma = 1.0;
+  /// 未设主题色回退：银白单色平涂浓度。
+  static const double dropFallbackAlpha = 0.28;
 
-  /// 真折射滴放大/增强强度（interactionIntensity）。
-  static const double dropGlassIntensity = 0.6;
+  /// 轻磨砂透底强度（BackdropFilter σ；背景隐约透出）。
+  static const double dropFrostSigma = 5;
 
-  /// 玻璃球滴层（玻璃开）/ 平涂滴层（玻璃关）——双形态判别。
-  static const Key glassBallsKey = ValueKey('fluidGlassBalls');
+  /// 滴 rim（细亮边，玻璃边缘感）。
+  static const Color dropRim = Color(0x66FFFFFF); // 白 α0.4
+
+  /// 磨砂滴层（玻璃开）/ 平涂滴层（玻璃关）——双形态判别。
+  static const Key frostedDropsKey = ValueKey('fluidFrostedDrops');
   static const Key flatDropsKey = ValueKey('fluidFlatDrops');
 
-  /// 滴色回退（698 N24：主题色 null = 跟随默认底色 → 银白玻璃渐变）。
-  static const Color dropFallbackLight = Color(0xFFF4F5F8);
-  static const Color dropFallbackDeep = Color(0xFFC6CAD3);
-
-  /// 滴渐变（698 N24：**跟随主题色**——顶左 = 主题色提亮 45%、
-  /// 底右 = 主题色本色；null 回退银白玻璃渐变）。
+  /// 滴/goo 液体纯色（698 N27：**无渐变单色**——主题色本色；
+  /// null 回退银白单色）。
   @visibleForTesting
-  static List<Color> dropGradient(int? themeColorValue) {
-    if (themeColorValue == null) {
-      return const [dropFallbackLight, dropFallbackDeep];
-    }
-    final accent = Color(themeColorValue);
-    return [Color.lerp(Colors.white, accent, 0.55)!, accent];
+  static Color dropFlatColor(int? themeColorValue) {
+    return themeColorValue != null
+        ? Color(themeColorValue)
+        : const Color(0xFFFFFFFF);
+  }
+
+  /// 滴/goo 平涂浓度（主题色 0.40 / 银白回退 0.28——goo 液桥层叠 blur
+  /// + 硬阈值后视觉略减，与滴体同浓度同族）。
+  @visibleForTesting
+  static double dropFlatOpacity(int? themeColorValue) {
+    return themeColorValue != null ? dropFlatAlpha : dropFallbackAlpha;
   }
 
   // ── 几何常量（视频像素实测，守卫直查）───────────────────────────
@@ -462,9 +461,8 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   Widget build(BuildContext context) {
     // 698 N24：滴色调跟随主题色（null = 默认底色 → 银白回退）。
     final themeColor = ref.watch(settingsProvider.select((s) => s.themeColor));
-    // 698 N26：双形态——开 = 真折射滴（主题色 tint），关 = 平涂主题色渐变滴。
+    // 698 N27：双形态——开 = 主题色磨砂玻璃滴（轻磨砂透底），关 = 平涂滴。
     final glassOn = ref.watch(settingsProvider.select((s) => s.glassUi));
-    final tuning = ref.watch(glassTuningProvider);
 
     return SizedBox(
       // 盒子含飞行区：展开三钮在凹口上方，命中不被 54 高盒子截断；
@@ -490,7 +488,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
                     children: [
                       _bar(totalWidth),
                       _gooLayer(t, totalWidth, themeColor),
-                      _dropLayer(t, totalWidth, glassOn, tuning, themeColor),
+                      _dropLayer(t, totalWidth, glassOn, themeColor),
                       IgnorePointer(
                         child: CustomPaint(
                           size: Size(totalWidth, FluidGlassNavBar.navHeight),
@@ -571,7 +569,9 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
 
   Widget _gooLayer(double t, double totalWidth, int? themeColor) {
     final drops = _computeDrops(t, totalWidth);
-    final colors = FluidGlassNavBar.dropGradient(themeColor);
+    // 698 N27：液体单色平涂（无渐变）——主题色本色 / 银白回退。
+    final liquid = FluidGlassNavBar.dropFlatColor(themeColor)
+        .withValues(alpha: FluidGlassNavBar.dropFlatOpacity(themeColor));
     final children = <Widget>[
       for (final d in drops)
         Positioned(
@@ -583,15 +583,9 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
             key: d.key,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: RadialGradient(
-                center: const Alignment(-0.45, -0.5),
-                colors: d.opacity >= 1
-                    ? colors
-                    : [
-                        colors[0].withValues(alpha: d.opacity),
-                        colors[1].withValues(alpha: d.opacity),
-                      ],
-              ),
+              color: d.opacity >= 1
+                  ? liquid
+                  : liquid.withValues(alpha: liquid.opacity * d.opacity),
             ),
           ),
         ),
@@ -623,10 +617,10 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     );
   }
 
-  // ── 滴层（真折射水滴 / 平涂主题色渐变，双形态，698 N26）───────────
+  // ── 滴层（主题色磨砂玻璃 / 平涂，双形态，698 N27 去折射）─────────
 
-  /// 重叠去重（698 N23/N26）：收起态 4 滴叠同位 → 只渲 1 个折射球
-  ///（GlassEffect 是 shader，逐滴开销大；同心即同视觉）。
+  /// 重叠去重（698 N23/N26/N27）：收起态 4 滴叠同位 → 只渲 1 滴体
+  ///（磨砂 BackdropFilter 逐滴开销大；同心即同视觉）。
   static List<_DropState> _dedup(List<_DropState> drops) {
     final kept = <_DropState>[];
     for (final d in drops) {
@@ -644,10 +638,9 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     return kept;
   }
 
-  Widget _dropLayer(double t, double totalWidth, bool glassOn,
-      GlassTuning tuning, int? themeColor) {
+  Widget _dropLayer(
+      double t, double totalWidth, bool glassOn, int? themeColor) {
     final drops = _dedup(_computeDrops(t, totalWidth));
-    final settings = _dropGlassSettings(tuning, themeColor);
     final children = <Widget>[
       for (final d in drops)
         Positioned(
@@ -658,10 +651,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
           child: Opacity(
             opacity: d.opacity,
             child: glassOn
-                ? _RefractBall(
-                    settings: settings,
-                    edgeZone: tuning.edgeZone ?? glassDefault('glassEdgeZone'),
-                  )
+                ? _FrostedDrop(themeColor)
                 : _FlatDrop(themeColor),
           ),
         ),
@@ -671,43 +661,11 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
       child: IgnorePointer(
         child: KeyedSubtree(
           key: glassOn
-              ? FluidGlassNavBar.glassBallsKey
+              ? FluidGlassNavBar.frostedDropsKey
               : FluidGlassNavBar.flatDropsKey,
-          // GlassEffect 需要 InheritedLiquidGlass 祖先（blob_lens 同款）。
-          child: glassOn
-              ? lg.InheritedLiquidGlass(
-                  settings: settings,
-                  quality: lg.GlassQuality.standard,
-                  avoidsRefraction: false,
-                  child: stack,
-                )
-              : stack,
+          child: stack,
         ),
       ),
-    );
-  }
-
-  /// 真折射滴参数（698 N26：与①款镜片同源——glassTuning 滑杆直通；
-  /// **主题色 tint**（glassColor = 主题色白纱 0.30，null 回退中性白纱
-  /// 0.20）、色散 1.0 物理加强、blur 0.01 为 Skia 捕获钥匙）。
-  lg.LiquidGlassSettings _dropGlassSettings(
-      GlassTuning tuning, int? themeColor) {
-    final tint = themeColor != null
-        ? Color(themeColor)
-            .withValues(alpha: FluidGlassNavBar.dropTintAlphaTheme)
-        : Colors.white
-            .withValues(alpha: FluidGlassNavBar.dropTintAlphaFallback);
-    return lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
-      glassColor: tint,
-      thickness: tuning.thickness ?? glassDefault('glassThickness'),
-      saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      chromaticAberration: FluidGlassNavBar.dropChroma,
-      refractiveIndex:
-          tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
-      lightIntensity:
-          tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
-      blur: 0.01, // Skia 捕获钥匙（GlassEffect 捕获门槛要求 blur > 0）
-      edgeAbsorption: 0.10,
     );
   }
 
@@ -875,33 +833,42 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   }
 }
 
-/// 真折射水滴（698 N26：[lg.GlassEffect] 液镜管线——折射滴后页面内容
-/// = **透亮水滴** + **主题色 tint**（折射画面染主题色调）；色散
-/// [FluidGlassNavBar.dropChroma] 滴缘红蓝真物理色散。不传 backgroundKey
-/// → 走 [LiquidGlassScope] 默认 body 截帧采样（quality 固定 standard，
-/// 采样纹理不含 goo 层 → 滴内不奶白）。
-class _RefractBall extends StatelessWidget {
-  const _RefractBall({required this.settings, required this.edgeZone});
+/// 主题色磨砂玻璃水滴（698 N27：**轻磨砂透底 + 主题色平涂、无渐变**——
+/// ClipOval + BackdropFilter 把滴后页面内容轻磨砂透出，叠主题色单色
+/// 半透 + 细 rim = 磨砂玻璃球。折射/色散全去）。
+class _FrostedDrop extends StatelessWidget {
+  const _FrostedDrop(this.themeColor);
 
-  final lg.LiquidGlassSettings settings;
-
-  /// 折射范围（「折射范围」滑杆 20~24 直通）。
-  final double edgeZone;
+  final int? themeColor;
 
   @override
   Widget build(BuildContext context) {
-    return GlassEffect(
-      shape: const lg.LiquidOval(),
-      settings: settings,
-      interactionIntensity: FluidGlassNavBar.dropGlassIntensity,
-      edgeZone: edgeZone,
-      child: const SizedBox.expand(),
+    final tint = FluidGlassNavBar.dropFlatColor(themeColor)
+        .withValues(alpha: FluidGlassNavBar.dropFlatOpacity(themeColor));
+    return ClipOval(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(
+          sigmaX: FluidGlassNavBar.dropFrostSigma,
+          sigmaY: FluidGlassNavBar.dropFrostSigma,
+        ),
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: OvalBorder(
+              side: const BorderSide(
+                color: FluidGlassNavBar.dropRim,
+                width: 1,
+              ),
+            ),
+            color: tint,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
     );
   }
 }
 
-/// 平涂主题色渐变滴（698 N26 玻璃关：[FluidGlassNavBar.dropGradient]
-/// 主题色渐变 + 细 rim，零 shader 省性能）。
+/// 平涂主题色滴（698 N27 玻璃关：单色平涂 + 细 rim，零 shader 省性能）。
 class _FlatDrop extends StatelessWidget {
   const _FlatDrop(this.themeColor);
 
@@ -912,15 +879,13 @@ class _FlatDrop extends StatelessWidget {
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: OvalBorder(
-          side: BorderSide(
-            color: Colors.white.withValues(alpha: 0.35),
+          side: const BorderSide(
+            color: FluidGlassNavBar.dropRim,
             width: 1,
           ),
         ),
-        gradient: RadialGradient(
-          center: const Alignment(-0.45, -0.5),
-          colors: FluidGlassNavBar.dropGradient(themeColor),
-        ),
+        color: FluidGlassNavBar.dropFlatColor(themeColor)
+            .withValues(alpha: FluidGlassNavBar.dropFlatOpacity(themeColor)),
       ),
     );
   }

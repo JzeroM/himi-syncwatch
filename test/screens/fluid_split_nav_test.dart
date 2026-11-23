@@ -264,34 +264,42 @@ void main() {
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
     });
 
-    test('真折射滴主题色 tint（N26）：主题纱 0.30 / 回退中性纱 0.20 + '
-        '色散 1.0', () {
-      expect(FluidGlassNavBar.dropTintAlphaTheme, 0.30,
-          reason: '设主题色：折射画面染主题色调（纱 α0.30）');
-      expect(FluidGlassNavBar.dropTintAlphaFallback, 0.20,
-          reason: '未设主题色：中性白纱回退（α0.20）');
-      expect(FluidGlassNavBar.dropChroma, 1.0,
-          reason: '滴缘红蓝真物理色散（shader 内 ×4.0 加强）');
-      expect(FluidGlassNavBar.dropGlassIntensity, greaterThan(0.01),
-          reason: 'GlassEffect 捕获门槛 interactionIntensity > 0.01');
+    test('主题色磨砂玻璃配方（N27）：平涂 0.40 / 回退 0.28 / 磨砂 σ5，'
+        '无渐变无色散', () {
+      expect(FluidGlassNavBar.dropFlatAlpha, 0.40,
+          reason: '主题色平涂半透浓度（无渐变单色）');
+      expect(FluidGlassNavBar.dropFallbackAlpha, 0.28,
+          reason: '未设主题色：银白单色回退');
+      expect(FluidGlassNavBar.dropFrostSigma, 5,
+          reason: '轻磨砂透底 σ5（背景隐约透出）');
+      expect(FluidGlassNavBar.dropRim.opacity, closeTo(0.4, 0.01),
+          reason: '细 rim 玻璃边缘感');
+      expect(FluidGlassNavBar.dropFlatColor(0xFF6750A4), const Color(0xFF6750A4),
+          reason: '滴/goo 纯色 = 主题色本色');
+      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFFFFFFFF),
+          reason: 'null 回退银白单色');
+      expect(FluidGlassNavBar.dropFlatOpacity(0xFF6750A4), 0.40);
+      expect(FluidGlassNavBar.dropFlatOpacity(null), 0.28);
     });
 
-    testWidgets('真折射双形态（N26）：开=GlassEffect 折射球（去重 1→3）、'
-        '关=平涂主题色渐变滴（零 shader）', (tester) async {
-      // 玻璃开：收起态 4 滴叠位去重 → 1 个折射球。
+    testWidgets('磨砂双形态（N27）：开=轻磨砂透底滴、关=平涂滴（零 shader）；'
+        '两态零 GlassEffect 折射、零渐变', (tester) async {
+      // 玻璃开：磨砂透底滴层。
       await tester.pumpWidget(host(
         settings: const AppSettings(glassUi: true),
         onSelect: (_) {},
       ));
       await tester.pump();
-      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget);
-      expect(find.byType(GlassEffect).evaluate().length, 1,
-          reason: '收起态母滴+三子滴同心叠位 → 去重只渲 1 个折射球');
+      expect(find.byKey(FluidGlassNavBar.frostedDropsKey), findsOneWidget);
+      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsNothing);
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1200));
-      expect(find.byType(GlassEffect).evaluate().length, 3,
-          reason: '展开落位：空滴缩没 + 三子滴分位 → 3 个折射球');
+      // 展开落位三滴分位（去重后 3 个滴体）。
+      final frosted = tester.widgetList(find.descendant(
+          of: find.byKey(FluidGlassNavBar.frostedDropsKey),
+          matching: find.byType(DecoratedBox)));
+      expect(frosted.length, 3, reason: '展开落位 3 滴（收起态去重 1 滴）');
 
       // 玻璃关：平涂滴层、零 shader。
       await tester.pumpWidget(host(
@@ -300,21 +308,32 @@ void main() {
       ));
       await tester.pump();
       expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsOneWidget,
-          reason: '玻璃关 = 平涂主题色渐变滴');
+          reason: '玻璃关 = 平涂主题色滴');
+      expect(find.byKey(FluidGlassNavBar.frostedDropsKey), findsNothing);
+
+      // N27 核心：两态零折射（GlassEffect 不复存在）。
       expect(find.byType(GlassEffect), findsNothing,
-          reason: '玻璃关零 shader（省性能）');
+          reason: '折射/色散全去（N27 拍板「折射光影响观感」）');
+      // 零渐变：滴体/液体全部单色平涂（Box/Shape 两种装饰均查）。
+      for (final box in tester.widgetList<DecoratedBox>(find.descendant(
+          of: find.byKey(FluidGlassNavBar.flatDropsKey),
+          matching: find.byType(DecoratedBox)))) {
+        final d = box.decoration;
+        final gradient = switch (d) {
+          BoxDecoration() => d.gradient,
+          ShapeDecoration() => d.gradient,
+          _ => null,
+        };
+        expect(gradient, isNull, reason: 'N27 无渐变（单色平涂）: $d');
+      }
     });
 
-    test('滴色调跟随主题色（N24）：提亮渐变 + null 回退银白', () {
+    test('滴/goo 单色跟主题色（N27）：主题本色 + null 回退银白', () {
       const theme = 0xFF6750A4;
-      final g = FluidGlassNavBar.dropGradient(theme);
-      expect(g.last, const Color(theme), reason: '底右 = 主题色本色');
-      expect(g.first.computeLuminance(), greaterThan(g.last.computeLuminance()),
-          reason: '顶左 = 主题色提亮 45%（体积渐变）');
-      final fb = FluidGlassNavBar.dropGradient(null);
-      expect(fb, [FluidGlassNavBar.dropFallbackLight,
-          FluidGlassNavBar.dropFallbackDeep],
-          reason: '主题色 null → 银白玻璃渐变回退');
+      expect(FluidGlassNavBar.dropFlatColor(theme), const Color(theme),
+          reason: '主题色本色单色（无渐变）');
+      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFFFFFFFF),
+          reason: 'null → 银白单色回退');
     });
 
     test('收起更快 + 卫星向右上飞散（视频 f39-f43）', () {

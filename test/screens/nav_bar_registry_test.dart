@@ -58,7 +58,7 @@ void main() {
 
   group('悬浮凹口款（698 N17）', () {
     testWidgets('叶形条恒用 GlassContainer（①款同源观感，双形态由其内部'
-        '跟随开关）+ 滴层双形态（N26：开=真折射球 / 关=平涂渐变滴）',
+        '跟随开关）+ 滴层双形态（N27：开=磨砂透底 / 关=平涂，零折射）',
         (tester) async {
       for (final glassOn in [true, false]) {
         await tester.pumpWidget(host(
@@ -68,16 +68,16 @@ void main() {
         expect(find.byType(GlassContainer), findsWidgets,
             reason: '玻璃开关=$glassOn：条体均 GlassContainer（内部自降级）');
         expect(find.byKey(FluidGlassNavBar.dropMotherKey), findsOneWidget,
-            reason: 'goo 液桥层恒在（下层：白色/主题色水丝连颈）');
+            reason: 'goo 液桥层恒在（下层：主题色水丝连颈）');
         if (glassOn) {
-          expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget,
-              reason: '玻璃开：真折射球层在 goo 之上（主题色 tint）');
-          expect(find.byType(GlassEffect), findsWidgets);
+          expect(find.byKey(FluidGlassNavBar.frostedDropsKey), findsOneWidget,
+              reason: '玻璃开：轻磨砂透底滴层在 goo 之上（主题色平涂）');
         } else {
           expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsOneWidget,
-              reason: '玻璃关：平涂主题色渐变滴层（零 shader）');
-          expect(find.byType(GlassEffect), findsNothing);
+              reason: '玻璃关：平涂主题色滴层（零 shader）');
         }
+        expect(find.byType(GlassEffect), findsNothing,
+            reason: 'N27 折射/色散全去');
       }
     });
 

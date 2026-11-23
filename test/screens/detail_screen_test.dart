@@ -3704,6 +3704,38 @@ void main() {
           reason: '只留☰图标整体缩短');
       expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right - 48),
           reason: '胶囊整体在末行截断位（48）内 → 不压字');
+      expect(capsuleRect.height, lessThanOrEqualTo(22),
+          reason: '胶囊压进第二行行盒（≈20 ≤ 行盒 19.5，N27 修正）');
+      // 本 fixture 简介短（单行）→ 胶囊与唯一行同高，不外溢块顶即可。
+      expect(capsuleRect.top, greaterThanOrEqualTo(overviewRect.top - 2),
+          reason: '单行：胶囊不外溢块顶');
+    });
+
+    testWidgets('两行简介：胶囊压进第二行行盒不侵第一行（698 N27）',
+        (tester) async {
+      final item = MediaItem(
+        id: 'm-long',
+        name: '长简介影片',
+        type: 'Movie',
+        posterUrl: _posterUrl,
+        overview: '八仙在成仙和成功之间选择了成团，在搞钱和搞事业之间选择了'
+            '搞事情，八个身份各异的凡人最终携手并肩拯救苍生，历经重重磨难'
+            '与考验，从散落到凝聚，从彼此猜忌到生死相托，最终各显神通守护'
+            '人间正道，也寻回了属于自己的道心与真情。',
+      );
+      await _pumpDetail(tester, item: item);
+      final overview = find.byType(DotsEllipsisText);
+      final overviewBtn = find.ancestor(
+          of: find.byIcon(Icons.subject), matching: find.byType(GlassContainer));
+      final overviewRect = tester.getRect(overview);
+      final capsuleRect = tester.getRect(overviewBtn);
+      expect(overviewRect.height, greaterThan(30), reason: '两行排版');
+      expect(capsuleRect.height, lessThanOrEqualTo(22),
+          reason: '胶囊高 ≈20 ≤ 行盒 19.5');
+      expect(capsuleRect.top, greaterThanOrEqualTo(overviewRect.top + 17),
+          reason: '胶囊不侵第一行（N27 真机修正：遮挡第一行）');
+      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 3.0),
+          reason: '胶囊贴第二行行尾');
     });
   });
 }
