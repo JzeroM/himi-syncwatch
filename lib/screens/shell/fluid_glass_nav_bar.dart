@@ -311,6 +311,7 @@ class _DropState {
     required this.key,
     required this.center,
     required this.radius,
+    this.rimAlpha = 1,
   });
 
   final Key key;
@@ -321,6 +322,10 @@ class _DropState {
 
   /// 光学不透明度（698 N29 卫星滴移除后恒 1，保留字段供淡入扩展）。
   final double opacity = 1;
+
+  /// 滴体白框透明度（698 N30）：母滴恒 1（收起态融合大滴保留玻璃边缘
+  /// 感）；三子滴 = 1 − 分裂进度（展开落位无框，收回淡回满框）。
+  final double rimAlpha;
 }
 
 /// 液滴几何（纯函数：goo 层与视觉层同源，jurajkusnier 机制）。
@@ -361,6 +366,8 @@ List<_DropState> _computeDrops(double t, double totalWidth) {
       key: FluidGlassNavBar.dropChildKeys[i],
       center: Offset.lerp(m, target, e)!,
       radius: rC,
+      // N30：白框随分裂淡出（收起叠位满框 → 展开落位无框）。
+      rimAlpha: 1 - e,
     ));
   }
 
@@ -654,8 +661,8 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
           child: Opacity(
             opacity: d.opacity,
             child: glassOn
-                ? _FrostedDrop(themeColor)
-                : _FlatDrop(themeColor),
+                ? _FrostedDrop(themeColor, rimAlpha: d.rimAlpha)
+                : _FlatDrop(themeColor, rimAlpha: d.rimAlpha),
           ),
         ),
     ];
@@ -852,13 +859,26 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   }
 }
 
+/// 滴体白框（698 N30）：rimAlpha=0 → [BorderSide.none]（展开子滴完全无边）；
+/// >0 → 白 α0.4×rimAlpha 细边（收起态/母滴玻璃边缘感）。
+BorderSide dropSide(double rimAlpha) {
+  if (rimAlpha <= 0.01) return BorderSide.none;
+  return BorderSide(
+    color: Colors.white.withValues(alpha: 0.4 * rimAlpha.clamp(0.0, 1.0)),
+    width: 1,
+  );
+}
+
 /// 主题色磨砂玻璃水滴（698 N27：**轻磨砂透底 + 主题色平涂、无渐变**——
 /// ClipOval + BackdropFilter 把滴后页面内容轻磨砂透出，叠主题色单色
 /// 半透 + 细 rim = 磨砂玻璃球。折射/色散全去）。
 class _FrostedDrop extends StatelessWidget {
-  const _FrostedDrop(this.themeColor);
+  const _FrostedDrop(this.themeColor, {this.rimAlpha = 1});
 
   final int? themeColor;
+
+  /// 白框透明度（698 N30）：0 = 完全无边（展开子滴），1 = 白框（收起/母滴）。
+  final double rimAlpha;
 
   @override
   Widget build(BuildContext context) {
@@ -872,12 +892,7 @@ class _FrostedDrop extends StatelessWidget {
         ),
         child: DecoratedBox(
           decoration: ShapeDecoration(
-            shape: OvalBorder(
-              side: const BorderSide(
-                color: FluidGlassNavBar.dropRim,
-                width: 1,
-              ),
-            ),
+            shape: OvalBorder(side: dropSide(rimAlpha)),
             color: tint,
           ),
           child: const SizedBox.expand(),
@@ -889,20 +904,18 @@ class _FrostedDrop extends StatelessWidget {
 
 /// 平涂主题色滴（698 N27 玻璃关：单色平涂 + 细 rim，零 shader 省性能）。
 class _FlatDrop extends StatelessWidget {
-  const _FlatDrop(this.themeColor);
+  const _FlatDrop(this.themeColor, {this.rimAlpha = 1});
 
   final int? themeColor;
+
+  /// 白框透明度（698 N30）：0 = 完全无边（展开子滴），1 = 白框（收起/母滴）。
+  final double rimAlpha;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: ShapeDecoration(
-        shape: OvalBorder(
-          side: const BorderSide(
-            color: FluidGlassNavBar.dropRim,
-            width: 1,
-          ),
-        ),
+        shape: OvalBorder(side: dropSide(rimAlpha)),
         color: FluidGlassNavBar.dropFlatColor(themeColor)
             .withValues(alpha: FluidGlassNavBar.dropFlatOpacity(themeColor)),
       ),

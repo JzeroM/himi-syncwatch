@@ -271,6 +271,60 @@ void main() {
   });
 
   group('液桥与机制语义（纯函数守卫）', () {
+    test('滴体白框助手（N30）：0=无边、1=白 α0.4、线性淡出', () {
+      expect(dropSide(0), BorderSide.none,
+          reason: '展开子滴完全无边（B 口径拍板）');
+      expect(dropSide(0.005), BorderSide.none);
+      final full = dropSide(1);
+      expect(full.width, 1, reason: '收起态/母滴白框');
+      expect(full.color.opacity, closeTo(0.4, 0.01));
+      expect(dropSide(0.5).color.opacity, closeTo(0.2, 0.01),
+          reason: '分裂中途线性淡出');
+    });
+
+    testWidgets('白框随分裂淡出（N30）：收起满框 → 展开落位三子滴无框 → '
+        '收回淡回', (tester) async {
+      // 收起态：子滴叠位 e=0 → rimAlpha=1 → 满框（融合大滴玻璃边缘感）。
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: false),
+        onSelect: (_) {},
+      ));
+      await tester.pump();
+      final sideOf = (WidgetTester t) {
+        final box = t.widget<DecoratedBox>(find
+            .descendant(
+              of: find.byKey(FluidGlassNavBar.flatDropsKey),
+              matching: find.byType(DecoratedBox),
+            )
+            .first);
+        final d = box.decoration as ShapeDecoration;
+        return (d.shape as OvalBorder).side;
+      };
+      expect(sideOf(tester).width, 1, reason: '收起态满框');
+
+      // 展开落位（1150ms 拉满）→ 三子滴 e=1 → rimAlpha=0 → 无框。
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      final sides = tester
+          .widgetList<DecoratedBox>(find.descendant(
+            of: find.byKey(FluidGlassNavBar.flatDropsKey),
+            matching: find.byType(DecoratedBox),
+          ))
+          .map((b) => ((b.decoration as ShapeDecoration).shape as OvalBorder).side)
+          .toList();
+      expect(sides.length, 3, reason: '展开落位三子滴');
+      for (final side in sides) {
+        expect(side, BorderSide.none, reason: '展开子滴零边框（B 口径）');
+      }
+
+      // 收回 → 白框淡回。
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+      expect(sideOf(tester).width, 1, reason: '收回后白框恢复');
+    });
+
     testWidgets('goo 浓度后置（N28 拉丝回归修复）：液体满不透明参与阈值、'
         '整体浓度在阈值后 Opacity 层', (tester) async {
       await tester.pumpWidget(host(
