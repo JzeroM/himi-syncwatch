@@ -448,7 +448,7 @@ void main() {
       );
 
       // 简介入口已移至海报（页面顶部），位于开始播放上方
-      final desc = tester.getRect(find.text('全部'));
+      final desc = tester.getRect(find.byIcon(Icons.subject));
       final btn = tester.getRect(find.text('播放'));
       expect(desc.top, lessThan(btn.top), reason: '简介控件在海报上，操作区在正文（其下方）');
 
@@ -510,7 +510,7 @@ void main() {
         findsNothing,
       );
       // 简介控件在海报（顶部），位于开始播放上方
-      final desc = tester.getRect(find.text('全部'));
+      final desc = tester.getRect(find.byIcon(Icons.subject));
       final btn = tester.getRect(find.text('开始播放'));
       expect(desc.top, lessThan(btn.top), reason: '简介入口已移至海报，正文区不再渲染简介块');
     });
@@ -2693,7 +2693,7 @@ void main() {
       expect(find.byType(DotsEllipsisText), findsOneWidget,
           reason: 'TV 简介 1 行预览');
 
-      await tester.tap(find.text('全部'));
+      await tester.tap(find.byIcon(Icons.subject));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final title = tester.widget<Text>(find.text('简介')).style;
@@ -2705,7 +2705,7 @@ void main() {
 
     testWidgets('非 TV 浮层标题 18、简介正文 14', (tester) async {
       await _pumpDetail(tester, tv: false);
-      await tester.tap(find.text('全部'));
+      await tester.tap(find.byIcon(Icons.subject));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final title = tester.widget<Text>(find.text('简介')).style;
@@ -2719,29 +2719,31 @@ void main() {
   group('海报内简介浮层（v1.1.83 默认隐藏）', () {
     testWidgets('默认隐藏：海报有「简介」控件，正文无简介文字', (tester) async {
       await _pumpDetail(tester);
-      expect(find.text('全部'), findsOneWidget, reason: '海报入口控件');
+      expect(find.byIcon(Icons.subject), findsOneWidget, reason: '海报入口控件');
       expect(find.text('这是一段测试简介。'), findsNothing);
     });
 
     testWidgets('点「简介」展开浮层；点「收起」关闭', (tester) async {
       await _pumpDetail(tester);
-      await tester.tap(find.text('全部'));
+      await tester.tap(find.byIcon(Icons.subject));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('这是一段测试简介。'), findsOneWidget, reason: '浮层内显示完整简介');
-      // 控件切「收起」+ 浮层收起按钮 = 2 个
-      expect(find.text('收起'), findsNWidgets(2));
+      // 胶囊只留图标（N26）→ 「收起」文字只剩浮层收起按钮 1 个
+      expect(find.text('收起'), findsOneWidget);
+      expect(find.byIcon(Icons.unfold_less), findsOneWidget,
+          reason: '胶囊展开态图标（unfold_less）');
 
-      await tester.tap(find.text('收起').last);
+      await tester.tap(find.text('收起'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('这是一段测试简介。'), findsNothing);
-      expect(find.text('全部'), findsOneWidget, reason: '回到海报入口');
+      expect(find.byIcon(Icons.subject), findsOneWidget, reason: '回到海报入口');
     });
 
     testWidgets('点浮层遮罩空白区收起', (tester) async {
       await _pumpDetail(tester);
-      await tester.tap(find.text('全部'));
+      await tester.tap(find.byIcon(Icons.subject));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -2764,11 +2766,13 @@ void main() {
       await _pumpDetail(tester, item: item);
       expect(find.text('简介'), findsNothing);
       expect(find.text('收起'), findsNothing);
+      expect(find.byIcon(Icons.subject), findsNothing,
+          reason: 'overview 为空：简介图标入口不渲染');
     });
 
     testWidgets('TV 打开后焦点移入浮层收起按钮', (tester) async {
       await _pumpDetail(tester, tv: true);
-      await tester.tap(find.text('全部'));
+      await tester.tap(find.byIcon(Icons.subject));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       final closeFinder = find.byWidgetPredicate((w) =>
@@ -3677,7 +3681,8 @@ void main() {
         matching: find.byType(RatingsBadgeRow),
       );
       final overview = find.byType(DotsEllipsisText);
-      final overviewBtn = find.widgetWithText(GlassContainer, '全部');
+      final overviewBtn = find.ancestor(
+          of: find.byIcon(Icons.subject), matching: find.byType(GlassContainer));
       expect(badgeRow, findsOneWidget);
       expect(overview, findsOneWidget);
       expect(overviewBtn, findsOneWidget);
@@ -3685,18 +3690,20 @@ void main() {
       final overviewY = tester.getTopLeft(overview).dy;
       expect(badgeY, greaterThan(overviewY),
           reason: '评分行移到简介行下方（698 N13）');
-      // 698 N24：「全部」胶囊在第一行行首（左上）；首行左避让 92
-      //（firstLineInset → 不压字）；末行满宽。
+      // 698 N26：图标胶囊回第二行行尾（右下角，撤回 N24 行首）；只留
+      // ☰ 图标整体缩短（≤40 宽）；末行右避让 48（lastLineInset 不压字）。
       final overviewRect = tester.getRect(overview);
       final capsuleRect = tester.getRect(overviewBtn);
       expect(overviewRect.width, greaterThan(300),
-          reason: '简介满宽（末行无内缩）');
-      expect(capsuleRect.left, closeTo(overviewRect.left, 1.0),
-          reason: '胶囊贴简介块左缘（第一行行首）');
-      expect(capsuleRect.top, closeTo(overviewRect.top, 3.0),
-          reason: '胶囊贴第一行行首');
-      expect(capsuleRect.right, lessThanOrEqualTo(overviewRect.left + 120),
-          reason: '胶囊整体在首行截断位（92+胶囊宽）内 → 不压字');
+          reason: '首行满宽（首行无内缩）');
+      expect(capsuleRect.right, closeTo(overviewRect.right, 1.0),
+          reason: '胶囊贴简介块右缘（第二行行尾）');
+      expect(capsuleRect.bottom, closeTo(overviewRect.bottom, 3.0),
+          reason: '胶囊贴第二行行尾');
+      expect(capsuleRect.width, lessThanOrEqualTo(44),
+          reason: '只留☰图标整体缩短');
+      expect(capsuleRect.left, greaterThanOrEqualTo(overviewRect.right - 48),
+          reason: '胶囊整体在末行截断位（48）内 → 不压字');
     });
   });
 }

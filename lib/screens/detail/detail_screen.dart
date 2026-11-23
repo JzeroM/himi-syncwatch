@@ -2108,17 +2108,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       if (item.overview != null &&
                           item.overview!.isNotEmpty) ...[
                         const SizedBox(height: 8),
-                        // 698 N13/N16/N24：简介 2 行居中（TV 1 行防溢出），
-                        // 三点省略号仅末行行尾；**「全部」胶囊在第一行行首**
-                        // （N24 用户拍板），首行左避让 92 不压字（firstLineInset），
-                        // 末行满宽；点开浮层展开全部简介。
+                        // 698 N13/N16/N24/N26：简介 2 行居中（TV 1 行防
+                        // 溢出），三点省略号仅末行行尾；**图标胶囊在第二行
+                        // 行尾**（N26 撤回 N24 行首），末行右避让 48 不压字
+                        // （lastLineInset，胶囊只留☰图标整体缩短）；点开
+                        // 浮层展开全部简介。
                         Stack(
                           children: [
                             DotsEllipsisText(
                               item.overview!,
                               maxLines: tv ? 1 : 2,
                               textAlign: TextAlign.center,
-                              firstLineInset: 92,
+                              lastLineInset: 48,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 13,
@@ -2127,37 +2128,25 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                               ),
                             ),
                             Positioned(
-                              left: 0,
-                              top: 0,
+                              right: 0,
+                              bottom: 0,
                               child: TvFocusable(
                                 onTap: _toggleOverview,
                                 child: GlassContainer(
                                   borderRadius: const BorderRadius.all(
-                                      Radius.circular(14)),
+                                      Radius.circular(12)),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 3),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.subject,
-                                          size: 14, color: Colors.white70),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        _overviewVisible ? '收起' : '全部',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Icon(
-                                        _overviewVisible
-                                            ? Icons.expand_less
-                                            : Icons.expand_more,
-                                        size: 14,
-                                        color: Colors.white70,
-                                      ),
-                                    ],
+                                      horizontal: 7, vertical: 5),
+                                  child: Semantics(
+                                    button: true,
+                                    label: _overviewVisible ? '收起简介' : '展开简介',
+                                    child: Icon(
+                                      _overviewVisible
+                                          ? Icons.unfold_less
+                                          : Icons.subject,
+                                      size: 16,
+                                      color: Colors.white70,
+                                    ),
                                   ),
                                 ),
                               ),

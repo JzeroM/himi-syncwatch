@@ -7,6 +7,7 @@ import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
 
@@ -261,6 +262,47 @@ void main() {
     test('图标渐显区间错峰（0.2/0.3/0.4 → 0.7/0.8/0.9）', () {
       expect(FluidGlassNavBar.iconFadeStarts, [0.2, 0.3, 0.4]);
       expect(FluidGlassNavBar.iconFadeEnds, [0.7, 0.8, 0.9]);
+    });
+
+    test('真折射滴主题色 tint（N26）：主题纱 0.30 / 回退中性纱 0.20 + '
+        '色散 1.0', () {
+      expect(FluidGlassNavBar.dropTintAlphaTheme, 0.30,
+          reason: '设主题色：折射画面染主题色调（纱 α0.30）');
+      expect(FluidGlassNavBar.dropTintAlphaFallback, 0.20,
+          reason: '未设主题色：中性白纱回退（α0.20）');
+      expect(FluidGlassNavBar.dropChroma, 1.0,
+          reason: '滴缘红蓝真物理色散（shader 内 ×4.0 加强）');
+      expect(FluidGlassNavBar.dropGlassIntensity, greaterThan(0.01),
+          reason: 'GlassEffect 捕获门槛 interactionIntensity > 0.01');
+    });
+
+    testWidgets('真折射双形态（N26）：开=GlassEffect 折射球（去重 1→3）、'
+        '关=平涂主题色渐变滴（零 shader）', (tester) async {
+      // 玻璃开：收起态 4 滴叠位去重 → 1 个折射球。
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: true),
+        onSelect: (_) {},
+      ));
+      await tester.pump();
+      expect(find.byKey(FluidGlassNavBar.glassBallsKey), findsOneWidget);
+      expect(find.byType(GlassEffect).evaluate().length, 1,
+          reason: '收起态母滴+三子滴同心叠位 → 去重只渲 1 个折射球');
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(find.byType(GlassEffect).evaluate().length, 3,
+          reason: '展开落位：空滴缩没 + 三子滴分位 → 3 个折射球');
+
+      // 玻璃关：平涂滴层、零 shader。
+      await tester.pumpWidget(host(
+        settings: const AppSettings(glassUi: false),
+        onSelect: (_) {},
+      ));
+      await tester.pump();
+      expect(find.byKey(FluidGlassNavBar.flatDropsKey), findsOneWidget,
+          reason: '玻璃关 = 平涂主题色渐变滴');
+      expect(find.byType(GlassEffect), findsNothing,
+          reason: '玻璃关零 shader（省性能）');
     });
 
     test('滴色调跟随主题色（N24）：提亮渐变 + null 回退银白', () {
