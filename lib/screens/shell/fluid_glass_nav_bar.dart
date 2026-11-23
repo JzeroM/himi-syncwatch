@@ -37,10 +37,18 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
     super.key,
     required this.currentIndex,
     required this.onSelect,
+    this.onCreateRoom,
+    this.onJoinRoom,
   });
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
+
+  /// 「开房」子滴：直弹创建房间流程面板（N28，不切页）。
+  final VoidCallback? onCreateRoom;
+
+  /// 「加入」子滴：直弹加入房间流程面板（N28，不切页）。
+  final VoidCallback? onJoinRoom;
 
   // ── 玻璃色板（698 N22，守卫直查）────────────────────────────────
 
@@ -282,16 +290,29 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   /// 中央悬浮钮（＋↔×）。
   static const Key centerKey = ValueKey('fluidCenterButton');
 
-  /// 三动作钮命中层（左→右：Emby / 声网 / 设置）。
+  /// 三子滴命中层（698 N28 左→右：开房 / 设置 / 加入）。
   static const List<Key> actionKeys = [
-    ValueKey('fluidActionEmby'),
-    ValueKey('fluidActionVoice'),
+    ValueKey('fluidActionCreateRoom'),
     ValueKey('fluidActionSettings'),
+    ValueKey('fluidActionJoinRoom'),
   ];
 
-  /// 动作钮 → 壳层分支下标（Emby=2 / 声网=3 / 设置=4，ShellNavBar.tab 组）。
+  /// 子滴图标（N28）：开房（摄像机＋）/ 设置（沿用①款设置图标）/ 加入（进门）。
+  static const List<IconData> dropActionIcons = [
+    Icons.video_call_outlined,
+    Icons.settings_outlined,
+    Icons.login,
+  ];
+
+  /// 子滴文案（N28 用户拍板：「开房」「加入」）。
+  static const List<String> dropActionLabels = ['开房', '设置', '加入'];
+
+  /// 设置子滴 → 壳层分支下标（ShellNavBar.tab 组）。
+  static const int settingsBranch = 4;
+
+  /// 瓣叶钮分支分配（N28：左瓣 首页/收藏、右瓣 Emby/声网）。
   @visibleForTesting
-  static int actionBranch(int i) => 2 + i;
+  static const List<List<int>> lobeBranches = [[0, 1], [2, 3]];
 
   @override
   ConsumerState<FluidGlassNavBar> createState() => _FluidGlassNavBarState();
@@ -408,8 +429,9 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   @override
   void initState() {
     super.initState();
-    // 外部选中动作分支（Emby/声网/设置）→ 自动展开，激活态可见。
-    if (widget.currentIndex >= 2) {
+    // 外部选中设置分支 → 自动展开，激活态可见（N28：Emby/声网已是瓣叶钮，
+    // 不触发子滴面板）。
+    if (widget.currentIndex == FluidGlassNavBar.settingsBranch) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _setExpanded(true));
     }
   }
@@ -425,7 +447,10 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
       }
       _selfSelectedBranch = null;
     }
-    if (widget.currentIndex >= 2 && !_expanded) _setExpanded(true);
+    if (widget.currentIndex == FluidGlassNavBar.settingsBranch &&
+        !_expanded) {
+      _setExpanded(true);
+    }
   }
 
   @override
@@ -447,9 +472,18 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
   }
 
   void _selectAction(int i) {
-    _selfSelectedBranch = FluidGlassNavBar.actionBranch(i);
-    widget.onSelect(_selfSelectedBranch!);
-    _setExpanded(false);
+    switch (i) {
+      case 0: // 开房：直弹创建房间面板（不切页），子滴收回母滴
+        widget.onCreateRoom?.call();
+        _setExpanded(false);
+      case 1: // 设置：跳设置分支页（现状行为）
+        _selfSelectedBranch = FluidGlassNavBar.settingsBranch;
+        widget.onSelect(_selfSelectedBranch!);
+        _setExpanded(false);
+      case 2: // 加入：直弹加入房间面板（不切页），子滴收回母滴
+        widget.onJoinRoom?.call();
+        _setExpanded(false);
+    }
   }
 
   void _selectTab(int i) {
@@ -569,9 +603,11 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
 
   Widget _gooLayer(double t, double totalWidth, int? themeColor) {
     final drops = _computeDrops(t, totalWidth);
-    // 698 N27：液体单色平涂（无渐变）——主题色本色 / 银白回退。
-    final liquid = FluidGlassNavBar.dropFlatColor(themeColor)
-        .withValues(alpha: FluidGlassNavBar.dropFlatOpacity(themeColor));
+    // 698 N27/N28：液体单色平涂（无渐变）——主题色本色 / 银白回退。
+    // **必须满不透明**参与 blur+硬阈值（阈值 ≈0.39；半透明输入会让液桥
+    // 细颈被阈值裁掉 = N27「拉丝消失」回归根因）。整体浓度（0.40/0.28）
+    // 在阈值**之后**的 Opacity 层统一施加（N28 修复）。
+    final liquid = FluidGlassNavBar.dropFlatColor(themeColor);
     final children = <Widget>[
       for (final d in drops)
         Positioned(
@@ -585,7 +621,7 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
               shape: BoxShape.circle,
               color: d.opacity >= 1
                   ? liquid
-                  : liquid.withValues(alpha: liquid.opacity * d.opacity),
+                  : liquid.withValues(alpha: d.opacity),
             ),
           ),
         ),
@@ -597,19 +633,23 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
       child: IgnorePointer(
         child: KeyedSubtree(
           key: FluidGlassNavBar.gooKey,
-          child: ColorFiltered(
+          // N28：阈值后统一施加浓度（拉丝机制在满不透明输入下工作）。
+          child: Opacity(
+            opacity: FluidGlassNavBar.dropFlatOpacity(themeColor),
+            child: ColorFiltered(
               colorFilter: ColorFilter.matrix([
                 1, 0, 0, 0, 0,
                 0, 1, 0, 0, 0,
                 0, 0, 1, 0, 0,
                 ...FluidGlassNavBar.gooAlphaRow,
               ]),
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(
-                sigmaX: FluidGlassNavBar.gooBlurSigma,
-                sigmaY: FluidGlassNavBar.gooBlurSigma,
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(
+                  sigmaX: FluidGlassNavBar.gooBlurSigma,
+                  sigmaY: FluidGlassNavBar.gooBlurSigma,
+                ),
+                child: Stack(clipBehavior: Clip.none, children: children),
               ),
-              child: Stack(clipBehavior: Clip.none, children: children),
             ),
           ),
         ),
@@ -669,17 +709,27 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
     );
   }
 
-  // ── 左右两瓣（首页 / 收藏，图标用我们自己的）───────────────────────
+  // ── 左右两瓣（N28：左瓣 首页/收藏、右瓣 Emby/声网，两钮并排）───────
 
   Widget _lobes(double totalWidth) {
     return Positioned.fill(
       child: Row(
         children: [
-          Expanded(child: _lobeTab(0, selected: widget.currentIndex == 0)),
+          Expanded(child: _lobePair(FluidGlassNavBar.lobeBranches[0])),
           SizedBox(width: FluidGlassNavBar.motherSize + 16),
-          Expanded(child: _lobeTab(1, selected: widget.currentIndex == 1)),
+          Expanded(child: _lobePair(FluidGlassNavBar.lobeBranches[1])),
         ],
       ),
+    );
+  }
+
+  Widget _lobePair(List<int> branches) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        for (final b in branches)
+          _lobeTab(b, selected: widget.currentIndex == b),
+      ],
     );
   }
 
@@ -696,14 +746,15 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
               selected
                   ? ShellNavBar.tabSelectedIcons[i]
                   : ShellNavBar.tabIcons[i],
-              size: 22,
+              // N28：两钮并排缩比（22→20 / 11→10）。
+              size: 20,
               color: selected ? Colors.white : Colors.white70,
             ),
             const SizedBox(height: 2),
             Text(
               ShellNavBar.tabLabels[i],
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10,
                 color: selected ? Colors.white : Colors.white70,
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
@@ -773,12 +824,14 @@ class _FluidGlassNavBarState extends ConsumerState<FluidGlassNavBar>
             child: Opacity(
               opacity: opacity,
               child: Icon(
-                ShellNavBar.tabIcons[FluidGlassNavBar.actionBranch(i)],
+                FluidGlassNavBar.dropActionIcons[i],
                 size: 24,
-                color:
-                    widget.currentIndex == FluidGlassNavBar.actionBranch(i)
-                        ? Colors.white
-                        : Colors.white70,
+                // N28：开房/加入无选中态；设置子滴跟随设置分支高亮。
+                color: i == 1 &&
+                        widget.currentIndex ==
+                            FluidGlassNavBar.settingsBranch
+                    ? Colors.white
+                    : Colors.white70,
                 shadows: _iconShadows,
               ),
             ),

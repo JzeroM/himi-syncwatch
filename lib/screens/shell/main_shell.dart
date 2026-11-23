@@ -8,6 +8,7 @@ import 'package:himi_syncwatch/core/himi_platform.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
+import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
@@ -311,6 +312,10 @@ class _MainShellState extends ConsumerState<MainShell> {
               child: NavBarStyleHost(
                 currentIndex: widget.shell.currentIndex,
                 onSelect: _goBranch,
+                // ②款「开房/加入」子滴直调房间流程面板（698 N28）。
+                onCreateRoom: () => RoomMenuButton.showCreateRoom(context, ref),
+                onJoinRoom: () =>
+                    RoomMenuButton.showJoinRoomDialog(context, ref),
               ),
             ),
           ),

@@ -100,7 +100,7 @@ class RoomMenuButton extends ConsumerWidget {
                   title: '创建房间',
                   subtitle: '开一局同步观影',
                   enabled: hasServer,
-                  run: () => _createEmptyRoom(context, ref),
+                  run: () => showCreateRoom(context, ref),
                 ),
                 _roomOption(
                   dialogContext: dialogContext,
@@ -108,7 +108,8 @@ class RoomMenuButton extends ConsumerWidget {
                   title: '加入房间',
                   subtitle: '粘贴或扫码加入',
                   enabled: true,
-                  run: () => _showJoinRoomDialog(context, ref),
+                  run: () => showJoinRoomDialog(context, ref,
+                      qrScan: qrScan, imageScan: imageScan),
                 ),
               ],
             ),
@@ -173,7 +174,13 @@ class RoomMenuButton extends ConsumerWidget {
     );
   }
 
-  void _showJoinRoomDialog(BuildContext context, WidgetRef ref) {
+  /// 加入房间流程面板（N28 公共入口：②款导航「加入」子滴直调）。
+  static void showJoinRoomDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    Future<String?> Function()? qrScan,
+    Future<String?> Function()? imageScan,
+  }) {
     final codeController = TextEditingController();
     final nameController = TextEditingController();
     // TV 防御性屏蔽（当前首页 TV 无房间入口；组件已预留 TV 分支，
@@ -302,7 +309,7 @@ class RoomMenuButton extends ConsumerWidget {
   /// 其实齐备——`QrImageDecoder` 是**纯 Dart**（image + zxing2，零平台
   /// 依赖），`file_picker_ohos` 提供鸿蒙原生相册选择并返回真实文件路径。
   /// 故与 Windows 走同一条路。
-  Future<String?> _pickRoomCodeFromImage(BuildContext context) async {
+  static Future<String?> _pickRoomCodeFromImage(BuildContext context) async {
     try {
       final picked = await GalleryPicker.pickImage();
       if (picked == null) return null;
@@ -319,7 +326,8 @@ class RoomMenuButton extends ConsumerWidget {
     }
   }
 
-  Future<void> _createEmptyRoom(BuildContext context, WidgetRef ref) async {
+  /// 创建房间流程面板（N28 公共入口：②款导航「开房」子滴直调）。
+  static Future<void> showCreateRoom(BuildContext context, WidgetRef ref) async {
     final agoraConfig = ref.read(agoraConfigProvider);
     if (agoraConfig == null || !agoraConfig.isConfigured) {
       if (context.mounted) {
@@ -351,7 +359,7 @@ class RoomMenuButton extends ConsumerWidget {
     }
   }
 
-  Future<int?> _showTokenCountDialog(BuildContext context, WidgetRef ref) {
+  static Future<int?> _showTokenCountDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController(text: '2');
     final tvMode = ref.read(settingsProvider.select((s) => s.tvMode));
     return showDialog<int>(

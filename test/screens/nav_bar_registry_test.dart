@@ -138,15 +138,64 @@ void main() {
       expect(r.dx, greaterThan(400));
     });
 
-    test('动作语义：左→右 = Emby(2) / 声网(3) / 设置(4)', () {
-      expect(FluidGlassNavBar.actionBranch(0), 2);
-      expect(FluidGlassNavBar.actionBranch(1), 3);
-      expect(FluidGlassNavBar.actionBranch(2), 4);
+    test('三子滴语义（N28）：左→右 = 开房 / 设置 / 加入', () {
+      expect(FluidGlassNavBar.dropActionLabels, ['开房', '设置', '加入']);
+      expect(FluidGlassNavBar.dropActionIcons[0], Icons.video_call_outlined,
+          reason: '开房 = 摄像机＋（视频语义组，用户拍板）');
+      expect(FluidGlassNavBar.dropActionIcons[1], Icons.settings_outlined);
+      expect(FluidGlassNavBar.dropActionIcons[2], Icons.login,
+          reason: '加入 = 箭头进门（视频语义组，用户拍板）');
+      expect(FluidGlassNavBar.settingsBranch, 4,
+          reason: '设置子滴 → ShellNavBar.tab 组设置分支');
+      expect(FluidGlassNavBar.actionKeys.length, 3);
     });
 
-    test('三动作钮语义 = ShellNavBar.tab 组 2..4（Emby/声网/设置）', () {
-      expect(ShellNavBar.tabLabels.sublist(2, 5), ['Emby', '声网', '设置']);
-      expect(FluidGlassNavBar.actionKeys.length, 3);
+    test('顶栏房间钮分款式（N28）：②款只留搜索、①款保持房间钮', () {
+      expect(NavBarStyle.shouldShowRoomMenu(null), isTrue,
+          reason: '默认①款：房间钮保留');
+      expect(NavBarStyle.shouldShowRoomMenu('glassCapsule'), isTrue);
+      expect(NavBarStyle.shouldShowRoomMenu('fluidGlass'), isFalse,
+          reason: '②款：房间入口移至开房/加入子滴 → 顶栏只留搜索');
+      expect(NavBarStyle.shouldShowRoomMenu('unknown'), isTrue,
+          reason: '未知值容错回①款');
+    });
+
+    testWidgets('②款回调透传（N28）：开房/加入子滴直调房间流程面板',
+        (tester) async {
+      var createCalls = 0;
+      var joinCalls = 0;
+      await tester.pumpWidget(host(
+        settings: const AppSettings(),
+        nav: FluidGlassNavBar(
+          currentIndex: 0,
+          onSelect: _noop,
+          onCreateRoom: () => createCalls++,
+          onJoinRoom: () => joinCalls++,
+        ),
+      ));
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[0]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(createCalls, 1, reason: '开房子滴 → onCreateRoom');
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[2]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(joinCalls, 1, reason: '加入子滴 → onJoinRoom');
+    });
+
+    test('瓣叶分支分配（N28）：左瓣 首页/收藏、右瓣 Emby/声网', () {
+      expect(FluidGlassNavBar.lobeBranches, [
+        [0, 1],
+        [2, 3]
+      ]);
+      expect(ShellNavBar.tabLabels.sublist(0, 4), ['首页', '收藏', 'Emby', '声网'],
+          reason: '瓣叶四钮 = ShellNavBar.tab 组 0..3');
     });
   });
 }

@@ -25,13 +25,29 @@ enum NavBarStyle {
         orElse: () => NavBarStyle.glassCapsule,
       );
 
-  /// 构建款式（壳层统一切换入口）。
-  Widget build({required int currentIndex, required ValueChanged<int> onSelect}) {
+  /// 顶栏房间入口是否显示（698 N28）：②款水滴分裂的「开房/加入」子滴
+  /// 已接管房间入口 → 顶栏只留搜索；①款保持房间钮 + 搜索。
+  static bool shouldShowRoomMenu(String? navBarStyleRaw) =>
+      parse(navBarStyleRaw) != NavBarStyle.fluidGlass;
+
+  /// 构建款式（壳层统一切换入口）。[onCreateRoom]/[onJoinRoom] 仅②款
+  /// 水滴分裂的「开房/加入」子滴消费（698 N28）。
+  Widget build({
+    required int currentIndex,
+    required ValueChanged<int> onSelect,
+    VoidCallback? onCreateRoom,
+    VoidCallback? onJoinRoom,
+  }) {
     switch (this) {
       case NavBarStyle.glassCapsule:
         return ShellNavBar(currentIndex: currentIndex, onSelect: onSelect);
       case NavBarStyle.fluidGlass:
-        return FluidGlassNavBar(currentIndex: currentIndex, onSelect: onSelect);
+        return FluidGlassNavBar(
+          currentIndex: currentIndex,
+          onSelect: onSelect,
+          onCreateRoom: onCreateRoom,
+          onJoinRoom: onJoinRoom,
+        );
     }
   }
 }
@@ -42,16 +58,27 @@ class NavBarStyleHost extends ConsumerWidget {
     super.key,
     required this.currentIndex,
     required this.onSelect,
+    this.onCreateRoom,
+    this.onJoinRoom,
   });
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
+
+  /// ②款「开房/加入」子滴回调（N28）。
+  final VoidCallback? onCreateRoom;
+  final VoidCallback? onJoinRoom;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final style = NavBarStyle.parse(
       ref.watch(settingsProvider.select((s) => s.navBarStyle)),
     );
-    return style.build(currentIndex: currentIndex, onSelect: onSelect);
+    return style.build(
+      currentIndex: currentIndex,
+      onSelect: onSelect,
+      onCreateRoom: onCreateRoom,
+      onJoinRoom: onJoinRoom,
+    );
   }
 }

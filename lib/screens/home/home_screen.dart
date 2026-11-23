@@ -30,6 +30,7 @@ import 'package:himi_syncwatch/widgets/hover_scroll_row.dart';
 import 'package:himi_syncwatch/widgets/glass/media_context_menu.dart';
 import 'package:himi_syncwatch/widgets/media_search_button.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
+import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/widgets/server_title_dropdown.dart';
 import 'package:himi_syncwatch/widgets/stats_panel.dart';
@@ -672,16 +673,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   padding: const EdgeInsets.only(right: 12),
                   child: GlassContainer(
                     // 698 N15-B：顶栏胶囊缩 ~10%（圆角 20、内边距 2）。
+                    // 698 N28：②款水滴分裂导航——房间入口移至「开房/加入」
+                    // 子滴，顶栏只留搜索，胶囊随单钮自适应收窄；①款不动。
                     borderRadius: const BorderRadius.all(Radius.circular(20)),
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     showShadow: false,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        RoomMenuButton(
-                          qrScan: widget.qrScan,
-                          imageScan: widget.imageScan,
-                        ),
+                        // 698 N28：②款房间入口移至「开房/加入」子滴 →
+                        // 顶栏只留搜索（胶囊自适应收窄）。
+                        if (NavBarStyle.shouldShowRoomMenu(ref.watch(
+                            settingsProvider.select((s) => s.navBarStyle))))
+                          RoomMenuButton(
+                            qrScan: widget.qrScan,
+                            imageScan: widget.imageScan,
+                          ),
                         const MediaSearchButton(),
                       ],
                     ),

@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
-import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
 import '../helpers/test_fakes.dart';
@@ -19,6 +18,8 @@ void main() {
     AppSettings settings = const AppSettings(),
     int currentIndex = 0,
     required ValueChanged<int> onSelect,
+    VoidCallback? onCreateRoom,
+    VoidCallback? onJoinRoom,
   }) {
     final container = ProviderContainer(overrides: [
       settingsProvider.overrideWith((ref) => FakeSettingsNotifier(settings)),
@@ -36,6 +37,8 @@ void main() {
               child: FluidGlassNavBar(
                 currentIndex: currentIndex,
                 onSelect: onSelect,
+                onCreateRoom: onCreateRoom,
+                onJoinRoom: onJoinRoom,
               ),
             ),
           ),
@@ -62,16 +65,23 @@ void main() {
   }
 
   group('展开/收起（展开 1150ms / 收回 850ms）', () {
-    testWidgets('点＋展开：＋旋 225°（视觉成 ×）、三动作钮可点；再点收回禁用',
+    testWidgets('点＋展开：＋旋 225°（视觉成 ×）、三子滴可点；再点收回禁用',
         (tester) async {
       final calls = <int>[];
-      await tester.pumpWidget(host(onSelect: calls.add));
+      var createCalls = 0;
+      var joinCalls = 0;
+      await tester.pumpWidget(host(
+        onSelect: calls.add,
+        onCreateRoom: () => createCalls++,
+        onJoinRoom: () => joinCalls++,
+      ));
 
-      // 初始：动作钮禁用（忽略指针 → 点不着）。
+      // 初始：子滴禁用（忽略指针 → 点不着）。
       await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[0]),
           warnIfMissed: false);
       await tester.pump();
-      expect(calls, isEmpty, reason: '收起态动作钮不响应');
+      expect(calls, isEmpty, reason: '收起态子滴不响应');
+      expect(createCalls, 0);
 
       // 点＋ → 展开（1150ms 拉满）。
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
@@ -83,19 +93,29 @@ void main() {
         reason: '＋ 旋转 225°（≡45° 视觉成 ×，jurajkusnier 拧劲）',
       );
 
-      // 三动作钮从左到右 = Emby(2) / 声网(3) / 设置(4)。
-      // 视频语义：点动作钮即跳页并收起 → 逐次展开逐次点。
-      for (var i = 0; i < 3; i++) {
-        if (i > 0) {
-          await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 1200));
-        }
-        await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[i]),
-            warnIfMissed: false);
-        await tester.pump();
-      }
-      expect(calls, [2, 3, 4], reason: '动作语义：Emby/声网/设置');
+      // N28 三子滴：开房（弹创建面板）/ 设置（跳 4）/ 加入（弹加入面板）。
+      // 点子滴即收起 → 逐次展开逐次点。
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[0]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(createCalls, 1, reason: '开房子滴 → 弹创建房间面板（不切页）');
+      expect(calls, isEmpty);
+
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(calls, [4], reason: '设置子滴 → 跳设置分支页');
+
+      await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[2]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(joinCalls, 1, reason: '加入子滴 → 弹加入房间面板（不切页）');
       await tester.pump(const Duration(milliseconds: 900));
 
       // 收起后动作钮禁用、× 逆旋回 ＋。
@@ -108,16 +128,26 @@ void main() {
           reason: '× 逆旋回 ＋（收回吸收）');
     });
 
-    testWidgets('外部选中动作分支（Emby/声网/设置）自动展开', (tester) async {
+    testWidgets('外部选中设置分支自动展开（Emby/声网已是瓣叶钮不展开）',
+        (tester) async {
       final calls = <int>[];
-      await tester.pumpWidget(host(currentIndex: 3, onSelect: calls.add));
+      await tester.pumpWidget(host(currentIndex: 4, onSelect: calls.add));
       await tester.pump(); // 落 postFrame 自动展开
       await tester.pump(const Duration(milliseconds: 1200));
-      // 展开态动作钮可点（点声网 → 3）。
+      // 展开态设置子滴可点（点设置 → 4）。
       await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
           warnIfMissed: false);
       await tester.pump();
-      expect(calls, [3], reason: '自动展开后动作钮直达分支');
+      expect(calls, [4], reason: '自动展开后设置子滴直达分支');
+
+      // Emby/声网分支不触发子滴面板（N28）。
+      await tester.pumpWidget(host(currentIndex: 3, onSelect: (_) {}));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1200));
+      await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
+          warnIfMissed: false);
+      await tester.pump();
+      expect(calls, [4], reason: '声网分支不自动展开 → 子滴点不着');
     });
   });
 
@@ -169,9 +199,10 @@ void main() {
       expect(l.dx, lessThan(c.dx));
       expect(r.dx, greaterThan(c.dx));
       // 图标渐显完成（Opacity ≈ 1，jurajkusnier 线性错峰 0.2/0.3/0.4 起）。
+      // N28：子滴图标 = 开房（video_call_outlined），随滴飞层定位。
       final iconOpacity = tester.widget<Opacity>(find
           .ancestor(
-            of: find.byIcon(ShellNavBar.tabIcons[2]),
+            of: find.byIcon(FluidGlassNavBar.dropActionIcons[0]),
             matching: find.byType(Opacity),
           )
           .first);
@@ -186,13 +217,13 @@ void main() {
       await tester.tap(find.byKey(FluidGlassNavBar.centerKey));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1200));
-      // 点声网子滴 → 跳页 3 + 全部收回。
+      // 点设置子滴 → 跳页 4 + 全部收回。
       await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 950));
 
       final st = tester.state<_NavHarnessState>(find.byType(_NavHarness));
-      expect(st.calls, [3], reason: '点子滴跳页（声网 → 分支 3）');
+      expect(st.calls, [4], reason: '点子滴跳页（设置 → 分支 4）');
       // 所有子滴收回母滴位（常驻滴叠位融合成一滴）。
       final m = dropCenter(tester, FluidGlassNavBar.dropMotherKey);
       for (final k in FluidGlassNavBar.dropChildKeys) {
@@ -203,7 +234,7 @@ void main() {
       await tester.tap(find.byKey(FluidGlassNavBar.actionKeys[1]),
           warnIfMissed: false);
       await tester.pump();
-      expect(st.calls, [3], reason: '面板保持收起（子滴禁用）——收了不得又开');
+      expect(st.calls, [4], reason: '面板保持收起（子滴禁用）——收了不得又开');
     });
 
     testWidgets('卫星小液滴飞散（分裂末段出现）', (tester) async {
@@ -217,6 +248,34 @@ void main() {
   });
 
   group('液桥与机制语义（纯函数守卫）', () {
+    testWidgets('goo 浓度后置（N28 拉丝回归修复）：液体满不透明参与阈值、'
+        '整体浓度在阈值后 Opacity 层', (tester) async {
+      await tester.pumpWidget(host(
+        settings: const AppSettings(themeColor: 0xFF6750A4),
+        onSelect: (_) {},
+      ));
+      await tester.pump();
+      // 结构：gooKey → Opacity(dropFlatOpacity) → ColorFiltered(阈值)。
+      final opacity = tester.widget<Opacity>(find
+          .descendant(
+            of: find.byKey(FluidGlassNavBar.gooKey),
+            matching: find.byType(Opacity),
+          )
+          .first);
+      expect(opacity.opacity, FluidGlassNavBar.dropFlatOpacity(0xFF6750A4),
+          reason: '浓度（0.40）在阈值后施加——加在阈值前会裁掉液桥细颈');
+      // goo 液体圆盘满不透明（阈值 ≈0.39，半透明输入 = 拉丝消失回归）。
+      for (final box in tester.widgetList<DecoratedBox>(find.descendant(
+          of: find.byKey(FluidGlassNavBar.dropMotherKey),
+          matching: find.byType(DecoratedBox)))) {
+        final d = box.decoration;
+        if (d is BoxDecoration && d.color != null) {
+          expect(d.color!.opacity, 1.0,
+              reason: '液体圆盘满不透明参与 blur+硬阈值（拉丝机制）');
+        }
+      }
+    });
+
     test('液桥 = 超大 blur + 硬阈值（jurajkusnier 1:1，无细丝）', () {
       // σ 对子滴视觉半径 ≈0.77×（jurajkusnier σ/R=0.83 同档厚桥）。
       expect(
