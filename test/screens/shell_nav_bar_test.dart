@@ -259,8 +259,15 @@ void main() {
       expect(tester.renderObject<RenderBox>(inner).size.height, 44);
     } else {
       expect(_blob(tester).height, 45);
-      // 698 N17-A：水滴超椭圆 Squircle（拍板 A，取代正椭圆）。
-      expect(_blobDecoration(tester).shape, isA<RoundedSuperellipseBorder>());
+      // 698 N37：水滴真胶囊（上下平直平行 + 左右正圆弧端帽，曲率同条
+      // 端帽）——squircle 端部压平 =「圆角矩形」观感，撤 N17-A。
+      expect(_blobDecoration(tester).shape, isA<RoundedRectangleBorder>());
+      final br = ((_blobDecoration(tester).shape as RoundedRectangleBorder)
+              .borderRadius as BorderRadius)
+          .topLeft
+          .x;
+      expect(br, closeTo(22.5, 0.01),
+          reason: '端帽半径 = 半高 45/2 → 正圆弧（真胶囊）');
     }
   });
 
@@ -281,7 +288,10 @@ void main() {
     // && scopeKey≠null && blur>0 —— 无 blur 则背景捕获永不启动，
     // 折射与彩虹色散全部失效（v1.1.87 根因）
     expect(lens.settings.blur, 0.01, reason: '捕获钥匙，0.01 模糊不可感知');
-    expect(lens.settings.chromaticAberration, 0.5, reason: '色散固定加强（忽略滑杆）');
+    expect(lens.settings.chromaticAberration, 1.0,
+        reason: 'N37：物理色散 1.0（shader ×4.0 滴缘红蓝物理彩边）');
+    expect(lens.settings.lightIntensity, 0,
+        reason: 'N37：去镜面（无镜面高光，靠折射形变 + 色散）');
     expect(lens.settings.thickness, 28, reason: '镜片深度跟随玻璃厚度滑杆（应用默认 28）');
     expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
@@ -404,11 +414,15 @@ void main() {
     expect(effect.backgroundKey, isNotNull,
         reason: '采样导航边界（胶囊+图标），非默认 body 边界');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
-    expect(effect.settings.chromaticAberration, 0.5,
-        reason: '色散输入 0.5，配合 vendored shader ×4.0 出 ~2px 物理彩边');
+    expect(effect.settings.chromaticAberration, 1.0,
+        reason: 'N37：色散输入 1.0，配合 vendored shader ×4.0 出物理彩边');
     expect(effect.settings.visibility, closeTo(1.0, 0.02),
         reason: 'visibility=activity 已淡入完成（允许微量过冲）');
     expect(effect.edgeZone, 20, reason: 'edgeZone 默认 20 透传给 shader uniform');
+    expect(effect.shape, isA<lg.LiquidRoundedRectangle>(),
+        reason: 'N37：镜片真胶囊端帽（非 squircle）');
+    expect(effect.backgroundKey, isNotNull,
+        reason: 'N37：真折射形变底标签（backgroundKey 采样导航层不断）');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 

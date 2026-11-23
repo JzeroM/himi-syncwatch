@@ -134,8 +134,11 @@ class LiquidBlobLens extends StatelessWidget {
                               child: DecoratedBox(
                                 decoration: ShapeDecoration(
                                   color: pillColor,
-                                  shape: const lg.LiquidRoundedSuperellipse(
-                                    borderRadius: 22,
+                                  // 698 N37：真胶囊（上下平直平行 + 左右正
+                                  // 圆弧端帽，曲率同条端帽）——squircle 端
+                                  // 部压平 = 「圆角矩形」观感根因。
+                                  shape: const lg.LiquidRoundedRectangle(
+                                    borderRadius: 22.5,
                                   ),
                                   shadows: pillShadows,
                                 ),
@@ -156,8 +159,9 @@ class LiquidBlobLens extends StatelessWidget {
                               velocityScale: 10,
                             ),
                             child: GlassEffect(
-                              shape: const lg.LiquidRoundedSuperellipse(
-                                    borderRadius: 22,
+                              // 698 N37：真胶囊端帽（同底衬形状）。
+                              shape: const lg.LiquidRoundedRectangle(
+                                    borderRadius: 22.5,
                                   ),
                               settings: settings.copyWith(visibility: activity),
                               quality: q,

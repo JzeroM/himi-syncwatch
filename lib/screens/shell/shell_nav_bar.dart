@@ -268,11 +268,11 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
         height: blobHeight,
         child: DecoratedBox(
           key: const ValueKey('navBlob'),
-          // 698 N17-A：水滴超椭圆 Squircle（用户拍板 A：连续曲率，
-          // 苹果式 squircle，比椭圆有型、比圆角矩形柔和）。
+          // 698 N37：水滴真胶囊（上下平直平行 + 左右正圆弧端帽，曲率
+          // 同条端帽）——撤 N17-A squircle（端部压平 = 圆角矩形观感）。
           decoration: ShapeDecoration(
             color: Colors.white.withValues(alpha: 0.10),
-            shape: RoundedSuperellipseBorder(
+            shape: RoundedRectangleBorder(
               borderRadius:
                   const BorderRadius.all(Radius.circular(blobHeight / 2)),
               side: BorderSide(
@@ -302,12 +302,13 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       glassColor: Colors.white.withValues(alpha: isIOS ? 0.05 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散：standard 路径沿用固定加强值（[PATCH himi] ×4.0 见 shader）
-      chromaticAberration: 0.5,
+      // 色散：物理色散 1.0（698 N37 拍板；[PATCH himi] ×4.0 见 shader）
+      chromaticAberration: 1.0,
       refractiveIndex:
           tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
-      lightIntensity:
-          tuning.lightIntensity ?? glassDefault('glassLightIntensity'),
+      // 698 N37：去镜面（lightIntensity 恒 0，无镜面高光）——玻璃观感
+      // 靠真折射形变底标签 + 物理色散，不靠镜面反光。
+      lightIntensity: 0,
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
       // 结构参数：standard 归一化补偿（iOS 收低白边/光晕/环境光）
