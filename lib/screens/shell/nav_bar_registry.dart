@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/squircle_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 
 /// 底部导航栏样式注册表（698 N15-E）：款式 =「动效性格」，皮肤统一液态
@@ -12,7 +13,11 @@ enum NavBarStyle {
   glassCapsule('玻璃水滴'),
 
   /// ② 流体液态：bouncy 弹簧过冲 + 速度拉伸 + 图标弹跳（双玻璃形态）。
-  fluidGlass('流体液态');
+  fluidGlass('流体液态'),
+
+  /// ③ 悬浮方块（698 N32）：主题色 squircle 浮块跳槽弹滑 + 图标接力 +
+  /// 标签胶囊跟随（视频动效 1:1，条体 ①款同源玻璃）。
+  squircle('悬浮方块');
 
   const NavBarStyle(this.label);
 
@@ -48,6 +53,8 @@ enum NavBarStyle {
           onCreateRoom: onCreateRoom,
           onJoinRoom: onJoinRoom,
         );
+      case NavBarStyle.squircle:
+        return SquircleNavBar(currentIndex: currentIndex, onSelect: onSelect);
     }
   }
 }

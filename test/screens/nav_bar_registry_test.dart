@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/fluid_glass_nav_bar.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
+import 'package:himi_syncwatch/screens/shell/squircle_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 
@@ -34,6 +35,15 @@ void main() {
   }
 
   group('样式注册表（698 N15-E）', () {
+    test('③款注册（N32）：squircle 解析 + 分发到 SquircleNavBar', () {
+      expect(NavBarStyle.parse('squircle'), NavBarStyle.squircle);
+      expect(NavBarStyle.parse('squircle').build(
+        currentIndex: 0,
+        onSelect: (_) {},
+      ), isA<SquircleNavBar>());
+      expect(NavBarStyle.squircle.label, '悬浮方块');
+    });
+
     test('解析容错：未知/空值回默认玻璃水滴款', () {
       expect(NavBarStyle.parse(null), NavBarStyle.glassCapsule);
       expect(NavBarStyle.parse('nonsense'), NavBarStyle.glassCapsule);

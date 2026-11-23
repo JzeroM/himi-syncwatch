@@ -723,6 +723,7 @@ void _showNavBarStyleSheet(BuildContext context, WidgetRef ref) {
                   subtitle: Text(switch (style) {
                     NavBarStyle.glassCapsule => '液滴安静跟随，可拖动切换标签',
                     NavBarStyle.fluidGlass => '弹簧过冲 + 液滴拉伸 + 图标弹跳（液态玻璃开关控制双形态）',
+                    NavBarStyle.squircle => '悬浮方块跳槽弹滑 + 图标接力 + 标签胶囊（视频动效）',
                   }),
                   onChanged: (v) {
                     if (v == null) return;
