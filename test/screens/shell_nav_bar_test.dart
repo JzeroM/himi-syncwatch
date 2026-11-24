@@ -411,8 +411,8 @@ void main() {
     final effect = tester.widget<GlassEffect>(find.byType(GlassEffect));
     expect(effect.interactionIntensity, closeTo(1.0, 0.02),
         reason: '镜片活动强度随弹簧拉满（允许微量过冲）');
-    expect(effect.backgroundKey, isNotNull,
-        reason: '采样导航边界（胶囊+图标），非默认 body 边界');
+    expect(effect.backgroundKey, isNull,
+        reason: 'N39：采样 body 页内容（透视效果，酷安同款）');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
     expect(effect.settings.chromaticAberration, 1.0,
         reason: 'N37：色散输入 1.0，配合 vendored shader ×4.0 出物理彩边');
@@ -425,8 +425,10 @@ void main() {
     expect((effect.shape as lg.LiquidRoundedRectangle).borderRadius,
         closeTo((54 - 2 * 5 + 2 * 11) / 2, 1.5),
         reason: 'N38：端帽半径动态 = 盒高/2（活动态 66 高也是真胶囊）');
-    expect(effect.backgroundKey, isNotNull,
-        reason: 'N37：真折射形变底标签（backgroundKey 采样导航层不断）');
+    expect(effect.backgroundKey, isNull,
+        reason: 'N39：body 采样（水滴透出页内容透视，酷安同款）');
+    expect(effect.lensZoom, closeTo(0.15, 0.001),
+        reason: 'N39：凸透镜剖面（中心放大 + 全域弯折 + 细彩边）');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 

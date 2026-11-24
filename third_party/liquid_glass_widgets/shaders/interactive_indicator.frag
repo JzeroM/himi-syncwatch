@@ -69,6 +69,13 @@ uniform float uEdgeAbsorption;
 // 不动 uData0..7/uDpr/uEdgeAbsorption 的既有槽位索引。
 uniform float uEdgeZone;
 
+// 35: [PATCH himi] 凸透镜剖面开关/强度（698 N39）：>0 时折射剖面从
+// 「边缘带弯折」切换为「透镜式」——采样点向中心收（中心放大 ~1.15×），
+// 全域平滑弯折，边缘细彩边（对齐酷安观感）。由 Dart _RenderInteractive
+// Indicator 末槽传入（同 uEdgeZone 先例），默认 0 = 原边缘带剖面不变
+//（②③款/面板等现有 GlassEffect 零影响）。
+uniform float uLensZoom;
+
 out vec4 fragColor;
 
 // ── Manual Bilinear Filtering ─────────────────────────────────────────────
@@ -237,6 +244,22 @@ void main() {
   // [PATCH himi] 0.35 → 0.45: 配合 bendStrength 1.25，边缘峰值弯折
   // ≈ 1.79×（0.9×0.35 → 1.25×0.45），内容被明显卷入镜片（参考图强度）。
   vec2 edgeOffsetLogical = surfaceNormal * edgeInfluence * bendStrength * uSize.y * 0.45;
+  // [PATCH himi] 698 N39: 凸透镜剖面（uLensZoom > 0）——采样点向中心
+  // 收缩 = 内容放大；径向二次剖面（中心放大最强、四缘平滑收束并轻
+  // 微卷曲）。lensZoom=0 走原边缘带剖面（零回归）。
+  vec2 lensOffset = vec2(0.0);
+  if (uLensZoom > 0.001) {
+    // 中心采样点 = 背景纹理中镜片中心对应点。
+    vec2 bgCenter = uBackgroundOrigin + uSize * 0.5;
+    vec2 toCenter = posInBg - bgCenter;
+    float lensProfile = 1.0 - radialDist * radialDist; // 中心 1 → 边缘 0
+    // 放大（基础 zoom + 边缘增强卷曲）：采样坐标向中心收缩。
+    lensOffset = -toCenter * (uLensZoom * (0.45 + 0.55 * lensProfile));
+    // 四缘轻微卷曲（沿法线的小弯折，酷安同款收边）。
+    lensOffset += surfaceNormal * edgeInfluence * uSize.y * 0.08;
+    edgeOffsetLogical = lensOffset;
+  }
+
   vec2 edgeOffsetUV = edgeOffsetLogical / uBackgroundSize;
   
   // Apply refraction offset along the surface normal.
@@ -264,8 +287,12 @@ void main() {
   // edgeZone band — real dispersion of the captured background (navigation
   // icons + capsule), so the rainbow fringe only appears where the content
   // behind has contrast. No emissive halo anywhere: the rainbow IS this.
+  // [PATCH himi] 698 N39: 凸透镜模式色散跟随全域弯折向量（细彩边
+  // ~2px 级，酷安同款）；原模式保持边缘带色散（×4.0 增益）。
   vec2 distort = surfaceNormal * edgeInfluence * uChromaticAberration;
-  vec2 chromaticShift = distort * 4.0; 
+  vec2 chromaticShift = (uLensZoom > 0.001)
+      ? lensOffset * uChromaticAberration * 0.22
+      : distort * 4.0; 
   
   vec3 bg;
   if (uHasBackground > 0.5) {

@@ -40,6 +40,7 @@ class GlassEffect extends StatefulWidget {
     this.rimThickness = 0.5,
     this.rimSmoothing = 1.5,
     this.edgeZone = 20.0,
+    this.lensZoom = 0.0,
     this.clipExpansion = EdgeInsets.zero,
     super.key,
   });
@@ -86,6 +87,12 @@ class GlassEffect extends StatefulWidget {
   /// default: 20，App 滑杆 20~24）。仅 Skia standard 路径生效
   /// （interactive_indicator.frag 槽 34）。
   final double edgeZone;
+
+  /// [PATCH himi] 凸透镜剖面强度（698 N39）：>0 时折射剖面从「边缘带
+  /// 弯折」切换为「透镜式」（中心放大 ~1/(1-zoom)、全域平滑弯折、边缘
+  /// 细彩边，对齐酷安观感）。仅 Skia standard 路径生效
+  /// （interactive_indicator.frag 槽 35）。0 = 原剖面（零回归）。
+  final double lensZoom;
 
   /// Extra clip budget forwarded to [LiquidGlass.withOwnLayer] on the Impeller
   /// premium path.  Use this to prevent the glass BackdropFilterLayer from
@@ -605,6 +612,7 @@ class _GlassEffectState extends State<GlassEffect>
         rimSmoothing: widget.rimSmoothing,
         edgeAbsorption: effectiveSettings.edgeAbsorption,
         edgeZone: widget.edgeZone,
+        lensZoom: widget.lensZoom,
         clipExpansion: widget.clipExpansion,
         child: widget.child,
       );
@@ -633,6 +641,7 @@ class _GlassEffectState extends State<GlassEffect>
         rimSmoothing: widget.rimSmoothing,
         edgeAbsorption: effectiveSettings.edgeAbsorption,
         edgeZone: widget.edgeZone,
+        lensZoom: widget.lensZoom,
         clipExpansion: widget.clipExpansion,
         child: widget.child,
       );
@@ -661,6 +670,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
     required this.rimSmoothing,
     required this.edgeAbsorption,
     required this.edgeZone,
+    required this.lensZoom,
     this.clipExpansion = EdgeInsets.zero,
     required super.child,
   });
@@ -681,6 +691,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
   final double rimSmoothing;
   final double edgeAbsorption;
   final double edgeZone;
+  final double lensZoom;
 
   /// Inflation budget matching the parent [AnimatedGlassIndicator._jellyClipExpansion].
   /// The shader drawRect is inflated by this amount so that pixels pushed
@@ -707,6 +718,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       rimSmoothing: rimSmoothing,
       edgeAbsorption: edgeAbsorption,
       edgeZone: edgeZone,
+      lensZoom: lensZoom,
       clipExpansion: clipExpansion,
     );
   }
@@ -733,6 +745,7 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       ..rimSmoothing = rimSmoothing
       ..edgeAbsorption = edgeAbsorption
       ..edgeZone = edgeZone
+      ..lensZoom = lensZoom
       ..clipExpansion = clipExpansion;
   }
 }
@@ -755,6 +768,7 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     required double rimSmoothing,
     required double edgeAbsorption,
     required double edgeZone,
+    required double lensZoom,
     EdgeInsets clipExpansion = EdgeInsets.zero,
   })  : _shader = shader,
         _settings = settings,
@@ -772,6 +786,7 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
         _rimSmoothing = rimSmoothing,
         _edgeAbsorption = edgeAbsorption,
         _edgeZone = edgeZone,
+        _lensZoom = lensZoom,
         _clipExpansion = clipExpansion,
         _cachedLightCos = math.cos(settings.lightAngle),
         _cachedLightSin = -math.sin(settings.lightAngle);
@@ -901,6 +916,13 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
   set edgeZone(double value) {
     if (_edgeZone == value) return;
     _edgeZone = value;
+    markNeedsPaint();
+  }
+
+  double _lensZoom;
+  set lensZoom(double value) {
+    if (_lensZoom == value) return;
+    _lensZoom = value;
     markNeedsPaint();
   }
 
@@ -1174,5 +1196,9 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     // (logical px from the edge). App slider 20..24 (default 20); clamped
     // defensively — the shader divides by this value (r_norm).
     _shader.setFloat(index++, _edgeZone.clamp(4.0, 64.0));
+
+    // Slot 35: [PATCH himi] lensZoom — 凸透镜剖面强度（698 N39）。0 =
+    // 原边缘带剖面；>0 透镜式（中心放大 + 全域弯折 + 细彩边）。
+    _shader.setFloat(index++, _lensZoom.clamp(0.0, 0.45));
   }
 }

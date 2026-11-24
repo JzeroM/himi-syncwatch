@@ -159,8 +159,10 @@ class LiquidBlobLens extends StatelessWidget {
                             transform:
                                 DraggableIndicatorPhysics.buildJellyTransform(
                               velocity: Offset(velocity, 0),
-                              maxDistortion: isStd ? 0.35 : 0.8,
-                              velocityScale: 10,
+                              // 698 N39：横向伸缩感增强（拖动胶囊随速度
+                              // 明显拉长/回缩的果冻伸缩）。
+                              maxDistortion: isStd ? 0.85 : 0.85,
+                              velocityScale: 6,
                             ),
                             child: GlassEffect(
                               // 698 N38：真胶囊端帽（半径动态 = 盒高/2，
@@ -171,10 +173,16 @@ class LiquidBlobLens extends StatelessWidget {
                               settings: settings.copyWith(visibility: activity),
                               quality: q,
                               interactionIntensity: activity,
-                              // 采样导航边界（胶囊+图标）→ 图标被真实折射形变
-                              backgroundKey: backgroundKey,
+                              // 698 N39：采样 body 页内容（酷安同款透视——
+                              // 水滴透出页内容放大弯折）；null = LiquidGlassScope
+                              // 默认 body 纹理。导航在 GlassBackgroundSource
+                              // 之外（bottomNavigationBar 槽位）→ 无自采样反馈。
+                              backgroundKey: null,
                               // 折射范围（滑杆 20~24，默认 20）
                               edgeZone: edgeZone,
+                              // 698 N39：凸透镜剖面（中心放大 ~1.15×、
+                              // 全域平滑弯折、边缘细彩边——酷安同款）。
+                              lensZoom: 0.15,
                               clipExpansion: const EdgeInsets.symmetric(
                                 horizontal: 20,
                                 vertical: 15,
