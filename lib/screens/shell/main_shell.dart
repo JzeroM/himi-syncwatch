@@ -12,7 +12,6 @@ import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
-import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
@@ -202,15 +201,8 @@ class _MainShellState extends ConsumerState<MainShell> {
     // 三键贴其上沿 +12；手势条/无安全区统一 20（原 6/4，太贴屏底）
     final bottomGap = MainShell.navBottomGap(bottomInset);
 
-    // 主题色三段渐变（null 时保持应用底色）
-    final base = Theme.of(context).scaffoldBackgroundColor;
-
-    // 698 N44：全屏海报氛围洗背景（同源零分割）——TV/桌面/手机共用；
-    // shellBackground key 保留（测试/回退定位）。
-    final gradientBg = KeyedSubtree(
-      key: const ValueKey('shellBackground'),
-      child: PosterBackdrop(base: base),
-    );
+    //（698 N47：背景四合一提升 app builder 全局层——shell 内不再渲染，
+    // 防双重叠加；页面 Scaffold 透明透出。）
 
     final scrollable = NotificationListener<ScrollNotification>(
       onNotification: _handleScroll,
@@ -244,10 +236,11 @@ class _MainShellState extends ConsumerState<MainShell> {
       }
       return Scaffold(
         extendBody: true,
+        // 698 N47：透明透出全局背景层。
+        backgroundColor: Colors.transparent,
         body: Stack(
           clipBehavior: Clip.none,
           children: [
-            Positioned.fill(child: gradientBg),
             Column(
               children: [
                 TvTopNavBar(
@@ -267,10 +260,11 @@ class _MainShellState extends ConsumerState<MainShell> {
       // 渐变铺在最底层全宽，抽屉区与内容区共用同一张连续背景
       return Scaffold(
         extendBody: true,
+        // 698 N47：透明透出全局背景层。
+        backgroundColor: Colors.transparent,
         body: Stack(
           clipBehavior: Clip.none,
           children: [
-            Positioned.fill(child: gradientBg),
             ShellDesktopLayout(
               content: scrollable,
               currentIndex: widget.shell.currentIndex,
@@ -281,21 +275,12 @@ class _MainShellState extends ConsumerState<MainShell> {
       );
     }
 
-    // 698 N44：手机布局同款全屏海报氛围洗（key 冲突由 gradientBg 共用
-    // 分支互斥保证——TV/桌面/手机三选一渲染）。
-    final content = KeyedSubtree(
-      key: const ValueKey('shellBackground'),
-      child: Stack(
-        fit: StackFit.passthrough,
-        children: [
-          Positioned.fill(child: PosterBackdrop(base: base)),
-          scrollable,
-        ],
-      ),
-    );
+    final content = scrollable;
 
     return Scaffold(
       extendBody: true,
+      // 698 N47：透明透出全局背景层。
+      backgroundColor: Colors.transparent,
       // 标记页面内容为玻璃采样面（LiquidGlassScope 兜底，包内 GlassEffect
       // 在 Skia/Web 上采样此 RepaintBoundary；Impeller 不需要）。
       body: lg.GlassBackgroundSource(child: content),

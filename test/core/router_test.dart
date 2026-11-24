@@ -25,6 +25,7 @@ import 'package:himi_syncwatch/screens/tmdb/tmdb_grid_screen.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
+import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 
 import '../helpers/cache_fakes.dart';
@@ -85,7 +86,22 @@ Future<GoRouter> _pumpApp(
               // 模拟真机系统栏（edge-to-edge 下 padding 已被消费，仅 viewPadding 保留）
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(context).copyWith(viewPadding: viewPadding),
-                child: child ?? const SizedBox.shrink(),
+                // 698 N47：与生产（core/app.dart）一致——全局背景四合一
+                // 层（色场+明暗保色+暗角聚光）覆盖所有路由。
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    Positioned.fill(
+                      child: KeyedSubtree(
+                        key: const ValueKey('shellBackground'),
+                        child: PosterBackdrop(
+                          base: Theme.of(context).scaffoldBackgroundColor,
+                        ),
+                      ),
+                    ),
+                    child ?? const SizedBox.shrink(),
+                  ],
+                ),
               ),
             ),
           );
@@ -530,6 +546,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(shellBaseColor(), isNotNull);
     expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
+  testWidgets('N47 背景全局统一：push 独立路由下色场+暗角聚光仍在（与首页同款）',
+      (tester) async {
+    final router = await _pumpApp(tester);
+
+    // push 独立路由（不在 shell 内）——全局层背景须覆盖。
+    router.push('/detail/42?server=srv-b');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('shellBackground')), findsOneWidget,
+        reason: 'N47 全局背景层覆盖 push 路由');
+    final layers = tester
+        .widgetList<DecoratedBox>(find.descendant(
+          of: find.byKey(const ValueKey('shellBackground')),
+          matching: find.byType(DecoratedBox),
+        ))
+        .toList();
+    final radial = layers
+        .map((l) => (l.decoration! as BoxDecoration).gradient)
+        .whereType<RadialGradient>()
+        .length;
+    expect(radial, greaterThanOrEqualTo(2),
+        reason: '暗角 + 聚光全路由一致（push 页同样叠暗角聚光）');
   });
 
   testWidgets('detail 路由解析 server 参数注入 DetailScreen', (tester) async {

@@ -73,6 +73,8 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
         if (didPop) ref.read(lanConfigProvider.notifier).stop();
       },
       child: Scaffold(
+        // 698 N47：透明透出全局背景层。
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: Text(_title),
           leading: const TvBackButton(),

@@ -384,6 +384,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (!_initialized) {
       return const Scaffold(
+        backgroundColor: Colors.transparent,
         body: Center(child: CircularProgressIndicator()),
       );
     }

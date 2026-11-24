@@ -129,6 +129,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // 698 N47：透明透出全局背景层。
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('房间详情'),
         leading: const TvBackButton(),

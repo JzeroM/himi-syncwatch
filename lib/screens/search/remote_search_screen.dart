@@ -63,6 +63,8 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
         if (didPop) ref.read(remoteSearchProvider.notifier).stop();
       },
       child: Scaffold(
+        // 698 N47：透明透出全局背景层。
+        backgroundColor: Colors.transparent,
         appBar: AppBar(
           title: const Text('手机扫码搜索'),
           leading: const TvBackButton(),

@@ -1590,6 +1590,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
     return Scaffold(
       extendBody: true,
+      // 698 N47：透明透出全局背景层（详情 hero 海报氛围是内容层设计，
+      // 由 detailBackground 保留）。
+      backgroundColor: Colors.transparent,
       body: AnimatedContainer(
         key: const Key('detailBackground'),
         duration: const Duration(milliseconds: 500),

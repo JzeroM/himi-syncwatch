@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/page_transitions.dart';
+import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/core/scroll_behavior.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -50,9 +51,26 @@ class HimiSyncApp extends ConsumerWidget {
                 tvMode ? TvRemoteShell(child: subtree) : subtree;
             // 695：Windows 全局键（Space=暂停/播放、ESC=退全屏/返回/房间
             // 解散确认）——挂根部让任意 Flutter 页面都生效。
-            //（698 N46：织物微粒蒙层移除，背景改海报色场 + 暗角聚光。）
+            // 698 N47：背景四合一（海报底部色场 + 明暗保色 + 暗角聚光）
+            // 全局层——覆盖所有路由（shell 分支 / push 独立页 / 弹层下方），
+            // 首页与非首页同款；shellBackground key 保留（测试/回退定位）。
             return TraktDeepLinkListener(
-              child: WindowsGlobalHotkeys(child: modeSubtree),
+              child: WindowsGlobalHotkeys(
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    Positioned.fill(
+                      child: KeyedSubtree(
+                        key: const ValueKey('shellBackground'),
+                        child: PosterBackdrop(
+                          base: Theme.of(context).scaffoldBackgroundColor,
+                        ),
+                      ),
+                    ),
+                    modeSubtree,
+                  ],
+                ),
+              ),
             );
           },
           themeMode: switch (appearanceMode) {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -59,7 +60,24 @@ Future<void> pumpApp(
           router = ref.watch(appRouterProvider);
           // 与生产（core/app.dart）一致：提供 GlassBackgroundSource 所需的采样键
           return lg.LiquidGlassScope(
-            child: MaterialApp.router(routerConfig: router),
+            child: MaterialApp.router(
+              routerConfig: router,
+              // 698 N47：全局背景四合一层（同生产 app builder）。
+              builder: (context, child) => Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  Positioned.fill(
+                    child: KeyedSubtree(
+                      key: const ValueKey('shellBackground'),
+                      child: PosterBackdrop(
+                        base: Theme.of(context).scaffoldBackgroundColor,
+                      ),
+                    ),
+                  ),
+                  child ?? const SizedBox.shrink(),
+                ],
+              ),
+            ),
           );
         },
       ),
