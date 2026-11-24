@@ -110,7 +110,13 @@ class LiquidBlobLens extends StatelessWidget {
       child: IgnorePointer(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: paddingV),
-          child: Stack(
+          // 698 N38：端帽半径动态 = 当前盒高/2——静止 44/2=22、活动态
+          // （上下外扩）66/2=33，任何状态端帽恒为正圆半圆（真胶囊）。
+          // 固定 22.5 在 66 高活动态只剩小圆角 → 「圆角矩形」观感根因。
+          child: LayoutBuilder(builder: (context, constraints) {
+            final boxH = constraints.maxHeight + 2 * expansionV * activity;
+            final capsuleR = boxH / 2;
+            return Stack(
             clipBehavior: Clip.none,
             children: [
               Positioned(
@@ -134,11 +140,9 @@ class LiquidBlobLens extends StatelessWidget {
                               child: DecoratedBox(
                                 decoration: ShapeDecoration(
                                   color: pillColor,
-                                  // 698 N37：真胶囊（上下平直平行 + 左右正
-                                  // 圆弧端帽，曲率同条端帽）——squircle 端
-                                  // 部压平 = 「圆角矩形」观感根因。
-                                  shape: const lg.LiquidRoundedRectangle(
-                                    borderRadius: 22.5,
+                                  // 698 N38：真胶囊端帽（半径动态 = 盒高/2）。
+                                  shape: lg.LiquidRoundedRectangle(
+                                    borderRadius: capsuleR,
                                   ),
                                   shadows: pillShadows,
                                 ),
@@ -159,9 +163,10 @@ class LiquidBlobLens extends StatelessWidget {
                               velocityScale: 10,
                             ),
                             child: GlassEffect(
-                              // 698 N37：真胶囊端帽（同底衬形状）。
-                              shape: const lg.LiquidRoundedRectangle(
-                                    borderRadius: 22.5,
+                              // 698 N38：真胶囊端帽（半径动态 = 盒高/2，
+                              // 活动态 66 高也保持正圆端帽）。
+                              shape: lg.LiquidRoundedRectangle(
+                                    borderRadius: capsuleR,
                                   ),
                               settings: settings.copyWith(visibility: activity),
                               quality: q,
@@ -195,7 +200,8 @@ class LiquidBlobLens extends StatelessWidget {
                 ),
               ),
             ],
-          ),
+          );
+          }),
         ),
       ),
     );

@@ -267,7 +267,7 @@ void main() {
           .topLeft
           .x;
       expect(br, closeTo(22.5, 0.01),
-          reason: '端帽半径 = 半高 45/2 → 正圆弧（真胶囊）');
+          reason: '降级胶囊端帽半径 = 半高 45/2 → 正圆弧（真胶囊）');
     }
   });
 
@@ -421,6 +421,10 @@ void main() {
     expect(effect.edgeZone, 20, reason: 'edgeZone 默认 20 透传给 shader uniform');
     expect(effect.shape, isA<lg.LiquidRoundedRectangle>(),
         reason: 'N37：镜片真胶囊端帽（非 squircle）');
+    // N38：活动态盒高 44+2×11=66 → 半径 33 = 半高（正圆端帽）。
+    expect((effect.shape as lg.LiquidRoundedRectangle).borderRadius,
+        closeTo((54 - 2 * 5 + 2 * 11) / 2, 1.5),
+        reason: 'N38：端帽半径动态 = 盒高/2（活动态 66 高也是真胶囊）');
     expect(effect.backgroundKey, isNotNull,
         reason: 'N37：真折射形变底标签（backgroundKey 采样导航层不断）');
     expect(effect.quality, lg.GlassQuality.standard,
