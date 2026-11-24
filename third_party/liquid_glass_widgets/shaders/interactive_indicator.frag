@@ -135,6 +135,46 @@ vec4 textureBilinear(vec2 uv, vec2 physSize, vec2 invPhys) {
     return mix(cTop, cBot, f.y);
 }
 
+// [PATCH himi] 698 N40: uTexture2 版双线性（同 textureBilinear）。
+vec4 textureBilinear2(vec2 uv, vec2 physSize, vec2 invPhys) {
+  vec2 p = uv * physSize - 0.5;
+  vec2 i = floor(p);
+  vec2 f = p - i;
+  vec2 p0 = i;
+  vec2 p1 = i + 1.0;
+  vec2 p2 = i + vec2(1.0, 0.0);
+  vec2 p3 = i + vec2(0.0, 1.0);
+  vec4 c0 = texture(uTexture2, (p0 + 0.5) * invPhys);
+  vec4 c1 = texture(uTexture2, (p1 + 0.5) * invPhys);
+  vec4 c2 = texture(uTexture2, (p2 + 0.5) * invPhys);
+  vec4 c3 = texture(uTexture2, (p3 + 0.5) * invPhys);
+  vec4 top = mix(c0, c2, f.x);
+  vec4 bottom = mix(c3, c1, f.x);
+  return mix(top, bottom, f.y);
+}
+
+// [PATCH himi] 698 N40: 复合采样——nav（含 alpha，越界透明）叠 body。
+// 几何量显式传参（uBackgroundOrigin/uDpr/uBg2* 等是 main 内解包局部量，
+// 全局函数不可见）。
+vec3 compositeFetch(vec2 samplePos, vec2 navOrigin, vec2 navSize,
+                    vec2 bg2Origin, vec2 bg2Size, float dpr, float hasBg2) {
+  vec2 uv = samplePos / navSize;
+  vec2 phys = navSize * dpr;
+  vec4 navCol = textureBilinear(uv, phys, 1.0 / phys);
+  // nav 纹理越界 → 透明（微缩外扩区透出 body）。
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+      navCol = vec4(0.0);
+  }
+  if (hasBg2 < 0.5) {
+      return navCol.rgb;
+  }
+  vec2 pos2 = bg2Origin + (samplePos - navOrigin);
+  vec2 uv2 = pos2 / bg2Size;
+  vec2 phys2 = bg2Size * dpr;
+  vec3 bodyCol = textureBilinear2(uv2, phys2, 1.0 / phys2).rgb;
+  return mix(bodyCol, navCol.rgb, navCol.a);
+}
+
 void main() {
   vec2 uSize = uData0.xy;
   vec2 uOrigin = uData0.zw;
@@ -305,43 +345,6 @@ void main() {
       ? lensOffset * uChromaticAberration * 0.22
       : distort * 4.0; 
   
-  // [PATCH himi] 698 N40: uTexture2 版双线性（同 textureBilinear）。
-vec4 textureBilinear2(vec2 uv, vec2 physSize, vec2 invPhys) {
-    vec2 p = uv * physSize - 0.5;
-    vec2 i = floor(p);
-    vec2 f = p - i;
-    vec2 p0 = i;
-    vec2 p1 = i + 1.0;
-    vec2 p2 = i + vec2(1.0, 0.0);
-    vec2 p3 = i + vec2(0.0, 1.0);
-    vec4 c0 = texture(uTexture2, (p0 + 0.5) * invPhys);
-    vec4 c1 = texture(uTexture2, (p1 + 0.5) * invPhys);
-    vec4 c2 = texture(uTexture2, (p2 + 0.5) * invPhys);
-    vec4 c3 = texture(uTexture2, (p3 + 0.5) * invPhys);
-    vec4 top = mix(c0, c2, f.x);
-    vec4 bottom = mix(c3, c1, f.x);
-    return mix(top, bottom, f.y);
-}
-
-// [PATCH himi] 698 N40: 复合采样——nav（含 alpha，越界透明）叠 body。
-vec3 compositeFetch(vec2 samplePos) {
-    vec2 uv = samplePos / uBackgroundSize;
-    vec2 phys = uBackgroundSize * uDpr;
-    vec4 navCol = textureBilinear(uv, phys, 1.0 / phys);
-    // nav 纹理越界 → 透明（微缩外扩区透出 body）。
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-        navCol = vec4(0.0);
-    }
-    if (uHasBg2 < 0.5) {
-        return navCol.rgb;
-    }
-    vec2 pos2 = vec2(uBg2OriginX, uBg2OriginY) + (samplePos - uBackgroundOrigin);
-    vec2 uv2 = pos2 / vec2(uBg2SizeX, uBg2SizeY);
-    vec2 phys2 = vec2(uBg2SizeX, uBg2SizeY) * uDpr;
-    vec3 bodyCol = textureBilinear2(uv2, phys2, 1.0 / phys2).rgb;
-    return mix(bodyCol, navCol.rgb, navCol.a);
-}
-
 vec3 bg;
   if (uHasBackground > 0.5) {
     // Physical texture size (actual pixel dimensions after DPR capture).
@@ -352,12 +355,23 @@ vec3 bg;
     if (uChromaticAberration < 0.001) {
       // No chromatic aberration — single bilinear fetch.
       // [PATCH himi] 698 N40: compositeFetch（nav alpha 叠 body 复合）。
-      bg = compositeFetch(localRefracted);
+      bg = compositeFetch(localRefracted, uBackgroundOrigin, uBackgroundSize,
+          vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
+          uDpr, uHasBg2);
     } else {
       // Chromatic aberration: separate RGB channels with bilinear filtering.
-      vec3 colR = compositeFetch(localRefracted + chromaticShift);
-      vec3 colG = compositeFetch(localRefracted);
-      vec3 colB = compositeFetch(localRefracted - chromaticShift);
+      vec3 colR = compositeFetch(localRefracted + chromaticShift,
+          uBackgroundOrigin, uBackgroundSize,
+          vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
+          uDpr, uHasBg2);
+      vec3 colG = compositeFetch(localRefracted,
+          uBackgroundOrigin, uBackgroundSize,
+          vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
+          uDpr, uHasBg2);
+      vec3 colB = compositeFetch(localRefracted - chromaticShift,
+          uBackgroundOrigin, uBackgroundSize,
+          vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
+          uDpr, uHasBg2);
       bg = vec3(colR.r, colG.g, colB.b);
     }
   } else {
