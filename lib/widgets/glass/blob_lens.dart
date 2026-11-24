@@ -173,11 +173,11 @@ class LiquidBlobLens extends StatelessWidget {
                               settings: settings.copyWith(visibility: activity),
                               quality: q,
                               interactionIntensity: activity,
-                              // 698 N39：采样 body 页内容（酷安同款透视——
-                              // 水滴透出页内容放大弯折）；null = LiquidGlassScope
-                              // 默认 body 纹理。导航在 GlassBackgroundSource
-                              // 之外（bottomNavigationBar 槽位）→ 无自采样反馈。
-                              backgroundKey: null,
+                              // 698 N40：双纹理复合——nav 捕获（胶囊+图标）
+                              // 为主源、body 页内容为第二源自走 scope；透镜下
+                              // 所有内容（导航本身+页内容）统一微缩（酷安同款）。
+                              // 导航在 GlassBackgroundSource 之外 → 无自采样反馈。
+                              backgroundKey: backgroundKey,
                               // 折射范围（滑杆 20~24，默认 20）
                               edgeZone: edgeZone,
                               // 698 N39：凸透镜剖面（中心放大 ~1.15×、

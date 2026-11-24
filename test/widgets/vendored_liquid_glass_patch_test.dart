@@ -92,7 +92,7 @@ void main() {
     expect(markers, greaterThanOrEqualTo(10), reason: '全部 [PATCH himi] 补丁标记齐全');
   });
 
-  test('uniform 槽数与 glass_effect.dart setFloat 次数一致（36）', () {
+  test('uniform 槽数与 glass_effect.dart setFloat 次数一致（41）', () {
     // Flutter FragmentShader.setFloat 按 frag 声明顺序占槽：
     // vec4 = 4 float 槽、float = 1 槽、sampler2D 不占（现有序列
     // 0..31 uData0..7 + 32 uDpr + 33 uEdgeAbsorption 实测对位正确）。
@@ -103,8 +103,9 @@ void main() {
     final floatCount =
         RegExp(r'^uniform float', multiLine: true).allMatches(frag).length;
     expect(vec4Count, 8, reason: 'uData0..uData7');
-    expect(floatCount, 4,
-        reason: 'uDpr + uEdgeAbsorption + uEdgeZone + uLensZoom（N39）');
+    expect(floatCount, 9,
+        reason: 'uDpr + uEdgeAbsorption + uEdgeZone + uLensZoom（N39）'
+            ' + uBg2×4 + uHasBg2（N40 双纹理）');
     final expectedSlots = vec4Count * 4 + floatCount;
 
     final effect = File(

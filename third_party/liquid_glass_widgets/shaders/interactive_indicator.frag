@@ -76,6 +76,17 @@ uniform float uEdgeZone;
 //（②③款/面板等现有 GlassEffect 零影响）。
 uniform float uLensZoom;
 
+// 36..40: [PATCH himi] 第二采样源（698 N40 双纹理复合）：nav 捕获
+//（胶囊+图标，含 alpha）叠 body 页内容——透镜下所有内容统一微缩
+//（导航栏以内微缩导航本身、以外微缩页内容）。uHasBg2=0 原单源
+// 路径不变（②③款/面板零影响）。
+uniform float uBg2OriginX;
+uniform float uBg2OriginY;
+uniform float uBg2SizeX;
+uniform float uBg2SizeY;
+uniform float uHasBg2;
+uniform sampler2D uTexture2;
+
 out vec4 fragColor;
 
 // ── Manual Bilinear Filtering ─────────────────────────────────────────────
@@ -294,7 +305,44 @@ void main() {
       ? lensOffset * uChromaticAberration * 0.22
       : distort * 4.0; 
   
-  vec3 bg;
+  // [PATCH himi] 698 N40: uTexture2 版双线性（同 textureBilinear）。
+vec4 textureBilinear2(vec2 uv, vec2 physSize, vec2 invPhys) {
+    vec2 p = uv * physSize - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    vec2 p0 = i;
+    vec2 p1 = i + 1.0;
+    vec2 p2 = i + vec2(1.0, 0.0);
+    vec2 p3 = i + vec2(0.0, 1.0);
+    vec4 c0 = texture(uTexture2, (p0 + 0.5) * invPhys);
+    vec4 c1 = texture(uTexture2, (p1 + 0.5) * invPhys);
+    vec4 c2 = texture(uTexture2, (p2 + 0.5) * invPhys);
+    vec4 c3 = texture(uTexture2, (p3 + 0.5) * invPhys);
+    vec4 top = mix(c0, c2, f.x);
+    vec4 bottom = mix(c3, c1, f.x);
+    return mix(top, bottom, f.y);
+}
+
+// [PATCH himi] 698 N40: 复合采样——nav（含 alpha，越界透明）叠 body。
+vec3 compositeFetch(vec2 samplePos) {
+    vec2 uv = samplePos / uBackgroundSize;
+    vec2 phys = uBackgroundSize * uDpr;
+    vec4 navCol = textureBilinear(uv, phys, 1.0 / phys);
+    // nav 纹理越界 → 透明（微缩外扩区透出 body）。
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        navCol = vec4(0.0);
+    }
+    if (uHasBg2 < 0.5) {
+        return navCol.rgb;
+    }
+    vec2 pos2 = vec2(uBg2OriginX, uBg2OriginY) + (samplePos - uBackgroundOrigin);
+    vec2 uv2 = pos2 / vec2(uBg2SizeX, uBg2SizeY);
+    vec2 phys2 = vec2(uBg2SizeX, uBg2SizeY) * uDpr;
+    vec3 bodyCol = textureBilinear2(uv2, phys2, 1.0 / phys2).rgb;
+    return mix(bodyCol, navCol.rgb, navCol.a);
+}
+
+vec3 bg;
   if (uHasBackground > 0.5) {
     // Physical texture size (actual pixel dimensions after DPR capture).
     // uBackgroundSize is in LOGICAL pixels; the texture has uDpr× more texels.
@@ -303,12 +351,13 @@ void main() {
 
     if (uChromaticAberration < 0.001) {
       // No chromatic aberration — single bilinear fetch.
-      bg = textureBilinear(localRefracted / uBackgroundSize, physBgSize, invPhysBgSize).rgb;
+      // [PATCH himi] 698 N40: compositeFetch（nav alpha 叠 body 复合）。
+      bg = compositeFetch(localRefracted);
     } else {
       // Chromatic aberration: separate RGB channels with bilinear filtering.
-      vec3 colR = textureBilinear((localRefracted + chromaticShift) / uBackgroundSize, physBgSize, invPhysBgSize).rgb;
-      vec3 colG = textureBilinear(localRefracted / uBackgroundSize, physBgSize, invPhysBgSize).rgb;
-      vec3 colB = textureBilinear((localRefracted - chromaticShift) / uBackgroundSize, physBgSize, invPhysBgSize).rgb;
+      vec3 colR = compositeFetch(localRefracted + chromaticShift);
+      vec3 colG = compositeFetch(localRefracted);
+      vec3 colB = compositeFetch(localRefracted - chromaticShift);
       bg = vec3(colR.r, colG.g, colB.b);
     }
   } else {

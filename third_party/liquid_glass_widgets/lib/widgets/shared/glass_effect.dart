@@ -167,6 +167,12 @@ class _GlassEffectState extends State<GlassEffect>
   ui.FragmentShader? _localShader;
   bool _isDisposed = false;
   ui.Image? _backgroundImage;
+
+  // [PATCH himi] 698 N40 第二捕获源（body 页内容）：双纹理复合——
+  // nav 捕获（胶囊+图标）叠 body 页内容，透镜下所有内容统一微缩。
+  ui.Image? _bodyImage;
+  Offset? _lastBodyCapturePosition;
+  Size? _lastBodyCaptureSize;
   late Ticker _ticker;
   Size? _lastCaptureSize;
   Offset? _lastCapturePosition;
@@ -270,6 +276,8 @@ class _GlassEffectState extends State<GlassEffect>
         _ticker.stop();
         _backgroundImage?.dispose();
         _backgroundImage = null;
+        _bodyImage?.dispose();
+        _bodyImage = null;
         // debugPrint(
         //     '[GlassEffect] 📸 Interaction finished, cleared snapshot.');
       }
@@ -304,6 +312,49 @@ class _GlassEffectState extends State<GlassEffect>
 
     if (needsCapture) {
       _captureBackground(boundary, currentSize, currentPos);
+    }
+
+    // [PATCH himi] 698 N40：第二捕获源（body 页内容，scope 边界）。
+    // 仅当主源是 backgroundKey（nav 捕获）时才有复合意义；
+    // backgroundKey=null 的单源用户（②③款/面板）不捕第二源，零开销。
+    if (widget.backgroundKey != null && _cachedScopeKey != null) {
+      final bodyBoundary = _cachedScopeKey!.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (bodyBoundary != null && bodyBoundary.hasSize) {
+        final bodySize = bodyBoundary.size;
+        final bodyPos =
+            (_cachedScopeKey!.currentContext?.findRenderObject() as RenderBox?)
+                ?.localToGlobal(Offset.zero);
+        bool needsBodyCapture = _bodyImage == null;
+        needsBodyCapture |= _lastBodyCaptureSize != bodySize;
+        needsBodyCapture |= _lastBodyCapturePosition != bodyPos;
+        needsBodyCapture |= isInteracting;
+        if (needsBodyCapture) {
+          _captureBody(bodyBoundary, bodySize, bodyPos);
+        }
+      }
+    }
+  }
+
+  /// [PATCH himi] 698 N40：body 页内容捕获（与主源同构，存 _bodyImage）。
+  void _captureBody(
+      RenderRepaintBoundary boundary, Size size, Offset? pos) {
+    try {
+      final image = boundary.toImageSync(pixelRatio: _devicePixelRatio);
+      if (!mounted) {
+        image.dispose();
+        return;
+      }
+      _bodyImage?.dispose();
+      _bodyImage = image;
+      _lastBodyCaptureSize = size;
+      _lastBodyCapturePosition = pos;
+      setState(() {});
+    } catch (e) {
+      assert(() {
+        debugPrint('[GlassEffect] body toImageSync failed: $e');
+        return true;
+      }());
     }
   }
 
@@ -436,6 +487,8 @@ class _GlassEffectState extends State<GlassEffect>
     // after destruction (Crash 2).
     _backgroundImage?.dispose();
     _backgroundImage = null;
+    _bodyImage?.dispose();
+    _bodyImage = null;
     _localShader?.dispose();
     _localShader = null;
     super.dispose();
@@ -603,6 +656,9 @@ class _GlassEffectState extends State<GlassEffect>
         densityFactor: widget.densityFactor,
         backdropLuma: backdropLuma,
         backgroundImage: _backgroundImage,
+        bodyImage: _bodyImage,
+        bodyCapturePosition: _lastBodyCapturePosition,
+        bodyCaptureSize: _lastBodyCaptureSize,
         backgroundKey: effectiveKey,
         devicePixelRatio: View.of(context).devicePixelRatio,
         ambientRim: effectiveAmbientRim,
@@ -671,9 +727,17 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
     required this.edgeAbsorption,
     required this.edgeZone,
     required this.lensZoom,
+    this.bodyImage,
+    this.bodyCapturePosition,
+    this.bodyCaptureSize,
     this.clipExpansion = EdgeInsets.zero,
     required super.child,
   });
+
+  /// [PATCH himi] 698 N40 第二捕获源（body 页内容）。
+  final ui.Image? bodyImage;
+  final Offset? bodyCapturePosition;
+  final Size? bodyCaptureSize;
 
   final ui.FragmentShader shader;
   final LiquidGlassSettings settings;
@@ -719,6 +783,9 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       edgeAbsorption: edgeAbsorption,
       edgeZone: edgeZone,
       lensZoom: lensZoom,
+      bodyImage: bodyImage,
+      bodyCapturePosition: bodyCapturePosition,
+      bodyCaptureSize: bodyCaptureSize,
       clipExpansion: clipExpansion,
     );
   }
@@ -746,6 +813,9 @@ class _InteractiveIndicatorEffect extends SingleChildRenderObjectWidget {
       ..edgeAbsorption = edgeAbsorption
       ..edgeZone = edgeZone
       ..lensZoom = lensZoom
+      ..bodyImage = bodyImage
+      ..bodyCapturePosition = bodyCapturePosition
+      ..bodyCaptureSize = bodyCaptureSize
       ..clipExpansion = clipExpansion;
   }
 }
@@ -769,6 +839,9 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     required double edgeAbsorption,
     required double edgeZone,
     required double lensZoom,
+    ui.Image? bodyImage,
+    Offset? bodyCapturePosition,
+    Size? bodyCaptureSize,
     EdgeInsets clipExpansion = EdgeInsets.zero,
   })  : _shader = shader,
         _settings = settings,
@@ -787,6 +860,9 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
         _edgeAbsorption = edgeAbsorption,
         _edgeZone = edgeZone,
         _lensZoom = lensZoom,
+        _bodyImage = bodyImage,
+        _bodyCapturePosition = bodyCapturePosition,
+        _bodyCaptureSize = bodyCaptureSize,
         _clipExpansion = clipExpansion,
         _cachedLightCos = math.cos(settings.lightAngle),
         _cachedLightSin = -math.sin(settings.lightAngle);
@@ -923,6 +999,28 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
   set lensZoom(double value) {
     if (_lensZoom == value) return;
     _lensZoom = value;
+    markNeedsPaint();
+  }
+
+  // [PATCH himi] 698 N40 第二捕获源。
+  ui.Image? _bodyImage;
+  set bodyImage(ui.Image? value) {
+    if (_bodyImage == value) return;
+    _bodyImage = value;
+    markNeedsPaint();
+  }
+
+  Offset? _bodyCapturePosition;
+  set bodyCapturePosition(Offset? value) {
+    if (_bodyCapturePosition == value) return;
+    _bodyCapturePosition = value;
+    markNeedsPaint();
+  }
+
+  Size? _bodyCaptureSize;
+  set bodyCaptureSize(Size? value) {
+    if (_bodyCaptureSize == value) return;
+    _bodyCaptureSize = value;
     markNeedsPaint();
   }
 
@@ -1092,14 +1190,31 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
       }
     }
 
+    // [PATCH himi] 698 N40：body 第二源相对偏移/尺寸（逻辑 px）。
+    Offset bodyRelativeOffset = Offset.zero;
+    Size bodySize = const Size(1, 1);
+    if (_bodyImage != null && _bodyCapturePosition != null) {
+      final indGlobalPos = localToGlobal(Offset.zero);
+      bodyRelativeOffset = indGlobalPos - _bodyCapturePosition!;
+      bodySize = Size(
+        _bodyImage!.width / _devicePixelRatio,
+        _bodyImage!.height / _devicePixelRatio,
+      );
+    }
+
     _updateShaderUniforms(
-        size, physicalOrigin, uScale, bgRelativeOffset, bgSize);
+        size, physicalOrigin, uScale, bgRelativeOffset, bgSize,
+        bodyRelativeOffset: bodyRelativeOffset,
+        bodySize: bodySize,
+        hasBody: _bodyImage != null);
 
     // 3. Set Sampler
     final imageToBind = _backgroundImage ?? GlassEffect.dummyImage;
     // PATCH himi: filterQuality 命名参数是 3.41 新增，3.35 的 setImageSampler
     // 只有 (index, image)，采样器默认线性过滤，视觉等价
     _shader.setImageSampler(0, imageToBind);
+    // [PATCH himi] 698 N40：第二采样器（body 页内容）。
+    _shader.setImageSampler(1, _bodyImage ?? GlassEffect.dummyImage);
 
     // 4. Paint shader overlay — inflate the draw rect by the clip expansion budget.
     //
@@ -1124,7 +1239,10 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
   }
 
   void _updateShaderUniforms(Size size, Offset physicalOrigin,
-      Offset physicalScale, Offset bgOrigin, Size bgSize) {
+      Offset physicalScale, Offset bgOrigin, Size bgSize,
+      {Offset bodyRelativeOffset = Offset.zero,
+      Size bodySize = const Size(1, 1),
+      bool hasBody = false}) {
     int index = 0;
     _shader.setFloat(index++, size.width);
     _shader.setFloat(index++, size.height);
@@ -1200,5 +1318,13 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
     // Slot 35: [PATCH himi] lensZoom — 凸透镜剖面强度（698 N39）。0 =
     // 原边缘带剖面；>0 透镜式（中心放大 + 全域弯折 + 细彩边）。
     _shader.setFloat(index++, _lensZoom.clamp(0.0, 0.45));
+
+    // Slots 36..40: [PATCH himi] 第二采样源（698 N40 双纹理复合）：
+    // uBg2OriginX/Y、uBg2SizeX/Y、uHasBg2。
+    _shader.setFloat(index++, bodyRelativeOffset.dx);
+    _shader.setFloat(index++, bodyRelativeOffset.dy);
+    _shader.setFloat(index++, bodySize.width);
+    _shader.setFloat(index++, bodySize.height);
+    _shader.setFloat(index++, hasBody ? 1.0 : 0.0);
   }
 }
