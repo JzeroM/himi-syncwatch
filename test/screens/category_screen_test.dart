@@ -202,20 +202,23 @@ void main() {
           reason: 'accent=null 时 pageGradient 全段 base');
     });
 
-    testWidgets('设主题色：渐变首色 = darkenForPage(主题色)', (tester) async {
+    testWidgets('设主题色：背景保持中性平色（N41 主题色退出背景）', (
+      tester,
+    ) async {
       await _pumpScreen(
         tester,
         settings: const AppSettings(themeColor: 0xFF6366F1),
       );
       final gradient = _backgroundDecoration(tester).gradient!;
 
+      // N41：主题色不得染背景——平色/平色+顶部 6% 氛围带。
+      expect(gradient.colors.toSet().length, lessThanOrEqualTo(2),
+          reason: '平色（或平色+氛围带），无三段主题色渐变');
       expect(
         gradient.colors.first,
-        PosterPalette.darkenForPage(const Color(0xFF6366F1)),
-        reason: '三段渐变顶部为主色调暗色',
+        isNot(PosterPalette.darkenForPage(const Color(0xFF6366F1))),
+        reason: '主题色退出背景',
       );
-      expect(gradient.colors.first, isNot(gradient.colors.last),
-          reason: '渐变应有主色→底色过渡');
     });
   });
 

@@ -280,9 +280,6 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
         ref.watch(settingsProvider.select((s) => s.themeColor));
     final aggregateMode =
         ref.watch(settingsProvider.select((s) => s.isTmdbHome));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
     ref.listen(favoritesRevisionProvider, (_, __) {
@@ -343,7 +340,10 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
+          gradient: PosterPalette.pageFlat(base,
+              glow: themeColorValue == null
+                  ? null
+                  : Color(themeColorValue)),
         ),
         child: _buildBody(aggregateMode, aggregate),
       ),

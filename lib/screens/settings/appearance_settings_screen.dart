@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
+import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
@@ -72,6 +73,26 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                       .update(homeCarousel: v),
                 ),
               ),
+            // 698 N41：外观模式三档——经典(明)/深色(暗)/跟随系统。
+            settingsTvWrapRow(
+              tvMode: settings.tvMode,
+              onTap: () => _showAppearanceModeSheet(context, ref),
+              child: ListTile(
+                key: const ValueKey('appearanceModeEntry'),
+                leading: const Icon(Icons.brightness_6_outlined),
+                title: const Text('外观模式'),
+                subtitle: Text(
+                  '经典模式（明）/ 深色模式（暗）/ 跟随系统 · 当前：'
+                  '${_appearanceModeLabel(settings.appearanceMode)}',
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.white54,
+                ),
+                onTap: () => _showAppearanceModeSheet(context, ref),
+              ),
+            ),
             // 698 N36：导航栏样式仅手机布局显示（底部导航生效处）——
             // TV 走 TV 顶栏、桌面走侧边栏，均无底部导航，隐藏该行；
             // 紧跟「首页轮播」下方（用户拍板排序）。
@@ -440,11 +461,11 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
               child: DecoratedBox(
                 key: const ValueKey('themeColorPreview'),
                 decoration: BoxDecoration(
-                  gradient: PosterPalette.pageGradient(
-                    current == null
-                        ? null
-                        : PosterPalette.darkenForPage(Color(current)),
+                  // 698 N41：预览 = 平色背景 + 顶部氛围光随主题色
+                  //（主题色退出背景，只做点缀/氛围光）。
+                  gradient: PosterPalette.pageFlat(
                     base,
+                    glow: current == null ? null : Color(current),
                   ),
                 ),
                 child: Center(
@@ -708,6 +729,51 @@ class _AppIconTile extends StatelessWidget {
 
 
 /// 「导航栏样式」选择弹层（698 N15-E）：注册表枚举单选，选中即生效。
+  /// 698 N41：外观模式三档选择（经典/深色/跟随系统）。
+  void _showAppearanceModeSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final current =
+            ref.read(settingsProvider.select((s) => s.appearanceMode));
+        return GlassContainer(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final (value, label, icon) in const [
+                ('light', '经典模式（明）', Icons.light_mode_outlined),
+                ('dark', '深色模式（暗）', Icons.dark_mode_outlined),
+                ('system', '跟随系统', Icons.settings_suggest_outlined),
+              ])
+                RadioListTile<String>(
+                  value: value,
+                  groupValue: current,
+                  title: Text(label),
+                  secondary: Icon(icon),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    ref
+                        .read(settingsProvider.notifier)
+                        .update(appearanceMode: v);
+                    Navigator.of(sheetContext).pop();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _appearanceModeLabel(String mode) => switch (mode) {
+        'light' => '经典模式（明）',
+        'dark' => '深色模式（暗）',
+        _ => '跟随系统',
+      };
+
 void _showNavBarStyleSheet(BuildContext context, WidgetRef ref) {
   showModalBottomSheet<void>(
     context: context,

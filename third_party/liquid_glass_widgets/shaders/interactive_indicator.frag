@@ -156,8 +156,9 @@ vec4 textureBilinear2(vec2 uv, vec2 physSize, vec2 invPhys) {
 // [PATCH himi] 698 N40: 复合采样——nav（含 alpha，越界透明）叠 body。
 // 几何量显式传参（uBackgroundOrigin/uDpr/uBg2* 等是 main 内解包局部量，
 // 全局函数不可见）。
-vec3 compositeFetch(vec2 samplePos, vec2 navOrigin, vec2 navSize,
-                    vec2 bg2Origin, vec2 bg2Size, float dpr, float hasBg2) {
+vec3 compositeFetch(vec2 samplePos, vec2 pixelNavPos, vec2 navOrigin,
+                    vec2 navSize, vec2 bg2Origin, vec2 bg2Size, float dpr,
+                    float hasBg2) {
   vec2 uv = samplePos / navSize;
   vec2 phys = navSize * dpr;
   vec4 navCol = textureBilinear(uv, phys, 1.0 / phys);
@@ -165,6 +166,16 @@ vec3 compositeFetch(vec2 samplePos, vec2 navOrigin, vec2 navSize,
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       navCol = vec4(0.0);
   }
+  // [PATCH himi] 698 N42 像素侧钳制：镜片像素自身落在 nav 边界（条体
+  // 轮廓）外 → 不采条体内容——条体折弯严格限条缘内，条缘外只透 body
+  // 页内容（酷安同款分工）。
+  vec2 pUv = pixelNavPos / navSize;
+  if (pUv.x < 0.0 || pUv.x > 1.0 || pUv.y < 0.0 || pUv.y > 1.0) {
+      navCol = vec4(0.0);
+  }
+  // [PATCH himi] 698 N42 条线弯折可见度：nav 采样轻提对比（rim 线进入
+  // 镜片区平滑弯折清晰可读）。
+  navCol.rgb = clamp((navCol.rgb - 0.5) * 1.12 + 0.5, 0.0, 1.0);
   if (hasBg2 < 0.5) {
       return navCol.rgb;
   }
@@ -303,9 +314,10 @@ void main() {
     // 中心采样点 = 背景纹理中镜片中心对应点。
     vec2 bgCenter = uBackgroundOrigin + uSize * 0.5;
     vec2 toCenter = posInBg - bgCenter;
-    float lensProfile = 1.0 - radialDist * radialDist; // 中心 1 → 边缘 0
-    // 放大（基础 zoom + 边缘增强卷曲）：采样坐标向中心收缩。
-    lensOffset = -toCenter * (uLensZoom * (0.45 + 0.55 * lensProfile));
+    float lensProfile = radialDist * radialDist; // 698 N42：边缘 1 → 中心 0
+    // [PATCH himi] 698 N42 边缘收拢：透镜端部采样点外移更多 → 内容
+    // 收拢变密（酷安透镜边缘放大效应）。
+    lensOffset = -toCenter * (uLensZoom * (0.35 + 0.65 * lensProfile));
     // 四缘轻微卷曲（沿法线的小弯折，酷安同款收边）。
     lensOffset += surfaceNormal * edgeInfluence * uSize.y * 0.08;
     edgeOffsetLogical = lensOffset;
@@ -341,8 +353,12 @@ void main() {
   // [PATCH himi] 698 N39: 凸透镜模式色散跟随全域弯折向量（细彩边
   // ~2px 级，酷安同款）；原模式保持边缘带色散（×4.0 增益）。
   vec2 distort = surfaceNormal * edgeInfluence * uChromaticAberration;
+  // [PATCH himi] 698 N42 轮廓色散环：色散峰值贴镜片轮廓（沿轮廓一圈
+  // 红绿蓝分离，酷安同款）+ 全域弯折细彩边保持。
+  float ringWeight = smoothstep(0.45, 0.95, radialDist);
+  vec2 ringShift = surfaceNormal * ringWeight * uChromaticAberration * 3.0;
   vec2 chromaticShift = (uLensZoom > 0.001)
-      ? lensOffset * uChromaticAberration * 0.22
+      ? lensOffset * uChromaticAberration * 0.22 + ringShift
       : distort * 4.0; 
   
 vec3 bg;
@@ -355,20 +371,22 @@ vec3 bg;
     if (uChromaticAberration < 0.001) {
       // No chromatic aberration — single bilinear fetch.
       // [PATCH himi] 698 N40: compositeFetch（nav alpha 叠 body 复合）。
-      bg = compositeFetch(localRefracted, uBackgroundOrigin, uBackgroundSize,
-          vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
-          uDpr, uHasBg2);
+      vec2 pixelNavPos = uBackgroundOrigin + localLogical;
+      bg = compositeFetch(localRefracted, pixelNavPos, uBackgroundOrigin,
+          uBackgroundSize, vec2(uBg2OriginX, uBg2OriginY),
+          vec2(uBg2SizeX, uBg2SizeY), uDpr, uHasBg2);
     } else {
       // Chromatic aberration: separate RGB channels with bilinear filtering.
-      vec3 colR = compositeFetch(localRefracted + chromaticShift,
+      vec2 pixelNavPos = uBackgroundOrigin + localLogical;
+      vec3 colR = compositeFetch(localRefracted + chromaticShift, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
-      vec3 colG = compositeFetch(localRefracted,
+      vec3 colG = compositeFetch(localRefracted, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
-      vec3 colB = compositeFetch(localRefracted - chromaticShift,
+      vec3 colB = compositeFetch(localRefracted - chromaticShift, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
@@ -412,6 +430,13 @@ vec3 bg;
   
   // PP2: pow(radialDist, 2.0) → radialDist * radialDist (1 multiply, no transcendental).
   float fresnel = (radialDist * radialDist) * 0.25;
+
+  // [PATCH himi] 698 N42 凸包弧光：镜片上下缘宽弧光带（结构光≠镜面
+  // 反射——N37 去镜面保持，这是玻璃「厚度」菲涅尔弧，酷安凸包观感）。
+  float topArc = max(-surfaceNormal.y, 0.0);
+  float botArc = max(surfaceNormal.y, 0.0);
+  float bumpGlow = (topArc * 1.0 + botArc * 0.55) * 0.16
+      * (0.35 + 0.65 * (radialDist * radialDist));
   
   // ==========================================================================
   // HAIRLINE RIM
@@ -467,6 +492,8 @@ vec3 bg;
 
   // Add fresnel glow — uGlowIntensity controls how visible the glass-edge luminosity is.
   finalColor += vec3(1.0) * fresnel * uGlowIntensity;
+  // [PATCH himi] 698 N42 凸包弧光并入。
+  finalColor += vec3(1.0) * bumpGlow;
   
   // Interior light lift — matches Premium Impeller's internal SDF specular glow.
   finalColor += vec3(uAmbientStrength);

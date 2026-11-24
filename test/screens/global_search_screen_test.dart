@@ -141,7 +141,7 @@ void main() {
     expect(find.text('乙的影片'), findsOneWidget);
   });
 
-  testWidgets('底色同主题色：三段渐变 = pageGradient(darkenForPage(主题色))', (tester) async {
+  testWidgets('底色保持中性平色（N41 主题色退出背景）', (tester) async {
     const themeColor = 0xFF3EBC7A;
     await _pump(
       tester,
@@ -154,13 +154,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final gradient = (tester
-            .widget<Container>(find.byKey(const Key('searchBackground')))
-            .decoration! as BoxDecoration)
+            .widget<Container>(find.byKey(const ValueKey('searchBackground')))
+            .decoration as BoxDecoration)
         .gradient! as LinearGradient;
+    // N41：主题色不得染背景。
+    expect(gradient.colors.toSet().length, lessThanOrEqualTo(2),
+        reason: '平色/平色+氛围带');
     expect(gradient.colors.first,
-        PosterPalette.darkenForPage(const Color(themeColor)),
-        reason: '首色 = 压暗主题色');
-    expect(gradient.stops, PosterPalette.pageStops);
+        isNot(PosterPalette.darkenForPage(const Color(themeColor))),
+        reason: '主题色退出背景');
   });
 
   testWidgets('未设主题色：保持应用底色三段（与首页一致）', (tester) async {

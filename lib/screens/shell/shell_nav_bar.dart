@@ -85,8 +85,9 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 采样此 RepaintBoundary → 水珠划过时图标被物理折射形变。
   final GlobalKey _navCaptureKey = GlobalKey(debugLabel: 'navCapture');
 
-  /// 静止水珠宽度占单格宽的比例（圆润度：~1.37:1 不显扁）。
-  static const double _restWidthRatio = 0.75;
+  /// 静止水珠宽度占单格宽的比例（698 N42：酷安凸镜横长胶囊 ~2.2:1——
+  /// 槽宽 ×1.28，重叠相邻槽的凸镜观感，对齐酷安 134% 槽宽）。
+  static const double _restWidthRatio = 1.28;
 
   /// 移动态整体放大倍数（宽高同倍，与镜片外扩 50→72 = ×1.44 对齐，
   /// 纯整体放大、不拉长不压扁）。
@@ -336,7 +337,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
           activity: value,
           velocity: _blobVelocity,
           settings: settings,
-          pillColor: Colors.white.withValues(alpha: 0.10),
+          // 698 N42：静止半实心玻璃块（0.10→0.30，酷安静止实心饱满）。
+          pillColor: Colors.white.withValues(alpha: 0.30),
           backgroundKey: _navCaptureKey,
           edgeZone: tuning.edgeZone ?? glassDefault('glassEdgeZone'),
         );

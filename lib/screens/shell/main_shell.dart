@@ -203,11 +203,6 @@ class _MainShellState extends ConsumerState<MainShell> {
     final bottomGap = MainShell.navBottomGap(bottomInset);
 
     // 主题色三段渐变（null 时保持应用底色）
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
     final gradientBg = AnimatedContainer(
@@ -215,7 +210,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageGradient(accent, base),
+        gradient: PosterPalette.pageFlat(base),
       ),
     );
 
@@ -293,7 +288,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageGradient(accent, base),
+        gradient: PosterPalette.pageFlat(base),
       ),
       child: scrollable,
     );
@@ -314,7 +309,8 @@ class _MainShellState extends ConsumerState<MainShell> {
             ignoring: !navVisible,
             child: Padding(
               key: const ValueKey('shellNavBarPadding'),
-              padding: EdgeInsets.fromLTRB(12, 0, 12, bottomGap),
+              // 698 N42：边距 12→18（条体 92%→90% 屏宽，贴酷安边距比）。
+              padding: EdgeInsets.fromLTRB(18, 0, 18, bottomGap),
               child: NavBarStyleHost(
                 currentIndex: widget.shell.currentIndex,
                 onSelect: _goBranch,

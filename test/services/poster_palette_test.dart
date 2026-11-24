@@ -36,6 +36,20 @@ int _green(Color c) => (c.g * 255).round();
 int _blue(Color c) => (c.b * 255).round();
 
 void main() {
+  test('pageFlat（N41）：纯平色无主题色残留；glow 仅顶部氛围带', () {
+    final flat = PosterPalette.pageFlat(const Color(0xFF0F1116));
+    expect(flat, isA<LinearGradient>());
+    final lg = flat as LinearGradient;
+    expect(lg.colors.toSet().length, 1, reason: '纯平色（三点同色）');
+    final glow = PosterPalette.pageFlat(const Color(0xFF0F1116),
+        glow: const Color(0xFF6750A4)) as LinearGradient;
+    expect(glow.colors.first, isNot(glow.colors.last),
+        reason: 'glow 模式顶部氛围带');
+    expect(glow.colors.first,
+        Color.lerp(const Color(0xFF0F1116), const Color(0xFF6750A4), 0.06),
+        reason: '氛围混色 = base 轻混主题色 6%');
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(PosterPalette.debugReset);

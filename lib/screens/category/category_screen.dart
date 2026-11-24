@@ -298,9 +298,6 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
     // 主题色三段渐变背景（null 时保持应用底色，与首页/详情页一致）
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
@@ -350,7 +347,10 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
+          gradient: PosterPalette.pageFlat(base,
+              glow: themeColorValue == null
+                  ? null
+                  : Color(themeColorValue)),
         ),
         child: Column(
           children: [

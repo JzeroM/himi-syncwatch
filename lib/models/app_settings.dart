@@ -129,6 +129,10 @@ class AppSettings {
   /// 默认 `glassCapsule`（玻璃水滴款）；未知值容错回默认。
   final String navBarStyle; // 液态玻璃特效开关（低端设备可关闭）
 
+  /// 698 N41 明暗模式三档：经典模式(明)='light' / 深色模式(暗)='dark' /
+  /// 跟随系统='system'（默认）。
+  final String appearanceMode;
+
   // ── 液态玻璃可调参数（v1.1.84，null = 使用 liquid_glass_widgets 默认）──
   /// 磨砂模糊强度（逻辑像素，包默认 5）。
   final double? glassBlur;
@@ -500,6 +504,7 @@ class AppSettings {
     this.deepDiagnostics = false,
     this.glassUi = true,
     this.navBarStyle = 'glassCapsule',
+    this.appearanceMode = 'system',
     this.glassBlur,
     this.glassThickness,
     this.glassEdgeZone,
@@ -640,6 +645,7 @@ class AppSettings {
     bool? deepDiagnostics,
     bool? glassUi,
     String? navBarStyle,
+    String? appearanceMode,
     String? versionPreference,
     String? serverViewMode,
     String? homeSourceMode,
@@ -727,6 +733,7 @@ class AppSettings {
       deepDiagnostics: deepDiagnostics ?? this.deepDiagnostics,
       glassUi: glassUi ?? this.glassUi,
       navBarStyle: navBarStyle ?? this.navBarStyle,
+      appearanceMode: appearanceMode ?? this.appearanceMode,
       versionPreference: versionPreference ?? this.versionPreference,
       serverViewMode: serverViewMode ?? this.serverViewMode,
       homeSourceMode: homeSourceMode ?? this.homeSourceMode,
@@ -840,6 +847,7 @@ class AppSettings {
         'deepDiagnostics': deepDiagnostics,
         'glassUi': glassUi,
         'navBarStyle': navBarStyle,
+        'appearanceMode': appearanceMode,
         'versionPreference': versionPreference,
         'serverViewMode': serverViewMode,
         'homeSourceMode': homeSourceMode,
@@ -1050,6 +1058,11 @@ class AppSettings {
         'fluidGlass' => 'fluidGlass',
         'squircle' => 'squircle', // 698 N36：漏写此枚举 → 重启回退第一款 bug
         _ => 'glassCapsule', // 未知值/缺省容错回默认款（698 N15-E）
+      },
+      appearanceMode: switch (json['appearanceMode'] as String?) {
+        'light' => 'light',
+        'dark' => 'dark',
+        _ => 'system', // 698 N41：未知值/缺省回跟随系统
       },
       versionPreference: json['versionPreference'] as String? ?? '',
       // 旧数据无此字段 / 非法值 → 列表视图

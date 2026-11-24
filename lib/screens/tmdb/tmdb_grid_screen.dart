@@ -230,9 +230,6 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
   Widget build(BuildContext context) {
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
     final imageBase = ref.watch(tmdbImageBaseProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
@@ -252,7 +249,10 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
+          gradient: PosterPalette.pageFlat(base,
+              glow: themeColorValue == null
+                  ? null
+                  : Color(themeColorValue)),
         ),
         child: GlassRefreshIndicator(
           onRefresh: () => _load(reset: true),

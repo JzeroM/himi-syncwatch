@@ -45,13 +45,13 @@ void main() {
     await _pump(tester, platform: TargetPlatform.android);
     expect(find.byKey(const ValueKey('navBarStyleEntry')), findsOneWidget,
         reason: '手机布局（底部导航生效处）显示');
-    // 排序：导航栏样式在首页轮播正下方（用户拍板）。
+    // 排序：外观模式（N41 插入）→ 导航栏样式（N36 拍板紧随轮播区）。
     final carouselY = tester.getTopLeft(find.text('首页轮播')).dy;
     final navY = tester.getTopLeft(find.text('导航栏样式')).dy;
-    expect(navY, greaterThan(carouselY), reason: '在首页轮播下方');
-    final carouselBottom = tester.getBottomLeft(find.text('首页轮播')).dy;
-    expect(navY - carouselBottom, lessThan(120),
-        reason: '紧随其后（中间无其他行）');
+    final appearanceY = tester.getTopLeft(find.text('外观模式')).dy;
+    expect(appearanceY, greaterThan(carouselY), reason: '外观模式在轮播下方');
+    expect(navY, greaterThan(appearanceY),
+        reason: '导航栏样式紧随外观模式下方');
     debugDefaultTargetPlatformOverride = null;
   });
 

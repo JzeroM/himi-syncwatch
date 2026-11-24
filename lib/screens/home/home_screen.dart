@@ -395,11 +395,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _resumeItems.where((e) => !hiddenResume.contains(e.id)).toList();
 
     // 主题色三段渐变背景（null 时保持应用底色）
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
     // 首页轮播：非 TV 且开关开启且有候选时，顶部英雄区 + 虚化海报背景
@@ -560,7 +555,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       showHero: showHero,
       heroHeight: heroHeight,
-      accent: accent,
       base: base,
       heroIndex: heroIndex,
     );
@@ -652,7 +646,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required Widget content,
     required bool showHero,
     required double heroHeight,
-    required Color? accent,
     required Color base,
     required int heroIndex,
   }) {
@@ -662,15 +655,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: tvMode
           ? null
           : AppBar(
+              // 698 N42：顶栏左胶囊与条体左缘对齐（18，与导航条边距同源）。
+              titleSpacing: 0,
               title: Align(
                 alignment: Alignment.centerLeft,
-                child: const ServerTitleDropdown(),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 18),
+                  child: const ServerTitleDropdown(),
+                ),
               ),
               backgroundColor: Colors.transparent,
               elevation: 0,
               actions: [
                 Padding(
-                  padding: const EdgeInsets.only(right: 12),
+                  // 698 N42：顶栏右胶囊与条体右缘对齐（18）。
+                  padding: const EdgeInsets.only(right: 18),
                   child: GlassContainer(
                     // 698 N15-B：顶栏胶囊缩 ~10%（圆角 20、内边距 2）。
                     // 698 N28：②款水滴分裂导航——房间入口移至「开房/加入」
@@ -705,7 +704,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             duration: const Duration(milliseconds: 500),
             curve: Curves.easeOut,
             decoration: BoxDecoration(
-              gradient: PosterPalette.pageGradient(accent, base),
+              gradient: PosterPalette.pageFlat(base),
             ),
           ),
           // 轮播开启时：当前海报虚化铺满（详情页同款）

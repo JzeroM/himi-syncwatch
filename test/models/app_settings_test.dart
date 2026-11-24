@@ -1533,6 +1533,19 @@ void main() {
     });
   });
 
+  group('appearanceMode（698 N41 明暗三档）', () {
+    test('存档读回：light/dark/system 不丢，未知值容错 system', () {
+      for (final mode in ['light', 'dark', 'system']) {
+        final settings = AppSettings.fromJson({'appearanceMode': mode});
+        expect(settings.appearanceMode, mode, reason: '$mode 读回不丢');
+      }
+      expect(AppSettings.fromJson({'appearanceMode': 'x'}).appearanceMode,
+          'system');
+      expect(AppSettings.fromJson(const {}).appearanceMode, 'system');
+      expect(const AppSettings().appearanceMode, 'system', reason: '默认跟随系统');
+    });
+  });
+
   group('navBarStyle（698 N15-E 导航栏样式）', () {
     test('存档读回：squircle/fluidGlass/glassCapsule 不丢（N36 回归）', () {
       for (final style in ['squircle', 'fluidGlass', 'glassCapsule']) {

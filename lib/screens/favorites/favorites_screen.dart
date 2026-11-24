@@ -29,9 +29,6 @@ class FavoritesScreen extends ConsumerWidget {
         ref.watch(settingsProvider.select((s) => s.isTmdbHome));
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
     final async = aggregateMode
         ? ref.watch(aggregateFavoriteItemsProvider)
@@ -54,7 +51,10 @@ class FavoritesScreen extends ConsumerWidget {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageGradient(accent, base),
+          gradient: PosterPalette.pageFlat(base,
+              glow: themeColorValue == null
+                  ? null
+                  : Color(themeColorValue)),
         ),
         child: GlassRefreshIndicator(
           onRefresh: () => aggregateMode

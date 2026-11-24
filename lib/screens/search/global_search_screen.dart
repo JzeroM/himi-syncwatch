@@ -160,9 +160,6 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
@@ -170,7 +167,11 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
       body: Container(
         key: const Key('searchBackground'),
         decoration:
-            BoxDecoration(gradient: PosterPalette.pageGradient(accent, base)),
+            BoxDecoration(
+              gradient: PosterPalette.pageFlat(base,
+                  glow: themeColorValue == null
+                      ? null
+                      : Color(themeColorValue))),
         child: SafeArea(
           child: Column(
             children: [

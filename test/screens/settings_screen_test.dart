@@ -708,8 +708,14 @@ void main() {
     );
     final gradient =
         (preview.decoration as BoxDecoration).gradient! as LinearGradient;
+    // N41：预览 = 平色背景 + 顶部 6% 主题色氛围带（不再三段主题色渐变）。
     expect(gradient.colors, hasLength(3));
-    expect(gradient.colors.toSet().length, 3);
+    expect(gradient.colors.toSet().length, 2, reason: '顶带混色 + 平色×2');
+    expect(
+      gradient.colors.first,
+      Color.lerp(gradient.colors.last, const Color(0xFF6366F1), 0.06),
+      reason: '顶带 = base 轻混主题色 6%',
+    );
   });
 
   testWidgets('初始选中色块后点击默认清空 themeColor', (tester) async {

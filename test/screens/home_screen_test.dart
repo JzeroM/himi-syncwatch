@@ -16,7 +16,6 @@ import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/home/home_screen.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
 import 'package:himi_syncwatch/services/emby_service.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/gallery_picker.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -1213,20 +1212,24 @@ void main() {
     );
   });
 
-  testWidgets('主题色写入后首页背景变为压暗主题色渐变', (tester) async {
-    await _pumpScreen(
+  testWidgets('主题色写入后首页背景保持中性平色（N41 主题色退出背景）', (
       tester,
-      settings: const AppSettings(themeColor: 0xFF6366F1),
-    );
-
-    final gradient = _bgGradient(tester);
-    expect(gradient.colors, hasLength(3));
-    expect(
-      gradient.colors.first,
-      PosterPalette.darkenForPage(const Color(0xFF6366F1)),
-    );
-    expect(gradient.colors.toSet().length, 3);
-  });
+    ) async {
+      await _pumpScreen(
+        tester,
+        settings: const AppSettings(
+            homeCarousel: false, themeColor: 0xFF6750A4),
+      );
+      await tester.pump();
+      final container = tester.widget<AnimatedContainer>(
+          find.byKey(const Key('homeBackground')));
+      final deco = container.decoration as BoxDecoration;
+      final g = deco.gradient as LinearGradient;
+      // 纯平色（三点同色）——主题色不得染背景。
+      expect(g.colors.toSet().length, 1, reason: 'N41：背景纯平色');
+      expect(g.colors.first, isNot(const Color(0xFF6750A4)),
+          reason: '主题色不得出现在背景');
+    });
 
   testWidgets('首页轮播开启：渲染英雄轮播 + 虚化海报背景，fields 请求 BackdropImageTags',
       (tester) async {

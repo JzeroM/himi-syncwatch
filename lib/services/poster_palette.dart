@@ -340,8 +340,30 @@ class PosterPalette {
     return hsl.toColor();
   }
 
+  /// 698 N41 页面背景**纯平色**（主题色退出背景）：深 #0F1116 / 浅
+  /// #F4F5F7（由 scaffoldBackgroundColor 传入）。[glow] 非空时顶部叠
+  /// 主题色氛围光带（α6%、向下渐隐，首页不传）。
+  static Gradient pageFlat(Color base, {Color? glow}) {
+    if (glow == null) {
+      return LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [base, base, base],
+      );
+    }
+    final glowMix = Color.lerp(base, glow, 0.06)!;
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [glowMix, base, base],
+      stops: const [0.0, 0.18, 1.0], // 顶部 ~150px 渐隐到平色
+    );
+  }
+
   /// 页面背景垂直渐变：顶部 [accent] 主色 → 底部 [base] 页面底色。
   /// [accent] 为 null 时整页保持 [base]（与取色前视觉一致）。
+  /// 【N41 起弃用：主题色退出背景——改用 [pageFlat]。】
+  @Deprecated('698 N41: 主题色退出背景，改用 pageFlat')
   static LinearGradient pageGradient(Color? accent, Color base) {
     if (accent == null) {
       return LinearGradient(

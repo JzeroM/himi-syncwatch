@@ -350,8 +350,8 @@ void main() {
       find.byKey(const ValueKey('shellNavBarPadding')),
     );
     final insets = padding.padding as EdgeInsets;
-    expect(insets.left, 12);
-    expect(insets.right, 12);
+    expect(insets.left, 18, reason: 'N42：边距 12→18（条体 90% 屏宽贴酷安）');
+    expect(insets.right, 18);
     expect(insets.bottom, 20, reason: 'v1.1.84 胶囊再上移（原 4）');
   });
 
@@ -489,7 +489,8 @@ void main() {
     );
   });
 
-  testWidgets('主题色写入后壳层渐变为压暗主题色，切标签仍在', (tester) async {
+  testWidgets('主题色写入后壳层背景保持中性平色（N41 主题色退出背景）',
+      (tester) async {
     await _pumpApp(
       tester,
       settings: const AppSettings(themeColor: 0xFF22D3EE),
@@ -502,11 +503,14 @@ void main() {
       return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
     }
 
+    // N41：主题色不得染背景——壳层纯平色（三段同色）。
+    expect(shellGradient().colors.toSet().length, 1,
+        reason: '纯平色背景');
     expect(
       shellGradient().colors.first,
-      PosterPalette.darkenForPage(const Color(0xFF22D3EE)),
+      isNot(PosterPalette.darkenForPage(const Color(0xFF22D3EE))),
+      reason: '主题色退出背景',
     );
-    expect(shellGradient().colors.toSet().length, 3);
 
     // 切到设置页，壳层渐变仍存在
     await tester.tap(find.text('设置'));

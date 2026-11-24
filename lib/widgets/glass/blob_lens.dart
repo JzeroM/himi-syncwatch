@@ -140,9 +140,16 @@ class LiquidBlobLens extends StatelessWidget {
                               child: DecoratedBox(
                                 decoration: ShapeDecoration(
                                   color: pillColor,
-                                  // 698 N38：真胶囊端帽（半径动态 = 盒高/2）。
+                                  // 698 N38/N42：真胶囊端帽（半径动态 =
+                                  // 盒高/2）+ 微亮 rim（0.45，静止实心块
+                                  // 玻璃边缘感）。
                                   shape: lg.LiquidRoundedRectangle(
                                     borderRadius: capsuleR,
+                                    side: BorderSide(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.45),
+                                      width: 1,
+                                    ),
                                   ),
                                   shadows: pillShadows,
                                 ),

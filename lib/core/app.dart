@@ -18,6 +18,10 @@ class HimiSyncApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
+    // 698 N41：明暗三档 + 主题色（点缀 seed，未设回退蓝）。
+    final appearanceMode =
+        ref.watch(settingsProvider.select((s) => s.appearanceMode));
+    final themeColor = ref.watch(settingsProvider.select((s) => s.themeColor));
     // 玻璃参数实时调节：设置页滑杆改值 → theme 重建 → 全部玻璃面更新
     final glassTuning = ref.watch(glassTuningProvider);
     // TV 端局域网同步常驻服务（tvMode 时启动 HTTP 配对/同步 + UDP 广播）
@@ -50,7 +54,27 @@ class HimiSyncApp extends ConsumerWidget {
               child: WindowsGlobalHotkeys(child: modeSubtree),
             );
           },
-          theme: ThemeData(
+          themeMode: switch (appearanceMode) {
+            'light' => ThemeMode.light,
+            'dark' => ThemeMode.dark,
+            _ => ThemeMode.system, // 698 N41：三档——经典(明)/深色(暗)/跟随系统
+          },
+          theme: _buildHimiTheme(Brightness.light, themeColor),
+          darkTheme: _buildHimiTheme(Brightness.dark, themeColor),
+          routerConfig: router,
+        ),
+      ),
+    );
+  }
+
+  /// 698 N41：明暗双套主题——seed = 主题色（未设回退标准蓝 #4A90D9，
+  /// 点缀主层由此贯穿 Material 组件：开关/进度条/选中态/链接自动跟
+  /// 点缀）。scaffold 平色底：深 #0F1116 / 浅 #F4F5F7（主题色退出背景）。
+  static ThemeData _buildHimiTheme(Brightness brightness, int? themeColor) {
+    final seed =
+        themeColor != null ? Color(themeColor) : const Color(0xFF4A90D9);
+    final isDark = brightness == Brightness.dark;
+    return ThemeData(
             // 698 N10-A：全应用默认字体 MiSans（子集四字重，四端观感一致；
             // 生僻字回落系统字）。评分行/元数据行开 tnum 等宽数字见
             // [RatingsBadgeRow]/[_MetaRow]。
@@ -63,9 +87,11 @@ class HimiSyncApp extends ConsumerWidget {
               'sans-serif',
             ],
             colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF6366F1),
-              brightness: Brightness.dark,
+              seedColor: seed,
+              brightness: brightness,
             ),
+            scaffoldBackgroundColor:
+                isDark ? const Color(0xFF0F1116) : const Color(0xFFF4F5F7),
             useMaterial3: true,
             // 687：页面转场——手机（含鸿蒙）iOS 横滑（比 Android 默认 Zoom
             // 自然），桌面淡入上移（不抢眼）。
@@ -75,8 +101,8 @@ class HimiSyncApp extends ConsumerWidget {
             // 曾因此落到框架兜底的 Zoom 缩放。
             pageTransitionsTheme: buildHimiPageTransitions(),
             // 聚焦可见反馈（TV 遥控器导航：ListTile/Switch/IconButton 等）
-            focusColor: const Color(0x886366F1),
-            hoverColor: const Color(0x336366F1),
+            focusColor: seed.withValues(alpha: 0.53),
+            hoverColor: seed.withValues(alpha: 0.2),
             // 顶栏玻璃条需透明，由各页 GlassBackdrop 提供模糊背景
             appBarTheme: const AppBarTheme(
               backgroundColor: Colors.transparent,
@@ -110,10 +136,6 @@ class HimiSyncApp extends ConsumerWidget {
                 side: BorderSide(color: Color(0x33FFFFFF)),
               ),
             ),
-          ),
-          routerConfig: router,
-        ),
-      ),
-    );
+          );
   }
 }

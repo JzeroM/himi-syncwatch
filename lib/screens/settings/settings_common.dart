@@ -25,13 +25,13 @@ class SettingsPageBackground extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeColorValue =
         ref.watch(settingsProvider.select((s) => s.themeColor));
-    final accent = themeColorValue == null
-        ? null
-        : PosterPalette.darkenForPage(Color(themeColorValue));
     final base = Theme.of(context).scaffoldBackgroundColor;
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageGradient(accent, base),
+        gradient: PosterPalette.pageFlat(base,
+              glow: themeColorValue == null
+                  ? null
+                  : Color(themeColorValue)),
       ),
       child: child,
     );
