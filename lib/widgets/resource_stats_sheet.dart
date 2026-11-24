@@ -63,10 +63,10 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                 Expanded(
                   child: Text(
                     widget.server.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -80,14 +80,14 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                       color: Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
+                    child: Text(
                       '主线路',
-                      style: TextStyle(fontSize: 11, color: Colors.white70),
+                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                     ),
                   ),
                 IconButton(
                   key: const ValueKey('resourceStatsClose'),
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -101,12 +101,12 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                 ),
               )
             else if (counts == null || counts.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
                 child: Center(
                   child: Text(
                     '未能获取统计信息',
-                    style: TextStyle(color: Colors.white54),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                   ),
                 ),
               )
@@ -148,7 +148,7 @@ class _CountsTable extends StatelessWidget {
               ),
             ],
           ),
-          const Divider(color: Colors.white24, height: 16),
+          Divider(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), height: 16),
           _Row(label: '电影', a: without?.movies, b: withV?.movies),
           _Row(label: '剧集', a: without?.series, b: withV?.series),
           _Row(label: '集', a: without?.episodes, b: withV?.episodes),
@@ -193,7 +193,7 @@ class _Row extends StatelessWidget {
             flex: 2,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
             ),
           ),
           Expanded(
@@ -220,8 +220,8 @@ class _Value extends StatelessWidget {
     return Text(
       value == null ? '—' : '$value',
       textAlign: TextAlign.center,
-      style: const TextStyle(
-        color: Colors.white,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurface,
         fontSize: 15,
         fontWeight: FontWeight.w600,
       ),

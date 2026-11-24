@@ -127,7 +127,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
           children: [
             Row(
               children: [
-                const Icon(Icons.tv, size: 20, color: Colors.white70),
+                Icon(Icons.tv, size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
@@ -191,7 +191,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                               size: 22,
                               color: isPaired
                                   ? Colors.greenAccent
-                                  : Colors.white54,
+                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -214,7 +214,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                                       color: isPaired
                                           ? Colors.greenAccent
                                               .withValues(alpha: 0.8)
-                                          : Colors.white38,
+                                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                                     ),
                                   ),
                                 ],

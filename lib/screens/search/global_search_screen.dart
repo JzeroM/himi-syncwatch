@@ -7,10 +7,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_exclude_editable.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -158,10 +156,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   @override
   Widget build(BuildContext context) {
     // 主题色三段渐变底（与首页/分类页一致）
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    final base = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -169,12 +164,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
         key: const Key('searchBackground'),
         decoration:
             BoxDecoration(
-              gradient: PosterPalette.fabricGradient(base,
-                  themeColor: themeColorValue == null
-                      ? null
-                      : Color(themeColorValue),
-                  posterTone: ref.watch(heroToneProvider),
-                  isDark: Theme.of(context).brightness == Brightness.dark)),
+              // 698 N44：非首页同款全屏海报氛围洗（main_shell PosterBackdrop 透出）。
+                  color: Colors.transparent,),
         child: SafeArea(
           child: Column(
             children: [
@@ -184,7 +175,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                   children: [
                     IconButton(
                       key: const ValueKey('globalSearchBack'),
-                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 4),
@@ -198,10 +189,10 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                           key: const ValueKey('globalSearchField'),
                           controller: _controller,
                           autofocus: !tvMode,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                           decoration: InputDecoration(
                             hintText: '输入关键词搜索全部服务器',
-                            hintStyle: const TextStyle(color: Colors.white54),
+                            hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                             filled: true,
                             fillColor: Colors.white.withValues(alpha: 0.10),
                             contentPadding: const EdgeInsets.symmetric(
@@ -216,8 +207,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                                   ? const SizedBox.shrink()
                                   : IconButton(
                                       key: const ValueKey('globalSearchClear'),
-                                      icon: const Icon(Icons.clear,
-                                          color: Colors.white70),
+                                      icon: Icon(Icons.clear,
+                                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                                       onPressed: _clear,
                                     ),
                             ),
@@ -239,8 +230,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
 
   Widget _buildBody() {
     if (!_hasInput) {
-      return const Center(
-        child: Text('输入关键词，搜索所有服务器', style: TextStyle(color: Colors.white70)),
+      return Center(
+        child: Text('输入关键词，搜索所有服务器', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
       );
     }
     final results = _results;
@@ -251,8 +242,8 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
     if (results.isEmpty) {
       return _loading
           ? const SkeletonPosterGrid(columns: 3, rows: 3)
-          : const Center(
-              child: Text('未找到结果', style: TextStyle(color: Colors.white70)),
+          : Center(
+              child: Text('未找到结果', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
             );
     }
 
@@ -389,7 +380,7 @@ class _ServerChip extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.onSurface,
               fontSize: 13,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),

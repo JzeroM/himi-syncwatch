@@ -85,9 +85,9 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 采样此 RepaintBoundary → 水珠划过时图标被物理折射形变。
   final GlobalKey _navCaptureKey = GlobalKey(debugLabel: 'navCapture');
 
-  /// 静止水珠宽度占单格宽的比例（698 N43：凸镜缩短 1.28→1.15（≈1.87:1，
-  /// 仍横长于原 1.37:1）；首/末槽钳位条内不悬出条缘）。
-  static const double _restWidthRatio = 1.15;
+  /// 静止水珠宽度占单格宽的比例（698 N45：再缩短 1.15→1.05（≈1.65:1）；
+  /// 首/末槽钳位条内不悬出条缘）。
+  static const double _restWidthRatio = 1.05;
 
   /// 移动态整体放大倍数（宽高同倍，与镜片外扩 50→72 = ×1.44 对齐，
   /// 纯整体放大、不拉长不压扁）。

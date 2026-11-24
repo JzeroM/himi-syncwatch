@@ -204,13 +204,13 @@ class _SeasonSelector extends StatelessWidget {
         children: [
           Text(
             currentTitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
-          const Icon(Icons.arrow_drop_down, color: Colors.white70, size: 22),
+          Icon(Icons.arrow_drop_down, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), size: 22),
         ],
       ),
     );
@@ -366,7 +366,12 @@ class _SeasonSelector extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: 15,
-            color: selected ? Colors.white : Colors.white70,
+            color: selected
+                ? Theme.of(menuCtx).colorScheme.onSurface
+                : Theme.of(menuCtx)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.70),
             fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -421,9 +426,14 @@ class _SeasonEpisodeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (episodes.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: Text('暂无剧集', style: TextStyle(color: Colors.white70)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('暂无剧集',
+            style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.70))),
       );
     }
 
@@ -501,7 +511,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                                       ? Icons.favorite
                                       : Icons.favorite_border,
                                   size: 16,
-                                  color: favorited ? primary : Colors.white,
+                                  color: favorited ? primary : Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                             ),
@@ -526,7 +536,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                                       ? Icons.check_circle
                                       : Icons.check_circle_outline,
                                   size: 16,
-                                  color: watched ? primary : Colors.white,
+                                  color: watched ? primary : Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                             ),
@@ -551,7 +561,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                 _metaLine(ep),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
               ),
               const SizedBox(height: 4),
               Text(
@@ -664,8 +674,8 @@ class _SeasonCardRow extends StatelessWidget {
                       )
                     : Container(
                         color: Colors.white10,
-                        child: const Icon(Icons.tv,
-                            color: Colors.white38, size: 32),
+                        child: Icon(Icons.tv,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38), size: 32),
                       ),
               ),
             ),
@@ -695,8 +705,8 @@ class _SeasonCardRow extends StatelessWidget {
                           ),
                           child: Text(
                             '${season.childCount}集',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.white),
+                            style: TextStyle(
+                                fontSize: 11, color: Theme.of(context).colorScheme.onSurface),
                           ),
                         ),
                       ),
@@ -710,9 +720,9 @@ class _SeasonCardRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white70,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                   ),
                 ),
               ],

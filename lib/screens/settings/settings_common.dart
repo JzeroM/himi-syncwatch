@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
-import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
@@ -24,17 +21,10 @@ class SettingsPageBackground extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final base = Theme.of(context).scaffoldBackgroundColor;
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: PosterPalette.fabricGradient(base,
-              themeColor: themeColorValue == null
-                  ? null
-                  : Color(themeColorValue),
-              posterTone: ref.watch(heroToneProvider),
-              isDark: Theme.of(context).brightness == Brightness.dark),
+        // 698 N44：非首页同款全屏海报氛围洗（main_shell PosterBackdrop 透出）。
+                  color: Colors.transparent,
       ),
       child: child,
     );
@@ -134,7 +124,7 @@ Widget settingOptionTile({
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(labels[value] ?? value),
-            const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
+            Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
           ],
         ),
       ),
@@ -308,11 +298,11 @@ class SettingsGroupCard extends StatelessWidget {
                 padding: padding.copyWith(bottom: 8),
                 child: Text(
                   title!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white60,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
                   ),
                 ),
               ),
@@ -412,7 +402,7 @@ class SettingsCategoryCard extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Icon(icon, size: 18, color: Colors.white),
+            child: Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurface),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -422,10 +412,10 @@ class SettingsCategoryCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -433,13 +423,13 @@ class SettingsCategoryCard extends StatelessWidget {
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: Colors.white60),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          const Icon(Icons.chevron_right, size: 18, color: Colors.white38),
+          Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
         ],
       ),
     );

@@ -39,7 +39,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.sync, size: 20, color: Colors.white70),
+              Icon(Icons.sync, size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
               const SizedBox(width: 8),
               const Text(
                 '同步概览',
@@ -68,7 +68,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
             syncState.lastSuccessAt == null
                 ? '上次成功：尚未同步'
                 : '上次成功：${_formatTime(syncState.lastSuccessAt!)}',
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
           ),
           const SizedBox(height: 14),
           Row(
@@ -94,7 +94,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
             const SizedBox(height: 7),
             Text(
               _phaseText(),
-              style: const TextStyle(fontSize: 11, color: Colors.white54),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
             ),
           ],
           const SizedBox(height: 12),
@@ -168,16 +168,16 @@ class _Metric extends StatelessWidget {
           children: [
             Text(
               '$value',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Colors.white54),
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
             ),
           ],
         ),

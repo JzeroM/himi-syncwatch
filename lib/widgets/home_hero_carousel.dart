@@ -545,13 +545,11 @@ class HomeHeroBackground extends StatelessWidget {
   const HomeHeroBackground({
     super.key,
     required this.imageUrl,
-    required this.baseColor,
     required this.heroHeight,
     this.imageBuilder = embyHeroImageBuilder,
   });
 
   final String? imageUrl;
-  final Color baseColor;
   final double heroHeight;
   final HomeHeroImageBuilder imageBuilder;
 
@@ -650,8 +648,10 @@ class HomeHeroBackground extends StatelessWidget {
                 colors: [
                   Colors.black.withValues(alpha: 0.30),
                   Colors.black.withValues(alpha: 0.42),
-                  baseColor.withValues(alpha: 0.90),
-                  baseColor,
+                  // 698 N44：落底渐隐到透明（不再压 baseColor 纯色）——
+                  // 全屏海报氛围 wash 透出，与轮播同源零分割。
+                  Colors.transparent,
+                  Colors.transparent,
                 ],
                 stops: const [0.0, 0.5, 0.85, 1.0],
               ),

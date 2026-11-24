@@ -280,7 +280,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
                 ),
             ],
           ),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 12, 16, 32),
             child: Text(
               '更新包不在此列表，已安装版本会在下次启动自动清理。\n'
@@ -289,7 +289,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
               '播放器网络缓冲为运行时内存，可在「播放器 > 播放器配置 > 缓存大小」调整。',
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.white54,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                 height: 1.5,
               ),
             ),
@@ -321,7 +321,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             ),
           ],
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 32),
           child: Text(
             '备份含服务器 token 等敏感信息，请妥善保管备份文件。\n'
@@ -329,7 +329,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             '解码/HDR/渲染器等设备相关设置。',
             style: TextStyle(
               fontSize: 12,
-              color: Colors.white54,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
               height: 1.5,
             ),
           ),
@@ -369,7 +369,7 @@ class _BackupActionRow extends StatelessWidget {
       key: rowKey,
       leading: Icon(
         icon,
-        color: active ? accent : Colors.white24,
+        color: active ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
       ),
       title: Text(title),
       subtitle: Text(subtitle),
@@ -382,7 +382,7 @@ class _BackupActionRow extends StatelessWidget {
           : Icon(
               Icons.chevron_right,
               size: 18,
-              color: active ? Colors.white54 : Colors.white24,
+              color: active ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
             ),
       onTap: active ? onTap : null,
     );
@@ -415,7 +415,7 @@ class _CacheErrorView extends ConsumerWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
           ),
           const SizedBox(height: 16),
           settingsTvWrapRow(
@@ -480,9 +480,9 @@ class _CacheSummaryCard extends StatelessWidget {
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '磁盘缓存 · 不含更新包与播放器内存缓冲',
-            style: TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
           ),
           const SizedBox(height: 16),
           _CacheBar(stats: stats),
@@ -506,7 +506,7 @@ class _CacheSummaryCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   '弹幕缓存 ${snapshot.totalDanmakuCount} 条（内存）',
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                 ),
               ),
               TvFocusable(
@@ -541,7 +541,7 @@ class _CacheSummaryCard extends StatelessWidget {
                               size: 18,
                               color: canClear
                                   ? Theme.of(context).colorScheme.primary
-                                  : Colors.white38,
+                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                             ),
                             const SizedBox(width: 6),
                             Text(
@@ -551,7 +551,7 @@ class _CacheSummaryCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 color: canClear
                                     ? Theme.of(context).colorScheme.primary
-                                    : Colors.white38,
+                                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                               ),
                             ),
                           ],
@@ -628,7 +628,7 @@ class _LegendItem extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '$value · $percent',
-          style: const TextStyle(fontSize: 12, color: Colors.white54),
+          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
         ),
       ],
     );
@@ -667,7 +667,7 @@ class _CacheRow extends StatelessWidget {
         children: [
           Text(
             value,
-            style: const TextStyle(fontSize: 13, color: Colors.white70),
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
           ),
           const SizedBox(width: 6),
           if (clearing)
@@ -683,7 +683,7 @@ class _CacheRow extends StatelessWidget {
               onPressed: enabled ? onTap : null,
               icon: Icon(
                 Icons.delete_outline,
-                color: enabled ? Colors.redAccent : Colors.white24,
+                color: enabled ? Colors.redAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
               ),
             ),
         ],

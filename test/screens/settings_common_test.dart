@@ -13,7 +13,7 @@ void main() {
     expect(route, isA<PageRouteBuilder<void>>());
   });
 
-  testWidgets('SettingsPageBackground 渲染织物微渐变且不透明（N43）', (tester) async {
+  testWidgets('SettingsPageBackground 背景透明透出 wash（N44）', (tester) async {
     final container = ProviderContainer(
       overrides: [
         settingsProvider.overrideWith(
@@ -40,9 +40,9 @@ void main() {
       of: find.byType(SettingsPageBackground),
       matching: find.byType(DecoratedBox),
     ));
-    final gradient =
-        (box.decoration as BoxDecoration).gradient as LinearGradient?;
-    expect(gradient, isNotNull);
-    expect(gradient!.colors, hasLength(7), reason: 'N43 织物微织 7 段');
+    final deco = box.decoration as BoxDecoration;
+    // N44：设置页背景透明——main_shell 海报氛围 wash 透出（非首页同款）。
+    expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+    expect(deco.gradient, isNull, reason: '设置页不再自渲染织物渐变');
   });
 }

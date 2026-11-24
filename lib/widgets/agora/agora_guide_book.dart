@@ -636,7 +636,7 @@ class _BookControls extends StatelessWidget {
         child: Center(
           child: Text(
             '共 $total 步 · 左右滑动阅读',
-            style: const TextStyle(color: Colors.white60, fontSize: 11),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), fontSize: 11),
           ),
         ),
       );
@@ -651,8 +651,8 @@ class _BookControls extends StatelessWidget {
             tooltip: '上一页',
             onPressed: !busy ? onPrevious : null,
             iconSize: 18,
-            color: Colors.white70,
-            disabledColor: Colors.white24,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+            disabledColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
             icon: const Icon(Icons.chevron_left),
           ),
           Expanded(
@@ -670,17 +670,17 @@ class _BookControls extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: i == page
                             ? const Color(0xFFD8B26B)
-                            : Colors.white38,
+                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                         borderRadius: BorderRadius.circular(99),
                       ),
                     ),
                   ),
                 const SizedBox(width: 10),
-                const Flexible(
+                Flexible(
                   child: Text(
                     '左右滑动翻页',
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
                 ),
               ],
@@ -691,8 +691,8 @@ class _BookControls extends StatelessWidget {
             tooltip: '下一页',
             onPressed: !busy && page < total - 1 ? onNext : null,
             iconSize: 18,
-            color: Colors.white70,
-            disabledColor: Colors.white24,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+            disabledColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
             icon: const Icon(Icons.chevron_right),
           ),
         ],

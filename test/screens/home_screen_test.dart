@@ -77,11 +77,10 @@ Future<ProviderContainer> _pumpScreen(
   await tester.pump(const Duration(milliseconds: 2600)); return container;
 }
 
-LinearGradient _bgGradient(WidgetTester tester) {
+BoxDecoration _bgDecoration(WidgetTester tester) {
   final container =
       tester.widget<AnimatedContainer>(find.byKey(const Key('homeBackground')));
-  final decoration = container.decoration! as BoxDecoration;
-  return decoration.gradient! as LinearGradient;
+  return container.decoration! as BoxDecoration;
 }
 
 /// 包裹指定图标的玻璃容器（椭圆胶囊）。
@@ -1199,25 +1198,21 @@ void main() {
     );
   });
 
-  testWidgets('首页背景为织物微渐变（N43：7 段微抖、未设色中性微染）', (tester) async {
+  testWidgets('首页背景透明（N44：海报氛围 wash 透出，同源零分割）', (tester) async {
     final container = await _pumpScreen(tester);
 
     final bg = find.byKey(const Key('homeBackground'));
     expect(bg, findsOneWidget);
     expect(container.read(settingsProvider).themeColor, isNull);
 
-    final gradient = _bgGradient(tester);
-    // N43：织物微渐变（7 段微抖）；未设海报色时微染中性底（首色≈底色）。
-    expect(gradient.colors, hasLength(7), reason: '织物微织 7 段');
-    expect(gradient.colors.toSet().length, greaterThan(2),
-        reason: '微抖多段（非同色）');
-    final base = ThemeData.light().scaffoldBackgroundColor;
-    expect(gradient.colors.first.computeLuminance(),
-        closeTo(base.computeLuminance(), 0.08),
-        reason: '未设色时首色≈中性底（微染）');
+    final deco = _bgDecoration(tester);
+    // N44：页面背景透明——main_shell PosterBackdrop 全屏海报 wash 透出
+    //（首页与轮播同源，交界零分割）。
+    expect(deco.color, Colors.transparent, reason: 'N44 页面背景透明透出 wash');
+    expect(deco.gradient, isNull, reason: 'N44 页面不再自渲染渐变');
   });
 
-  testWidgets('主题色写入后首页背景微织渐变无强染（N43）', (
+  testWidgets('主题色写入后首页背景透明无强染（N44）', (
       tester,
     ) async {
       await _pumpScreen(
@@ -1229,12 +1224,9 @@ void main() {
       final container = tester.widget<AnimatedContainer>(
           find.byKey(const Key('homeBackground')));
       final deco = container.decoration as BoxDecoration;
-      final g = deco.gradient as LinearGradient;
-      // N43：背景 = 织物微渐变（微抖）+ 海报色调/中性微染（无强染）。
-      expect(g.colors.toSet().length, greaterThan(2),
-          reason: '织物微抖多段');
-      expect(g.colors.first, isNot(const Color(0xFF6750A4)),
-          reason: '主题色不强染背景');
+      // N44：页面背景透明（海报 wash 透出）；主题色不染背景。
+      expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+      expect(deco.gradient, isNull, reason: '主题色不染背景（无自渲染渐变）');
     });
 
   testWidgets('首页轮播开启：渲染英雄轮播 + 虚化海报背景，fields 请求 BackdropImageTags',
@@ -1296,7 +1288,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 2600));
   });
 
-  testWidgets('首页轮播关闭：无英雄轮播，仅主题渐变背景', (tester) async {
+  testWidgets('首页轮播关闭：无英雄轮播，背景透明透 wash', (tester) async {
     final auth = FakeEmbyAuthService(
       serverIds: ['s1'],
       sessions: {

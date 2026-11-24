@@ -221,12 +221,12 @@ class MediaDetailsSection extends StatelessWidget {
         if (path != null || size != null || media.dateCreated != null) ...[
           const _SectionTitle('媒体信息'),
           if (path != null) ...[
-            const Text('路径:',
-                style: TextStyle(fontSize: 13, color: Colors.white70)),
+            Text('路径:',
+                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
             const SizedBox(height: 4),
             SelectableText(
               path,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
             ),
             const SizedBox(height: 8),
           ],
@@ -237,12 +237,12 @@ class MediaDetailsSection extends StatelessWidget {
               if (size != null)
                 Text(
                   formatSize(size),
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 ),
               if (media.dateCreated != null)
                 Text(
                   '加入时间: ${formatDate(item.dateCreated)}',
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 ),
             ],
           ),
@@ -374,7 +374,7 @@ class _StreamCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: Colors.white),
+              Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurface),
               const SizedBox(width: 8),
               Text(title,
                   style: const TextStyle(
@@ -391,13 +391,13 @@ class _StreamCard extends StatelessWidget {
                   SizedBox(
                     width: 88,
                     child: Text(r.$1,
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.white60)),
+                        style: TextStyle(
+                            fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62))),
                   ),
                   Expanded(
                     child: Text(
                       r.$2,
-                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                      style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
                     ),
                   ),
                 ],
@@ -439,10 +439,10 @@ class _LinkChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.open_in_new, size: 14, color: Colors.white),
+            Icon(Icons.open_in_new, size: 14, color: Theme.of(context).colorScheme.onSurface),
             const SizedBox(width: 6),
             Text(link.name,
-                style: const TextStyle(fontSize: 13, color: Colors.white)),
+                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
           ],
         ),
       ),
@@ -461,7 +461,7 @@ class _GlassChip extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Text(label,
-          style: const TextStyle(fontSize: 13, color: Colors.white)),
+          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
     );
   }
 }

@@ -191,9 +191,9 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                       // 否则放大后模糊）。
                       displayWidth: MediaQuery.sizeOf(context).width,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Center(
+                      errorBuilder: (_, __, ___) => Center(
                         child: Text('图片加载失败',
-                            style: TextStyle(color: Colors.white)),
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                       ),
                     ),
                   ),

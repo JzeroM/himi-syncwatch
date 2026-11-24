@@ -264,10 +264,10 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                         _server.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -275,9 +275,9 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                         _server.username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white54,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                         ),
                       ),
                     ],
@@ -285,7 +285,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                 ),
                 IconButton(
                   key: const ValueKey('serviceSettingsClose'),
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -321,13 +321,13 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                 key: const ValueKey('serviceStrmDirectPlay'),
                 value: _strmDirectPlay,
                 onChanged: _toggleStrm,
-                title: const Text(
+                title: Text(
                   'STRM 直链播放',
-                  style: TextStyle(color: Colors.white, fontSize: 15),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   '开启后使用服务器返回的直链地址作为播放地址，服务器不兼容时可能导致无法播放。',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
                 ),
               ),
             ),
@@ -380,12 +380,12 @@ class _ActionTile extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: Colors.white70, size: 22),
+                child: Icon(icon, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), size: 22),
               ),
               const SizedBox(height: 8),
               Text(
                 label,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 13),
               ),
             ],
           ),

@@ -151,9 +151,9 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             '以 Trakt 为中转，在多个 Emby 服务器之间同步电影与单集的已看状态和播放进度。'
             '已看取并集；全部未看时才取最长进度。自动同步在应用启动或回到前台时执行，'
             '间隔可在下方设置。',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
-              color: Colors.white54,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
               height: 1.5,
             ),
           ),
@@ -175,10 +175,10 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
                 leading: const Icon(Icons.qr_code),
                 title: const Text('扫码配置'),
                 subtitle: const Text('手机扫码后输入设备码，电视端自动完成 Trakt 授权'),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Colors.white54,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                 ),
                 onTap: _openQrLogin,
               ),
@@ -264,14 +264,14 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             ),
           ],
           if (!trakt.connecting && trakt.deviceCode == null)
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 20),
               child: Text(
                 '提示：Trakt 免费账号同时只能连接一个第三方客户端。'
                 '如授权后无法同步，请先在 Trakt 设置中断开其他客户端。',
                 style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white38,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                   height: 1.5,
                 ),
               ),
@@ -335,11 +335,11 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             ),
           ],
           const Divider(height: 1),
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
             child: Text(
               '参与的服务器',
-              style: TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
             ),
           ),
           if (servers.isEmpty)

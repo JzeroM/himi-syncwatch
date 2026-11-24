@@ -21,3 +21,7 @@ final posterTrioProvider =
 /// 跟随海报色调（明暗两套混色见 [PosterPalette.fabricGradient]）。
 /// 首页 hero 切换时写入；null = 未就绪（背景回退中性）。
 final heroToneProvider = StateProvider<Color?>((ref) => null);
+
+/// 698 N44：首页 hero 当前海报 URL——全屏氛围洗背景图源（同源零分割）。
+/// 首页轮播切换时写入；null = 未就绪（背景回退织物微渐变）。
+final heroPosterUrlProvider = StateProvider<String?>((ref) => null);

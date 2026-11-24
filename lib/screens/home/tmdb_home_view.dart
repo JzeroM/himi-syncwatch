@@ -284,7 +284,6 @@ class _HomeListState extends ConsumerState<_HomeList> {
         if (showCarousel && hero != null)
           HomeHeroBackground(
             imageUrl: _toHero(hero).imageUrl,
-            baseColor: Theme.of(context).scaffoldBackgroundColor,
             heroHeight: heroHeight,
             imageBuilder: _heroImage,
           ),
@@ -319,7 +318,7 @@ class _HeroSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: height,
-      child: const DecoratedBox(
+      child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -333,7 +332,7 @@ class _HeroSkeleton extends StatelessWidget {
             height: 22,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: Colors.white24,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
             ),
           ),
         ),
@@ -398,8 +397,8 @@ class _Hero extends StatelessWidget {
                   item.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     shadows: [Shadow(color: Colors.black, blurRadius: 6)],
@@ -413,7 +412,7 @@ class _Hero extends StatelessWidget {
                     if (item.communityRating != null)
                       '★ ${item.communityRating!.toStringAsFixed(1)}',
                   ].join('  ·  '),
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), fontSize: 13),
                 ),
                 if (item.overview?.isNotEmpty == true) ...[
                   const SizedBox(height: 8),
@@ -421,8 +420,8 @@ class _Hero extends StatelessWidget {
                     item.overview!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 13, height: 1.5),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), fontSize: 13, height: 1.5),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -485,12 +484,12 @@ class _EmptyHome extends ConsumerWidget {
             child: TmdbDiscoverDisc(tvMode: tvMode),
           ),
         if (!loading && !hasContent)
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(24, 40, 24, 24),
             child: Text(
               'TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
             ),
           ),
       ],
@@ -694,8 +693,8 @@ class _ConfigPrompt extends StatelessWidget {
           children: [
             const Icon(Icons.key_off_outlined, size: 56, color: Colors.grey),
             const SizedBox(height: 16),
-            const Text('TMDB 聚合模式未配置',
-                style: TextStyle(fontSize: 18, color: Colors.white70)),
+            Text('TMDB 聚合模式未配置',
+                style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
             const SizedBox(height: 8),
             const Text(
               '填入自己的 TMDB API Key 或 v4 Read Token 后，'
@@ -735,8 +734,8 @@ class _ErrorView extends StatelessWidget {
         children: [
           const Icon(Icons.cloud_off, size: 56, color: Colors.grey),
           const SizedBox(height: 16),
-          const Text('TMDB 加载失败',
-              style: TextStyle(fontSize: 18, color: Colors.white70)),
+          Text('TMDB 加载失败',
+              style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),

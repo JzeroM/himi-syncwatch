@@ -66,7 +66,7 @@ Future<void> showEpisodeNumberPicker(
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white38,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -85,8 +85,8 @@ Future<void> showEpisodeNumberPicker(
                       const Spacer(),
                       Text(
                         descending ? '倒序' : '正序',
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.white70),
+                        style: TextStyle(
+                            fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                       ),
                       const SizedBox(width: 4),
                       IconButton(
@@ -137,7 +137,7 @@ Future<void> showEpisodeNumberPicker(
                             ep.indexNumber?.toString() ?? '${i + 1}',
                             style: TextStyle(
                               fontSize: 16,
-                              color: highlighted ? primary : Colors.white,
+                              color: highlighted ? primary : Theme.of(context).colorScheme.onSurface,
                               fontWeight: highlighted
                                   ? FontWeight.bold
                                   : FontWeight.normal,

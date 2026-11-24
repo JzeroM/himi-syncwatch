@@ -192,31 +192,26 @@ void main() {
       return container.decoration! as BoxDecoration;
     }
 
-    testWidgets('未设主题色：背景中性微织（N43）', (tester) async {
+    testWidgets('未设主题色：背景透明透出 wash（N44）', (tester) async {
       await _pumpScreen(tester);
-      final gradient = _backgroundDecoration(tester).gradient!;
-      // N43：未设色时中性微织（微抖多段，非纯平）。
-      expect(gradient.colors.toSet().length, greaterThan(2),
-          reason: '织物微织多段');
+      final deco = _backgroundDecoration(tester);
+      // N44：页面背景透明——main_shell 海报氛围 wash 透出（非首页同款）。
+      expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+      expect(deco.gradient, isNull, reason: '页面不再自渲染渐变');
     });
 
-    testWidgets('设主题色：背景织物微染无强染（N43）', (
+    testWidgets('设主题色：背景透明无强染（N44）', (
       tester,
     ) async {
       await _pumpScreen(
         tester,
         settings: const AppSettings(themeColor: 0xFF6366F1),
       );
-      final gradient = _backgroundDecoration(tester).gradient!;
+      final deco = _backgroundDecoration(tester);
 
-      // N41：主题色不得染背景——平色/平色+顶部 6% 氛围带。
-      expect(gradient.colors.toSet().length, greaterThan(2),
-          reason: 'N43 织物微抖多段（无强主题色染）');
-      expect(
-        gradient.colors.first,
-        isNot(PosterPalette.darkenForPage(const Color(0xFF6366F1))),
-        reason: '主题色退出背景',
-      );
+      // N41/N44：主题色不得染背景——页面透明透出海报 wash。
+      expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+      expect(deco.gradient, isNull, reason: '主题色退出背景（无自渲染渐变）');
     });
   });
 

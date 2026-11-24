@@ -231,9 +231,9 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
+                  Text(
                     '同步观影',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
                 ],
               )
@@ -285,7 +285,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
 
     final iconColor = selected
         ? kNavBlobColor
-        : (hovered ? Colors.white : Colors.white70);
+        : (hovered ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70));
 
     // ── 底色：选中主色渐变玻璃 / 悬停淡玻璃 / 常态透明 ──
     final BoxDecoration decoration;
@@ -371,7 +371,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
               child: Text(
                 kShellNavLabels[index],
                 style: TextStyle(
-                  color: selected ? Colors.white : Colors.white70,
+                  color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                   fontSize: 14,
                   fontWeight:
                       selected ? FontWeight.bold : FontWeight.normal,
@@ -466,7 +466,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
               ? Icon(
                   open ? Icons.chevron_left : Icons.chevron_right,
                   size: 18,
-                  color: open ? kNavBlobColor : Colors.white70,
+                  color: open ? kNavBlobColor : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                 )
               : null,
         ),

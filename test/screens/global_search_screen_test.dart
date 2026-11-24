@@ -141,7 +141,7 @@ void main() {
     expect(find.text('乙的影片'), findsOneWidget);
   });
 
-  testWidgets('底色织物微染无强染（N43）', (tester) async {
+  testWidgets('底色透明无强染（N44）', (tester) async {
     const themeColor = 0xFF3EBC7A;
     await _pump(
       tester,
@@ -153,19 +153,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
     await tester.pumpAndSettle();
 
-    final gradient = (tester
+    final deco = (tester
             .widget<Container>(find.byKey(const ValueKey('searchBackground')))
-            .decoration as BoxDecoration)
-        .gradient! as LinearGradient;
-    // N41：主题色不得染背景。
-    expect(gradient.colors.toSet().length, greaterThan(2),
-        reason: 'N43 织物微抖多段');
-    expect(gradient.colors.first,
-        isNot(PosterPalette.darkenForPage(const Color(themeColor))),
-        reason: '主题色退出背景');
+            .decoration as BoxDecoration);
+    // N41/N44：主题色不得染背景——页面透明透出海报 wash。
+    expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+    expect(deco.gradient, isNull, reason: '主题色退出背景（无自渲染渐变）');
   });
 
-  testWidgets('未设主题色：背景中性微织（N43）', (tester) async {
+  testWidgets('未设主题色：背景透明透出 wash（N44）', (tester) async {
     await _pump(
       tester,
       settings: const AppSettings(),
@@ -176,12 +172,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
 
-    final gradient = (tester
+    final deco = (tester
             .widget<Container>(find.byKey(const ValueKey('searchBackground')))
-            .decoration as BoxDecoration)
-        .gradient!;
-    expect(gradient.colors.toSet().length, greaterThan(2),
-        reason: 'N43 织物微织多段');
+            .decoration as BoxDecoration);
+    // N44：页面背景透明——main_shell 海报氛围 wash 透出（非首页同款）。
+    expect(deco.color, Colors.transparent, reason: 'N44 透明透出 wash');
+    expect(deco.gradient, isNull, reason: '页面不再自渲染渐变');
   });
 
   testWidgets('无结果 → 未找到结果', (tester) async {

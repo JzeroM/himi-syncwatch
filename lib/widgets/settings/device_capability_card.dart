@@ -35,7 +35,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.memory, size: 18, color: Colors.white70),
+                Icon(Icons.memory, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 const SizedBox(width: 8),
                 const Text(
                   '设备能力评估',
@@ -44,16 +44,16 @@ class DeviceCapabilityCard extends ConsumerWidget {
                 const Spacer(),
                 Text(
                   profile.probed ? '已评估' : '未评估',
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             if (!profile.probed)
-              const Text(
+              Text(
                 '未执行原生评估（非 Android 或通道不可用）——'
                 '路由按历史默认行为执行。',
-                style: TextStyle(fontSize: 12, color: Colors.white60),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
               )
             else ...[
               _CapRow(
@@ -194,13 +194,13 @@ class _CapRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
             ),
           ),
         ],

@@ -46,10 +46,10 @@ class _StatCard extends StatelessWidget {
             Text(
               '$value',
               key: ValueKey('stat_$label'),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 2),
@@ -57,7 +57,11 @@ class _StatCard extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white.withValues(alpha: 0.75),
+                // 698 N45：玻璃卡片承载 → 明亮版反转（onSurface + 灰阶平移）。
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.75),
               ),
             ),
           ],

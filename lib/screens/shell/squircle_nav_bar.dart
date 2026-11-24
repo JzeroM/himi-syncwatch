@@ -481,8 +481,8 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
     // 颜色：填充（块内）白；描边（槽位）白70；拖动预览点亮白。
     final previewLit = _dragSlot == slot;
     final color = Color.lerp(
-      previewLit ? Colors.white : Colors.white70,
-      Colors.white,
+      previewLit ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+      Theme.of(context).colorScheme.onSurface,
       morph,
     )!;
     return Positioned(
@@ -649,10 +649,10 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
                         opacity: 1 - textFade,
                         child: Text(
                           ShellNavBar.tabLabels[_from],
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -660,10 +660,10 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
                       opacity: _from == _to ? 1 : textFade,
                       child: Text(
                         ShellNavBar.tabLabels[_to],
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),

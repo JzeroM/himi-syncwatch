@@ -145,7 +145,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white38,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -169,9 +169,9 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const Text(
+                        Text(
                           '线路管理',
-                          style: TextStyle(fontSize: 13, color: Colors.white54),
+                          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                         ),
                       ],
                     ),
@@ -179,7 +179,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                   IconButton(
                     key: const Key('routeSheetClose'),
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white70),
+                    icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                   ),
                 ],
               ),
@@ -368,15 +368,15 @@ class _RouteTile extends StatelessWidget {
       child: Row(
         children: [
           if (draggable)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(right: 8),
               child:
-                  Icon(Icons.drag_indicator, size: 18, color: Colors.white38),
+                  Icon(Icons.drag_indicator, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
             ),
           Icon(
             selected ? Icons.check_circle : Icons.radio_button_unchecked,
             size: 20,
-            color: selected ? Colors.greenAccent : Colors.white38,
+            color: selected ? Colors.greenAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -395,7 +395,7 @@ class _RouteTile extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                 ),
               ],
             ),
@@ -414,14 +414,14 @@ class _RouteTile extends StatelessWidget {
             ),
           IconButton(
             onPressed: measuring ? null : onMeasure,
-            icon: const Icon(Icons.speed, size: 18, color: Colors.white54),
+            icon: Icon(Icons.speed, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
             tooltip: '测速',
           ),
           if (onRemove != null)
             IconButton(
               onPressed: onRemove,
-              icon: const Icon(Icons.delete_outline,
-                  size: 18, color: Colors.white38),
+              icon: Icon(Icons.delete_outline,
+                  size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
               tooltip: '删除',
             ),
         ],
@@ -515,13 +515,13 @@ class _ActionButton extends StatelessWidget {
               children: [
                 Icon(icon,
                     size: 16,
-                    color: onTap == null ? Colors.white24 : Colors.white70),
+                    color: onTap == null ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 const SizedBox(width: 4),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 13,
-                    color: onTap == null ? Colors.white24 : Colors.white70,
+                    color: onTap == null ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                   ),
                 ),
               ],
@@ -660,7 +660,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white38,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -681,15 +681,15 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                           ),
                           Text(
                             widget.server.label,
-                            style: const TextStyle(
-                                fontSize: 13, color: Colors.white54),
+                            style: TextStyle(
+                                fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white70),
+                      icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                     ),
                   ],
                 ),
@@ -716,8 +716,8 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                   fieldKey: const Key('routePathField'),
                 ),
                 const SizedBox(height: 8),
-                const Text('配置',
-                    style: TextStyle(fontSize: 13, color: Colors.white54)),
+                Text('配置',
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
                 const SizedBox(height: 4),
                 _switchRow(
                   label: '使用 HTTPS',
@@ -766,7 +766,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(fontSize: 13, color: Colors.white54)),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
           const SizedBox(height: 6),
           TextField(
             key: fieldKey,
@@ -811,7 +811,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                 if (subtitle != null)
                   Text(subtitle,
                       style:
-                          const TextStyle(fontSize: 12, color: Colors.white38)),
+                          TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38))),
               ],
             ),
           ),

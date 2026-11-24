@@ -118,7 +118,7 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.onSurface,
             borderRadius: BorderRadius.circular(16),
           ),
           child: QrImageView(
@@ -173,9 +173,9 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
           color: const Color(0xFF6366F1),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: const Text(
+        child: Text(
           '电视本机搜索',
-          style: TextStyle(color: Colors.white, fontSize: 15),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
         ),
       ),
     );
@@ -201,9 +201,9 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
               color: const Color(0xFF6366F1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text(
+            child: Text(
               '重试',
-              style: TextStyle(color: Colors.white, fontSize: 15),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
             ),
           ),
         ),

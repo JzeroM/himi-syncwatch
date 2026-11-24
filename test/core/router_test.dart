@@ -480,10 +480,18 @@ void main() {
       await _pumpApp(tester);
 
       LinearGradient shellGradient() {
-        final shell = tester.widget<AnimatedContainer>(
-          find.byKey(const ValueKey('shellBackground')),
+        // N44：shellBackground = PosterBackdrop（无海报 URL 时回退织物
+        // 微渐变 Container）——从子树取回退渐变断言。
+        final container = tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('shellBackground')),
+                matching: find.byType(Container),
+              )
+              .first,
         );
-        return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
+        return (container.decoration! as BoxDecoration).gradient!
+            as LinearGradient;
       }
 
       final g = shellGradient();
@@ -499,10 +507,16 @@ void main() {
     );
 
     LinearGradient shellGradient() {
-      final shell = tester.widget<AnimatedContainer>(
-        find.byKey(const ValueKey('shellBackground')),
+      // N44：shellBackground = PosterBackdrop（无海报 URL 时回退织物微渐变）。
+      final container = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('shellBackground')),
+              matching: find.byType(Container),
+            )
+            .first,
       );
-      return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
+      return (container.decoration! as BoxDecoration).gradient! as LinearGradient;
     }
 
     // N43：背景 = 织物微渐变（微抖多段）+ 无强主题色染。

@@ -83,14 +83,14 @@ class RoomMenuButton extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(left: 12, bottom: 4),
                   child: Text(
                     '房间',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -141,7 +141,7 @@ class RoomMenuButton extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
             children: [
-              Icon(icon, size: 24, color: Colors.white70),
+              Icon(icon, size: 24, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70)),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -149,24 +149,24 @@ class RoomMenuButton extends ConsumerWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: Theme.of(dialogContext).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white60,
+                        color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.62),
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
+              Icon(Icons.chevron_right, size: 20, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.38)),
             ],
           ),
         ),

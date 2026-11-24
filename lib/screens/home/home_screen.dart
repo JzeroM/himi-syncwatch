@@ -415,6 +415,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final toneUrl = _heroItems[heroIndex].imageUrl ?? '';
       if (toneUrl.isNotEmpty && toneUrl != _lastToneUrl) {
         _lastToneUrl = toneUrl;
+        // 698 N44：海报 URL 全局共享（全屏氛围洗图源，同源零分割）。
+        // build 中不可同步写 provider——挂到帧末执行。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(heroPosterUrlProvider.notifier).state = toneUrl;
+          }
+        });
         PosterPalette.extract(toneUrl).then((c) {
           if (mounted && c != null) {
             ref.read(heroToneProvider.notifier).state = c;
@@ -437,9 +444,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           const Icon(Icons.cloud_off, size: 56, color: Colors.grey),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             '加载失败',
-            style: TextStyle(fontSize: 18, color: Colors.white70),
+            style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
           ),
           const SizedBox(height: 8),
           Padding(
@@ -720,16 +727,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             duration: const Duration(milliseconds: 500),
             curve: Curves.easeOut,
             decoration: BoxDecoration(
-              gradient: PosterPalette.fabricGradient(base,
-                  posterTone: ref.watch(heroToneProvider),
-                  isDark: Theme.of(context).brightness == Brightness.dark),
+              // 698 N44：非首页同款全屏海报氛围洗（main_shell PosterBackdrop 透出）。
+                  color: Colors.transparent,
             ),
           ),
           // 轮播开启时：当前海报虚化铺满（详情页同款）
           if (showHero)
             HomeHeroBackground(
               imageUrl: _heroItems[heroIndex].imageUrl,
-              baseColor: base,
               heroHeight: heroHeight,
             ),
           content,
@@ -895,8 +900,8 @@ class _LibraryBar extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),

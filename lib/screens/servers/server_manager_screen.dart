@@ -1332,10 +1332,10 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                   children: [
                     Text(
                       _isEdit ? '编辑服务器' : '添加服务器',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const Spacer(),
@@ -1462,7 +1462,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(fontSize: 13, color: Colors.white54)),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
           const SizedBox(height: 6),
           TextField(
             key: fieldKey,

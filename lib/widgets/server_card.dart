@@ -148,15 +148,21 @@ class MovieSeriesCounts extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = counts;
     if (c == null) return const SizedBox.shrink();
-    const style = TextStyle(fontSize: 12, color: Colors.white70);
+    final style = TextStyle(
+          fontSize: 12,
+          color: Theme.of(context)
+              .colorScheme
+              .onSurface
+              .withValues(alpha: 0.70),
+        );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.movie_outlined, size: 14, color: Colors.white70),
+        Icon(Icons.movie_outlined, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
         const SizedBox(width: 2),
         Text('${c.movies}', style: style),
         const SizedBox(width: 8),
-        const Icon(Icons.tv, size: 14, color: Colors.white70),
+        Icon(Icons.tv, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
         const SizedBox(width: 2),
         Text('${c.series}', style: style),
       ],
@@ -609,7 +615,7 @@ class _PanelItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = action.danger ? Colors.redAccent : Colors.white;
+    final color = action.danger ? Colors.redAccent : Theme.of(context).colorScheme.onSurface;
     final primary = Theme.of(context).colorScheme.primary;
     final row = SizedBox(
       height: 48,
@@ -752,7 +758,7 @@ class ServerListCard extends StatelessWidget {
                 '${server.username} · ${server.serverUrl}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: Colors.white54),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -799,11 +805,11 @@ class ServerListCard extends StatelessWidget {
                           key: const ValueKey('syncToTvButton'),
                           borderRadius: BorderRadius.circular(8),
                           onTap: onSyncToTv,
-                          child: const SizedBox(
+                          child: SizedBox(
                             width: 40,
                             height: 40,
                             child: Icon(Icons.cast_connected,
-                                size: 20, color: Colors.white54),
+                                size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                           ),
                         ),
                       ServerMoreButton(
@@ -886,7 +892,7 @@ class ServerGridCard extends StatelessWidget {
   /// 头像版本号（上传/重新登录后自增，用于绕过图片缓存刷新头像）。
   final int? avatarVersion;
 
-  Widget _gradient(Color start, Color end) => Positioned.fill(
+  Widget _gradient(context, Color start, Color end) => Positioned.fill(
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
@@ -902,15 +908,15 @@ class ServerGridCard extends StatelessWidget {
         ),
       );
 
-  Widget _syncIcon() => InkWell(
+  Widget _syncIcon(BuildContext context) => InkWell(
         key: const ValueKey('syncToTvButton'),
         borderRadius: BorderRadius.circular(8),
         onTap: onSyncToTv,
-        child: const SizedBox(
+        child: SizedBox(
           width: 40,
           height: 40,
           child:
-              Icon(Icons.cast_connected, size: 18, color: Colors.white54),
+              Icon(Icons.cast_connected, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
         ),
       );
 
@@ -952,9 +958,9 @@ class ServerGridCard extends StatelessWidget {
                     server.username,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Colors.white70,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1007,7 +1013,7 @@ class ServerGridCard extends StatelessWidget {
           child: Stack(
             children: [
               // 背景斜向渐变氛围（激活/未激活同强度，不再放大激活态）
-              _gradient(start, end),
+              _gradient(context, start, end),
               Padding(
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -1028,7 +1034,7 @@ class ServerGridCard extends StatelessWidget {
                 Positioned(
                   right: 14,
                   bottom: 14,
-                  child: _syncIcon(),
+                  child: _syncIcon(context),
                 ),
             ],
           ),

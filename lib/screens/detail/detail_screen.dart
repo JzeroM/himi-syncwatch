@@ -1733,7 +1733,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // 非 TV 占半行高 48。
     ButtonStyle glassStyle({bool compact = false}) => FilledButton.styleFrom(
           backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
           minimumSize: Size(0, compact ? 40 : 48),
           // TV 紧凑态补水平内边距：否则图标+文字贴到玻璃胶囊边缘，
           // 文字看起来"溢出"胶囊；非 TV 靠 Expanded 撑宽居中，无需内边距
@@ -1790,8 +1790,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             const SizedBox(width: 8),
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -2002,7 +2002,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // 贴边小按钮不用面板级悬浮投影，避免返回键外一圈黑影。
               showShadow: false,
               child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -2031,6 +2031,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
+                          // 海报叠字遮罩恒白（N43 ③ 反转例外）。
                           Colors.white,
                           Colors.white,
                           Colors.transparent,
@@ -2086,7 +2087,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           errorWidget: Text(
                             item.name,
                             style: TextStyle(
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: tv ? 20 : 24,
                               fontWeight: FontWeight.bold,
                               shadows: DetailScreen.heroTextShadows,
@@ -2097,7 +2098,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         Text(
                           item.name,
                           style: TextStyle(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: tv ? 20 : 24,
                             fontWeight: FontWeight.bold,
                             shadows: DetailScreen.heroTextShadows,
@@ -2134,13 +2135,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                       ? Icons.unfold_less
                                       : Icons.subject,
                                   size: 14,
-                                  color: Colors.white70,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                                 ),
                               ),
                             ),
                           ),
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                             fontSize: 13,
                             height: 1.5,
                             shadows: DetailScreen.heroTextShadows,
@@ -2157,8 +2158,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           service: ref.watch(heroRatingsServiceProvider),
                           iconSize: 15,
                           alignment: WrapAlignment.center,
-                          textStyle: const TextStyle(
-                            color: Colors.white,
+                          textStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             shadows: DetailScreen.heroTextShadows,
@@ -2190,7 +2191,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 Text(
                                   '简介',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     fontSize: tv ? 16 : 18,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -2207,14 +2208,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.expand_less,
-                                            size: 14, color: Colors.white70),
+                                        Icon(Icons.expand_less,
+                                            size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                                         const SizedBox(width: 5),
-                                        const Text(
+                                        Text(
                                           '收起',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: Colors.white,
+                                            color: Theme.of(context).colorScheme.onSurface,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -2229,8 +2230,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                               child: SingleChildScrollView(
                                 child: Text(
                                   item.overview!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     fontSize: 14,
                                     height: 1.5,
                                   ),
@@ -2266,8 +2267,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 7),
                                 child: Text(g,
-                                    style: const TextStyle(
-                                        fontSize: 13, color: Colors.white)),
+                                    style: TextStyle(
+                                        fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
                               ))
                           .toList(),
                     ),
@@ -2525,8 +2526,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       chips.add(const SizedBox(width: 4));
       chips.add(Text(
         item.communityRating!.toStringAsFixed(1),
-        style: const TextStyle(
-            color: Colors.white,
+        style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.bold,
             // 698 N10-C：等宽数字（tnum）。
             fontFeatures: [ui.FontFeature.tabularFigures()],
@@ -2536,16 +2537,16 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     if (item.year != null && item.year!.isNotEmpty) {
       gap();
       chips.add(Text(item.year!,
-          style: const TextStyle(
-              color: Colors.white70,
+          style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
               fontFeatures: [ui.FontFeature.tabularFigures()],
               shadows: DetailScreen.heroTextShadows)));
     }
     if (item.runtimeText != null) {
       gap();
       chips.add(Text(item.runtimeText!,
-          style: const TextStyle(
-              color: Colors.white70,
+          style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
               fontFeatures: [ui.FontFeature.tabularFigures()],
               shadows: DetailScreen.heroTextShadows)));
     }
@@ -2615,13 +2616,13 @@ class _MetaBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white38),
+        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),

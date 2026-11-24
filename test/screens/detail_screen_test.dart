@@ -1730,7 +1730,9 @@ void main() {
 
       final label = tester
           .widget<Text>(find.descendant(of: sea2, matching: find.text('第2季')));
-      expect(label.style?.color, Colors.white70, reason: '文字不随选中变主色');
+      expect(label.style?.color,
+          ThemeData.dark().colorScheme.onSurface.withValues(alpha: 0.70),
+          reason: 'N43 明暗语义色：文字不随选中变主色');
       expect(label.style?.fontWeight ?? FontWeight.normal, FontWeight.normal,
           reason: '文字不随选中加粗');
       // 切季联动：第 2 季的集替换第 1 季

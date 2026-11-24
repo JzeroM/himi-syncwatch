@@ -53,7 +53,7 @@ class ServerTitleDropdown extends ConsumerWidget {
               Flexible(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: _labelRow(label, icon),
+                  child: _labelRow(context, label, icon),
                 ),
               ),
               // ▾ 为纯装饰（不再单独聚焦），点击落点由外层胶囊统一接管
@@ -68,7 +68,7 @@ class ServerTitleDropdown extends ConsumerWidget {
     );
   }
 
-  Widget _labelRow(String label, IconData icon) {
+  Widget _labelRow(BuildContext context, String label, IconData icon) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -127,14 +127,14 @@ class ServerTitleDropdown extends ConsumerWidget {
                           _buildTmdbRow(dialogContext, ref),
                           const Divider(height: 1),
                           if (servers.isEmpty)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.symmetric(
                                 horizontal: 14,
                                 vertical: 12,
                               ),
                               child: Text(
                                 '未添加服务器',
-                                style: TextStyle(color: Colors.white54),
+                                style: TextStyle(color: Theme.of(titleContext).colorScheme.onSurface.withValues(alpha: 0.54)),
                               ),
                             )
                           else
@@ -196,7 +196,7 @@ class ServerTitleDropdown extends ConsumerWidget {
             Icon(
               active ? Icons.check_circle : Icons.local_movies_outlined,
               size: 18,
-              color: active ? Colors.green : Colors.white70,
+              color: active ? Colors.green : Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -204,7 +204,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                 'TMDB 聚合',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Theme.of(dialogContext).colorScheme.onSurface,
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
@@ -242,14 +242,14 @@ class ServerTitleDropdown extends ConsumerWidget {
             if (active)
               const Icon(Icons.check_circle, size: 18, color: Colors.green)
             else
-              const Icon(Icons.dns_outlined, size: 18, color: Colors.white70),
+              Icon(Icons.dns_outlined, size: 18, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 server.label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: Theme.of(dialogContext).colorScheme.onSurface,
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
                 ),
               ),

@@ -113,7 +113,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
       pageKey: const ValueKey('traktQrLoginPage'),
       title: '扫码配置 Trakt',
       children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
           child: Text(
             '用手机扫描二维码，打开 Trakt 授权页并输入下方设备码。'
@@ -121,7 +121,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.white60,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
               height: 1.5,
             ),
           ),
@@ -166,7 +166,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: QrImageView(
@@ -204,7 +204,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
             ),
           ),
           const SizedBox(height: 18),
-          const Center(
+          Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -216,7 +216,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
                 SizedBox(width: 10),
                 Text(
                   '等待手机授权…',
-                  style: TextStyle(fontSize: 13, color: Colors.white60),
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
                 ),
               ],
             ),

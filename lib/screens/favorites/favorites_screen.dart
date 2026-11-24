@@ -5,9 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/favorite_episode_card.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -28,9 +26,6 @@ class FavoritesScreen extends ConsumerWidget {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final aggregateMode =
         ref.watch(settingsProvider.select((s) => s.isTmdbHome));
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final base = Theme.of(context).scaffoldBackgroundColor;
     final async = aggregateMode
         ? ref.watch(aggregateFavoriteItemsProvider)
         : ref.watch(favoriteItemsProvider);
@@ -52,12 +47,8 @@ class FavoritesScreen extends ConsumerWidget {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.fabricGradient(base,
-              themeColor: themeColorValue == null
-                  ? null
-                  : Color(themeColorValue),
-              posterTone: ref.watch(heroToneProvider),
-              isDark: Theme.of(context).brightness == Brightness.dark),
+          // 698 N44：非首页同款全屏海报氛围洗（main_shell PosterBackdrop 透出）。
+                  color: Colors.transparent,
         ),
         child: GlassRefreshIndicator(
           onRefresh: () => aggregateMode

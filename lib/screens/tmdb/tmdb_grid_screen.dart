@@ -8,10 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/services/tmdb_aggregate_service.dart';
 import 'package:himi_syncwatch/utils/poster_grid.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -229,9 +227,6 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeColorValue =
-        ref.watch(settingsProvider.select((s) => s.themeColor));
-    final base = Theme.of(context).scaffoldBackgroundColor;
     final imageBase = ref.watch(tmdbImageBaseProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     final columnsSetting =
@@ -250,12 +245,8 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         decoration: BoxDecoration(
-          gradient: PosterPalette.fabricGradient(base,
-              themeColor: themeColorValue == null
-                  ? null
-                  : Color(themeColorValue),
-              posterTone: ref.watch(heroToneProvider),
-              isDark: Theme.of(context).brightness == Brightness.dark),
+          // 698 N44：非首页同款全屏海报氛围洗（main_shell PosterBackdrop 透出）。
+                  color: Colors.transparent,
         ),
         child: GlassRefreshIndicator(
           onRefresh: () => _load(reset: true),

@@ -85,10 +85,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   '经典模式（明）/ 深色模式（暗）/ 跟随系统 · 当前：'
                   '${_appearanceModeLabel(settings.appearanceMode)}',
                 ),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Colors.white54,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                 ),
                 onTap: () => _showAppearanceModeSheet(context, ref),
               ),
@@ -108,10 +108,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                     '底部导航栏形态与动效（液态玻璃质感）· 当前：'
                     '${NavBarStyle.parse(settings.navBarStyle).label}',
                   ),
-                  trailing: const Icon(
+                  trailing: Icon(
                     Icons.chevron_right,
                     size: 18,
-                    color: Colors.white54,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                   ),
                   onTap: () => _showNavBarStyleSheet(context, ref),
                 ),
@@ -124,10 +124,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 leading: const Icon(Icons.local_movies_outlined),
                 title: const Text('TMDB 聚合'),
                 subtitle: const Text('跨服务器发现电影/剧集，配置 API Key 与观看区域'),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Colors.white54,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                 ),
                 onTap: () => context.push('/settings/general/tmdb'),
               ),
@@ -146,10 +146,10 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 leading: const Icon(Icons.sort),
                 title: const Text('视频版本偏好'),
                 subtitle: const Text('多版本资源的排序与默认选用优先级'),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Colors.white54,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                 ),
                 onTap: () => showVersionPreferenceSheet(context, ref),
               ),
@@ -181,12 +181,12 @@ class _CategoryColumnsSection extends ConsumerWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Text(
             '0 = 自动跟随屏幕（TV 默认每行 8 个）；指定后屏幕放不下时'
             '自动压缩为可显示的最大列数',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
           ),
         ),
         Padding(
@@ -198,7 +198,7 @@ class _CategoryColumnsSection extends ConsumerWidget {
                 child: Text(
                   columns == null ? '自动' : '每行 $columns 个',
                   key: const ValueKey('categoryColumnsValue'),
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
+                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 ),
               ),
               Expanded(
@@ -265,9 +265,9 @@ class _GlassTuningSection extends ConsumerWidget {
               ),
             ],
           ),
-          const Text(
+          Text(
             '实时调节磨砂与折射效果，拖动即生效',
-            style: TextStyle(fontSize: 12, color: Colors.white60),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
           ),
           const SizedBox(height: 4),
           for (final spec in glassParamSpecs)
@@ -275,13 +275,14 @@ class _GlassTuningSection extends ConsumerWidget {
                     glassEdgeZoneVisible(tvMode: tvMode)) &&
                 (spec.key != 'glassRefractiveIndex' ||
                     glassRefractiveIndexVisible(tvMode: tvMode)))
-              _glassSliderRow(ref, spec, spec.read(tuning)),
+              _glassSliderRow(context, ref, spec, spec.read(tuning)),
         ],
       ),
     );
   }
 
   Widget _glassSliderRow(
+    BuildContext context,
     WidgetRef ref,
     GlassParamSpec spec,
     double value,
@@ -293,7 +294,7 @@ class _GlassTuningSection extends ConsumerWidget {
           width: 72,
           child: Text(
             spec.label,
-            style: const TextStyle(fontSize: 13, color: Colors.white70),
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
           ),
         ),
         Expanded(
@@ -331,7 +332,7 @@ class _GlassTuningSection extends ConsumerWidget {
             value.toStringAsFixed(spec.decimals),
             key: ValueKey('glassValue_${spec.key}'),
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
           ),
         ),
       ],
@@ -411,11 +412,11 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             '自定义首页与底部导航的背景渐变，「默认」跟随应用底色',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
           ),
         ),
         Padding(
@@ -431,9 +432,9 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                 onTap: () => ref
                     .read(settingsProvider.notifier)
                     .update(themeColor: null),
-                child: const Text(
+                child: Text(
                   '默认',
-                  style: TextStyle(fontSize: 11, color: Colors.white70),
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                 ),
               ),
               for (var i = 0; i < _presets.length; i++)
@@ -473,9 +474,9 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                 child: Center(
                   child: Text(
                     current == null ? '默认底色' : '预览',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white70,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -532,13 +533,13 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           color: color ?? Colors.white12,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? Colors.white : Colors.white24,
+            color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
             width: selected ? 2.5 : 1,
           ),
         ),
         child: child ??
             (selected
-                ? const Icon(Icons.check, size: 18, color: Colors.white)
+                ? Icon(Icons.check, size: 18, color: Theme.of(context).colorScheme.onSurface)
                 : null),
       ),
     );
@@ -560,7 +561,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
             width: 36,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: Colors.white70),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
             ),
           ),
           Expanded(
@@ -601,11 +602,11 @@ class _AppIconSection extends ConsumerWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
             '选择桌面图标外观（Android 首次切换会重启应用，之后切换会刷新界面；若桌面仍未刷新，可重启手机或清除桌面启动器缓存。iOS 会弹系统提示）',
-            style: TextStyle(fontSize: 12, color: Colors.white60, height: 1.5),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
           ),
         ),
         Padding(
@@ -681,7 +682,7 @@ class _AppIconTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: selected ? accent : Colors.white24,
+                      color: selected ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
                       width: selected ? 2 : 1,
                     ),
                   ),
@@ -707,8 +708,8 @@ class _AppIconTile extends StatelessWidget {
                         color: accent,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.check,
-                          size: 12, color: Colors.white),
+                      child: Icon(Icons.check,
+                          size: 12, color: Theme.of(context).colorScheme.onSurface),
                     ),
                   ),
               ],
@@ -718,7 +719,7 @@ class _AppIconTile extends StatelessWidget {
               option.label,
               style: TextStyle(
                 fontSize: 12,
-                color: selected ? accent : Colors.white70,
+                color: selected ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
