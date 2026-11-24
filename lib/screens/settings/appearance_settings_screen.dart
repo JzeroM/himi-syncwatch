@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
-import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/screens/settings/version_preference_sheet.dart';
@@ -73,7 +73,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                       .update(homeCarousel: v),
                 ),
               ),
-            // 698 N41：外观模式三档——经典(明)/深色(暗)/跟随系统。
+            // 698 N43：外观模式三档——经典(明)/深色(暗)/跟随系统。
             settingsTvWrapRow(
               tvMode: settings.tvMode,
               onTap: () => _showAppearanceModeSheet(context, ref),
@@ -463,9 +463,11 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                 decoration: BoxDecoration(
                   // 698 N41：预览 = 平色背景 + 顶部氛围光随主题色
                   //（主题色退出背景，只做点缀/氛围光）。
-                  gradient: PosterPalette.pageFlat(
+                  gradient: PosterPalette.fabricGradient(
                     base,
-                    glow: current == null ? null : Color(current),
+                    themeColor: current == null ? null : Color(current),
+                    posterTone: ref.watch(heroToneProvider),
+                    isDark: Theme.of(context).brightness == Brightness.dark,
                   ),
                 ),
                 child: Center(
@@ -729,7 +731,7 @@ class _AppIconTile extends StatelessWidget {
 
 
 /// 「导航栏样式」选择弹层（698 N15-E）：注册表枚举单选，选中即生效。
-  /// 698 N41：外观模式三档选择（经典/深色/跟随系统）。
+  /// 698 N43：外观模式三档选择（经典/深色/跟随系统）。
   void _showAppearanceModeSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
@@ -737,8 +739,11 @@ class _AppIconTile extends StatelessWidget {
       builder: (sheetContext) {
         final current =
             ref.read(settingsProvider.select((s) => s.appearanceMode));
-        return GlassContainer(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xF21A1D23),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -774,7 +779,7 @@ class _AppIconTile extends StatelessWidget {
         _ => '跟随系统',
       };
 
-void _showNavBarStyleSheet(BuildContext context, WidgetRef ref) {
+_showNavBarStyleSheet(BuildContext context, WidgetRef ref) {
   showModalBottomSheet<void>(
     context: context,
     builder: (sheetContext) => SafeArea(

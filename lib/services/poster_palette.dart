@@ -360,6 +360,49 @@ class PosterPalette {
     );
   }
 
+  /// 698 N43 织物微粒背景渐变（玻璃透感友好，跟随主题色）：
+  /// 深基底混主题色 12% + 上亮下暗微晕影 + 多段微幅亮度抖动（±3% 细横
+  /// 纹织物感）——低频梯度折射有「内容」可显、低饱和不抢海报。
+  /// [themeColor] 为 null 中性。织纹噪点蒙层见 [FabricWeavePainter]
+  ///（壳层全局叠一层）。
+  /// [posterTone]：首页海报主色（extract 首色）——背景跟随海报色调。
+  /// [isDark]：明暗两套混色（暗 = 深混 62%/明度封顶；亮 = 轻混白底）。
+  static Gradient fabricGradient(Color base,
+      {Color? themeColor, Color? posterTone, bool isDark = true}) {
+    // 698 N43：背景色源 = 海报首色（未设回退 base 中性）。
+    final source = posterTone ?? themeColor;
+    final Color tint;
+    if (source == null) {
+      tint = base;
+    } else if (isDark) {
+      // 暗套：海报色重混深底 62%+、明度封顶 0.38（沉稳不刺眼）。
+      final mixed = Color.lerp(source, base, 0.62)!;
+      var hsl = HSLColor.fromColor(mixed);
+      if (hsl.lightness > 0.38) hsl = hsl.withLightness(0.38);
+      tint = hsl.toColor();
+    } else {
+      // 亮套：海报色轻混白底 55%、饱和度下压（浅色织物底）。
+      final mixed = Color.lerp(source, base, 0.55)!;
+      var hsl = HSLColor.fromColor(mixed);
+      if (hsl.saturation > 0.28) hsl = hsl.withSaturation(0.28);
+      if (hsl.lightness < 0.82) hsl = hsl.withLightness(0.82);
+      tint = hsl.toColor();
+    }
+    final top = Color.lerp(tint, isDark ? Colors.white : Colors.white, 0.045)!;
+    final bottom = Color.lerp(tint, Colors.black, isDark ? 0.16 : 0.06)!;
+    // 微幅亮度抖动 stops（±3%）= 细横纹织物感。
+    final t1 = Color.lerp(top, Colors.white, 0.03)!;
+    final t2 = Color.lerp(top, Colors.black, 0.03)!;
+    final m1 = Color.lerp(tint, Colors.white, 0.03)!;
+    final m2 = Color.lerp(tint, Colors.black, 0.03)!;
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [top, t1, t2, m1, tint, m2, bottom],
+      stops: const [0.0, 0.16, 0.32, 0.48, 0.62, 0.78, 1.0],
+    );
+  }
+
   /// 页面背景垂直渐变：顶部 [accent] 主色 → 底部 [base] 页面底色。
   /// [accent] 为 null 时整页保持 [base]（与取色前视觉一致）。
   /// 【N41 起弃用：主题色退出背景——改用 [pageFlat]。】
@@ -424,4 +467,40 @@ class _Bucket {
   final Color color;
   final double luma;
   final int count;
+}
+
+/// 织物微粒噪点层（698 N43）：确定性种子细点阵——微亮/微暗交替 3~5%
+/// 亮度差，静态一次绘制（随背景铺满），玻璃折射穿出细腻织纹。
+/// 织物微粒噪点蒙层（698 N43）：确定性种子细点阵（微亮/微暗 α 低），
+/// 全局叠一层出胶片颗粒/织物细粒感——玻璃折射穿出细腻微纹理。
+class FabricWeavePainter extends CustomPainter {
+  const FabricWeavePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 确定性伪随机（种子固定 → 每次绘制同图案，无闪烁）。
+    var seed = 0x9E3779B9;
+    int next() {
+      seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
+      return seed;
+    }
+
+    final step = 3.0; // 织纹密度（每 3px 一点）
+    final paint = Paint();
+    for (double y = 0; y < size.height; y += step) {
+      for (double x = 0; x < size.width; x += step) {
+        final v = next() % 100;
+        if (v < 3) {
+          paint.color = const Color(0x08FFFFFF); // 微亮蒙层
+          canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), paint);
+        } else if (v < 6) {
+          paint.color = const Color(0x08000000); // 微暗蒙层
+          canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), paint);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(FabricWeavePainter oldDelegate) => false;
 }

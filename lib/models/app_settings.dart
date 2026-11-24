@@ -129,9 +129,10 @@ class AppSettings {
   /// 默认 `glassCapsule`（玻璃水滴款）；未知值容错回默认。
   final String navBarStyle; // 液态玻璃特效开关（低端设备可关闭）
 
-  /// 698 N41 明暗模式三档：经典模式(明)='light' / 深色模式(暗)='dark' /
+  /// 698 N43 明暗模式三档：经典模式(明)='light' / 深色模式(暗)='dark' /
   /// 跟随系统='system'（默认）。
   final String appearanceMode;
+
 
   // ── 液态玻璃可调参数（v1.1.84，null = 使用 liquid_glass_widgets 默认）──
   /// 磨砂模糊强度（逻辑像素，包默认 5）。
@@ -1062,7 +1063,7 @@ class AppSettings {
       appearanceMode: switch (json['appearanceMode'] as String?) {
         'light' => 'light',
         'dark' => 'dark',
-        _ => 'system', // 698 N41：未知值/缺省回跟随系统
+        _ => 'system', // 698 N43：未知值/缺省回跟随系统
       },
       versionPreference: json['versionPreference'] as String? ?? '',
       // 旧数据无此字段 / 非法值 → 列表视图

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/core/himi_platform.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_back_intercept_provider.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
@@ -210,7 +211,9 @@ class _MainShellState extends ConsumerState<MainShell> {
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageFlat(base),
+        gradient: PosterPalette.fabricGradient(base,
+                  posterTone: ref.watch(heroToneProvider),
+                  isDark: Theme.of(context).brightness == Brightness.dark),
       ),
     );
 
@@ -288,7 +291,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageFlat(base),
+        gradient: PosterPalette.fabricGradient(base),
       ),
       child: scrollable,
     );

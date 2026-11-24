@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/global_search_service.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -168,10 +169,12 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
         key: const Key('searchBackground'),
         decoration:
             BoxDecoration(
-              gradient: PosterPalette.pageFlat(base,
-                  glow: themeColorValue == null
+              gradient: PosterPalette.fabricGradient(base,
+                  themeColor: themeColorValue == null
                       ? null
-                      : Color(themeColorValue))),
+                      : Color(themeColorValue),
+                  posterTone: ref.watch(heroToneProvider),
+                  isDark: Theme.of(context).brightness == Brightness.dark)),
         child: SafeArea(
           child: Column(
             children: [

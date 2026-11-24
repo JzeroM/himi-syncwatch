@@ -192,17 +192,15 @@ void main() {
       return container.decoration! as BoxDecoration;
     }
 
-    testWidgets('未设主题色：整页保持应用底色（现状零变化）', (tester) async {
+    testWidgets('未设主题色：背景中性微织（N43）', (tester) async {
       await _pumpScreen(tester);
       final gradient = _backgroundDecoration(tester).gradient!;
-      final base = Theme.of(tester.element(find.byType(CategoryScreen)))
-          .scaffoldBackgroundColor;
-
-      expect(gradient.colors, everyElement(base),
-          reason: 'accent=null 时 pageGradient 全段 base');
+      // N43：未设色时中性微织（微抖多段，非纯平）。
+      expect(gradient.colors.toSet().length, greaterThan(2),
+          reason: '织物微织多段');
     });
 
-    testWidgets('设主题色：背景保持中性平色（N41 主题色退出背景）', (
+    testWidgets('设主题色：背景织物微染无强染（N43）', (
       tester,
     ) async {
       await _pumpScreen(
@@ -212,8 +210,8 @@ void main() {
       final gradient = _backgroundDecoration(tester).gradient!;
 
       // N41：主题色不得染背景——平色/平色+顶部 6% 氛围带。
-      expect(gradient.colors.toSet().length, lessThanOrEqualTo(2),
-          reason: '平色（或平色+氛围带），无三段主题色渐变');
+      expect(gradient.colors.toSet().length, greaterThan(2),
+          reason: 'N43 织物微抖多段（无强主题色染）');
       expect(
         gradient.colors.first,
         isNot(PosterPalette.darkenForPage(const Color(0xFF6366F1))),

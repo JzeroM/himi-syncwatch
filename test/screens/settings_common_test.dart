@@ -13,7 +13,7 @@ void main() {
     expect(route, isA<PageRouteBuilder<void>>());
   });
 
-  testWidgets('SettingsPageBackground 渲染主题色三段渐变且不透明', (tester) async {
+  testWidgets('SettingsPageBackground 渲染织物微渐变且不透明（N43）', (tester) async {
     final container = ProviderContainer(
       overrides: [
         settingsProvider.overrideWith(
@@ -43,6 +43,6 @@ void main() {
     final gradient =
         (box.decoration as BoxDecoration).gradient as LinearGradient?;
     expect(gradient, isNotNull);
-    expect(gradient!.colors, hasLength(3), reason: '主题色三段渐变');
+    expect(gradient!.colors, hasLength(7), reason: 'N43 织物微织 7 段');
   });
 }

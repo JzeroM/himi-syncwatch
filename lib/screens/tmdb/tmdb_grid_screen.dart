@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/tmdb_item.dart';
 import 'package:himi_syncwatch/models/tmdb_platform.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
@@ -249,10 +250,12 @@ class _TmdbGridScreenState extends ConsumerState<TmdbGridScreen> {
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageFlat(base,
-              glow: themeColorValue == null
+          gradient: PosterPalette.fabricGradient(base,
+              themeColor: themeColorValue == null
                   ? null
-                  : Color(themeColorValue)),
+                  : Color(themeColorValue),
+              posterTone: ref.watch(heroToneProvider),
+              isDark: Theme.of(context).brightness == Brightness.dark),
         ),
         child: GlassRefreshIndicator(
           onRefresh: () => _load(reset: true),

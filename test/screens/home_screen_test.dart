@@ -71,8 +71,10 @@ Future<ProviderContainer> _pumpScreen(
       ),
     ),
   );
-  await tester.pumpAndSettle();
-  return container;
+    await tester.pumpAndSettle();
+  // 698 N43：统一消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending
+  // 断言防护）。
+  await tester.pump(const Duration(milliseconds: 2600)); return container;
 }
 
 LinearGradient _bgGradient(WidgetTester tester) {
@@ -1197,7 +1199,7 @@ void main() {
     );
   });
 
-  testWidgets('首页背景为三段渐变容器（默认=应用底色同色三段）', (tester) async {
+  testWidgets('首页背景为织物微渐变（N43：7 段微抖、未设色中性微染）', (tester) async {
     final container = await _pumpScreen(tester);
 
     final bg = find.byKey(const Key('homeBackground'));
@@ -1205,14 +1207,17 @@ void main() {
     expect(container.read(settingsProvider).themeColor, isNull);
 
     final gradient = _bgGradient(tester);
-    expect(gradient.colors, hasLength(3));
-    expect(
-      gradient.colors.toSet(),
-      {ThemeData.light().scaffoldBackgroundColor},
-    );
+    // N43：织物微渐变（7 段微抖）；未设海报色时微染中性底（首色≈底色）。
+    expect(gradient.colors, hasLength(7), reason: '织物微织 7 段');
+    expect(gradient.colors.toSet().length, greaterThan(2),
+        reason: '微抖多段（非同色）');
+    final base = ThemeData.light().scaffoldBackgroundColor;
+    expect(gradient.colors.first.computeLuminance(),
+        closeTo(base.computeLuminance(), 0.08),
+        reason: '未设色时首色≈中性底（微染）');
   });
 
-  testWidgets('主题色写入后首页背景保持中性平色（N41 主题色退出背景）', (
+  testWidgets('主题色写入后首页背景微织渐变无强染（N43）', (
       tester,
     ) async {
       await _pumpScreen(
@@ -1225,10 +1230,11 @@ void main() {
           find.byKey(const Key('homeBackground')));
       final deco = container.decoration as BoxDecoration;
       final g = deco.gradient as LinearGradient;
-      // 纯平色（三点同色）——主题色不得染背景。
-      expect(g.colors.toSet().length, 1, reason: 'N41：背景纯平色');
+      // N43：背景 = 织物微渐变（微抖）+ 海报色调/中性微染（无强染）。
+      expect(g.colors.toSet().length, greaterThan(2),
+          reason: '织物微抖多段');
       expect(g.colors.first, isNot(const Color(0xFF6750A4)),
-          reason: '主题色不得出现在背景');
+          reason: '主题色不强染背景');
     });
 
   testWidgets('首页轮播开启：渲染英雄轮播 + 虚化海报背景，fields 请求 BackdropImageTags',
@@ -1284,6 +1290,10 @@ void main() {
         reason: 'v1.2.16 接缝对齐层：与清晰轮播图同裁切 + 镜像延伸，消除分割感');
     expect(find.byKey(const Key('homeAmbientSeamImage')), findsOneWidget);
     expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
+
+    // 698 N43：消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending
+    // 断言）——真实网络/解码在测试环境不返回，timeout 驱动后自然完成。
+    await tester.pump(const Duration(milliseconds: 2600));
   });
 
   testWidgets('首页轮播关闭：无英雄轮播，仅主题渐变背景', (tester) async {
@@ -1310,6 +1320,10 @@ void main() {
     expect(find.byKey(const Key('homeAmbientImage')), findsNothing);
     expect(find.byKey(const Key('homeAmbientSeamLayer')), findsNothing);
     expect(find.byKey(const Key('homeBackground')), findsOneWidget);
+
+    // 698 N43：消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending
+    // 断言）——真实网络/解码在测试环境不返回，timeout 驱动后自然完成。
+    await tester.pump(const Duration(milliseconds: 2600));
   });
 
   test('轮播接缝对齐层渐隐：接缝(0.5)前全不透明，镜像段渐隐到透明', () {
@@ -1369,6 +1383,9 @@ void main() {
     // 收尾：等下一轮定时器走完并停掉（widget 销毁时 cancel）
     await tester.pump(const Duration(seconds: 5));
     await tester.pump(const Duration(milliseconds: 500));
+
+    // 698 N43：切页触发 tone 提取 → 消化其超时 Timer。
+    await tester.pump(const Duration(milliseconds: 2600));
   });
 
   testWidgets('底部统计面板：计数成功时渲染在分类行之后', (tester) async {

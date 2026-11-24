@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
@@ -28,10 +29,12 @@ class SettingsPageBackground extends ConsumerWidget {
     final base = Theme.of(context).scaffoldBackgroundColor;
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: PosterPalette.pageFlat(base,
-              glow: themeColorValue == null
+        gradient: PosterPalette.fabricGradient(base,
+              themeColor: themeColorValue == null
                   ? null
-                  : Color(themeColorValue)),
+                  : Color(themeColorValue),
+              posterTone: ref.watch(heroToneProvider),
+              isDark: Theme.of(context).brightness == Brightness.dark),
       ),
       child: child,
     );

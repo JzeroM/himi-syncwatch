@@ -6,6 +6,7 @@ import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/favorites_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/category/category_screen.dart'
     show SortOption;
@@ -340,10 +341,12 @@ class _FavoritesAllScreenState extends ConsumerState<FavoritesAllScreen> {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageFlat(base,
-              glow: themeColorValue == null
+          gradient: PosterPalette.fabricGradient(base,
+              themeColor: themeColorValue == null
                   ? null
-                  : Color(themeColorValue)),
+                  : Color(themeColorValue),
+              posterTone: ref.watch(heroToneProvider),
+              isDark: Theme.of(context).brightness == Brightness.dark),
         ),
         child: _buildBody(aggregateMode, aggregate),
       ),

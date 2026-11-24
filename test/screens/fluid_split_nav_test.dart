@@ -467,8 +467,8 @@ void main() {
           reason: '细 rim 玻璃边缘感');
       expect(FluidGlassNavBar.dropFlatColor(0xFF6750A4), const Color(0xFF6750A4),
           reason: '滴/goo 纯色 = 主题色本色');
-      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFF4A90D9),
-          reason: 'N41：null 回退标准蓝（点缀语义恒在）');
+      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFFFFFFFF),
+          reason: 'N43：回退银白');
       expect(FluidGlassNavBar.dropFlatOpacity(0xFF6750A4), 0.40);
       expect(FluidGlassNavBar.dropFlatOpacity(null), 0.28);
     });
@@ -523,8 +523,8 @@ void main() {
       const theme = 0xFF6750A4;
       expect(FluidGlassNavBar.dropFlatColor(theme), const Color(theme),
           reason: '主题色本色单色（无渐变）');
-      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFF4A90D9),
-          reason: 'N41 点缀体系：null → 标准蓝 #4A90D9（点缀语义恒在）');
+      expect(FluidGlassNavBar.dropFlatColor(null), const Color(0xFFFFFFFF),
+          reason: 'N43：null → 银白（主题规划后续再定，保持中性）');
     });
 
     test('收起更快（反序吸收紧凑）', () {

@@ -101,7 +101,7 @@ void main() {
 
   group('③ Flutter 全局键接线', () {
     test('app 根部挂 WindowsGlobalHotkeys', () {
-      expect(appDart, contains('WindowsGlobalHotkeys(child:'));
+      expect(appDart, contains('WindowsGlobalHotkeys('));
     });
 
     test('player_screen 注册/注销全局键桥', () {

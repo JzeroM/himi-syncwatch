@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/category_filter.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/poster_grid.dart';
@@ -347,10 +348,12 @@ class _CategoryScreenState extends ConsumerState<CategoryScreen> {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
         decoration: BoxDecoration(
-          gradient: PosterPalette.pageFlat(base,
-              glow: themeColorValue == null
+          gradient: PosterPalette.fabricGradient(base,
+              themeColor: themeColorValue == null
                   ? null
-                  : Color(themeColorValue)),
+                  : Color(themeColorValue),
+              posterTone: ref.watch(heroToneProvider),
+              isDark: Theme.of(context).brightness == Brightness.dark),
         ),
         child: Column(
           children: [

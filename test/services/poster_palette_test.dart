@@ -36,18 +36,26 @@ int _green(Color c) => (c.g * 255).round();
 int _blue(Color c) => (c.b * 255).round();
 
 void main() {
-  test('pageFlat（N41）：纯平色无主题色残留；glow 仅顶部氛围带', () {
-    final flat = PosterPalette.pageFlat(const Color(0xFF0F1116));
-    expect(flat, isA<LinearGradient>());
-    final lg = flat as LinearGradient;
-    expect(lg.colors.toSet().length, 1, reason: '纯平色（三点同色）');
-    final glow = PosterPalette.pageFlat(const Color(0xFF0F1116),
-        glow: const Color(0xFF6750A4)) as LinearGradient;
-    expect(glow.colors.first, isNot(glow.colors.last),
-        reason: 'glow 模式顶部氛围带');
-    expect(glow.colors.first,
-        Color.lerp(const Color(0xFF0F1116), const Color(0xFF6750A4), 0.06),
-        reason: '氛围混色 = base 轻混主题色 6%');
+  test('fabricGradient（N43）：织物微织 + 海报色调明暗两套', () {
+    // 未设色：中性微织 7 段。
+    final base = PosterPalette.fabricGradient(const Color(0xFF0F1116))
+        as LinearGradient;
+    expect(base.colors, hasLength(7), reason: '织物微织 7 段');
+    expect(base.colors.toSet().length, greaterThan(2), reason: '微抖多段');
+    // 暗套海报色调：混深 62%/明度封顶 0.38。
+    final dark = PosterPalette.fabricGradient(const Color(0xFF0F1116),
+        posterTone: const Color(0xFFFFAA00), isDark: true) as LinearGradient;
+    final darkTint = HSLColor.fromColor(dark.colors[4]);
+    expect(darkTint.lightness, lessThanOrEqualTo(0.38),
+        reason: '暗套明度封顶 0.38');
+    // 亮套海报色调：饱和下压/明度保底。
+    final light = PosterPalette.fabricGradient(const Color(0xFFF4F5F7),
+        posterTone: const Color(0xFFFF0000), isDark: false) as LinearGradient;
+    final lightTint = HSLColor.fromColor(light.colors[4]);
+    expect(lightTint.saturation, lessThan(0.29),
+        reason: '亮套饱和度下压（0.28 + 8bit 量化容差）');
+    expect(lightTint.lightness, greaterThan(0.81),
+        reason: '亮套明度保底 0.82（8bit 量化容差）');
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

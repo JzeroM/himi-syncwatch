@@ -691,8 +691,9 @@ void main() {
     );
     final box = preview.decoration as BoxDecoration;
     final gradient = box.gradient! as LinearGradient;
-    expect(gradient.colors, hasLength(3));
-    expect(gradient.colors.toSet(), hasLength(1));
+    expect(gradient.colors, hasLength(7), reason: 'N43 微织 7 段');
+    expect(gradient.colors.toSet().length, greaterThan(2),
+        reason: 'N43 微织多段（未设色中性微染）');
   });
 
   testWidgets('点击预设色块写入 themeColor', (tester) async {
@@ -708,14 +709,16 @@ void main() {
     );
     final gradient =
         (preview.decoration as BoxDecoration).gradient! as LinearGradient;
-    // N41：预览 = 平色背景 + 顶部 6% 主题色氛围带（不再三段主题色渐变）。
-    expect(gradient.colors, hasLength(3));
-    expect(gradient.colors.toSet().length, 2, reason: '顶带混色 + 平色×2');
-    expect(
-      gradient.colors.first,
-      Color.lerp(gradient.colors.last, const Color(0xFF6366F1), 0.06),
-      reason: '顶带 = base 轻混主题色 6%',
-    );
+    // N43：预览 = 织物微渐变（海报色调/主题色微染暗套 + 7 段微织）。
+    expect(gradient.colors, hasLength(7), reason: '微织 7 段');
+    expect(gradient.colors.toSet().length, greaterThan(2),
+        reason: '微抖多段');
+    final tint = HSLColor.fromColor(gradient.colors[4]);
+    // 测试 MaterialApp 默认亮主题 → 预览走亮套（饱和下压/明度保底）。
+    expect(tint.saturation, lessThan(0.30),
+        reason: '亮套饱和度下压（6366F1 微染）');
+    expect(tint.lightness, greaterThan(0.80),
+        reason: '亮套明度保底（浅色织物底）');
   });
 
   testWidgets('初始选中色块后点击默认清空 themeColor', (tester) async {

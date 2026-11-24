@@ -141,7 +141,7 @@ void main() {
     expect(find.text('乙的影片'), findsOneWidget);
   });
 
-  testWidgets('底色保持中性平色（N41 主题色退出背景）', (tester) async {
+  testWidgets('底色织物微染无强染（N43）', (tester) async {
     const themeColor = 0xFF3EBC7A;
     await _pump(
       tester,
@@ -158,27 +158,30 @@ void main() {
             .decoration as BoxDecoration)
         .gradient! as LinearGradient;
     // N41：主题色不得染背景。
-    expect(gradient.colors.toSet().length, lessThanOrEqualTo(2),
-        reason: '平色/平色+氛围带');
+    expect(gradient.colors.toSet().length, greaterThan(2),
+        reason: 'N43 织物微抖多段');
     expect(gradient.colors.first,
         isNot(PosterPalette.darkenForPage(const Color(themeColor))),
         reason: '主题色退出背景');
   });
 
-  testWidgets('未设主题色：保持应用底色三段（与首页一致）', (tester) async {
-    await _pump(tester, search: _searchService());
-    await tester.enterText(find.byType(TextField), '无结果词');
-    await tester.pump(const Duration(milliseconds: 320)); // 防抖到期
+  testWidgets('未设主题色：背景中性微织（N43）', (tester) async {
+    await _pump(
+      tester,
+      settings: const AppSettings(),
+      search: _searchService(fromA: [_item('a1', '甲的影片')]),
+      servers: [_server('a', '服务器甲')],
+    );
+    await tester.enterText(find.byType(TextField), '影片');
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
 
     final gradient = (tester
-            .widget<Container>(find.byKey(const Key('searchBackground')))
-            .decoration! as BoxDecoration)
-        .gradient! as LinearGradient;
-    final base =
-        Theme.of(tester.element(find.byKey(const Key('searchBackground'))))
-            .scaffoldBackgroundColor;
-    expect(gradient.colors, [base, base, base], reason: '三段同底色 = 未设主题色的默认观');
+            .widget<Container>(find.byKey(const ValueKey('searchBackground')))
+            .decoration as BoxDecoration)
+        .gradient!;
+    expect(gradient.colors.toSet().length, greaterThan(2),
+        reason: 'N43 织物微织多段');
   });
 
   testWidgets('无结果 → 未找到结果', (tester) async {

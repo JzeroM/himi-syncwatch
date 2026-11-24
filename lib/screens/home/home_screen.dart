@@ -14,6 +14,7 @@ import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/hero_ratings_provider.dart';
 import 'package:himi_syncwatch/providers/playback_report_provider.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/tmdb_provider.dart';
 import 'package:himi_syncwatch/screens/home/tmdb_home_view.dart';
@@ -82,6 +83,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 首页轮播候选（每次加载随机抽取，最多 6 条）。
   List<HomeHeroItem> _heroItems = [];
   int _heroIndex = 0;
+
+  /// 698 N43：hero 色提取去重（同图不重复 extract）。
+  String? _lastToneUrl;
   final PageController _heroController = PageController();
 
   /// 启动静默检查更新定时器（首屏渲染后触发，dispose 时取消）。
@@ -406,6 +410,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showHero = homeCarouselEnabled && _heroItems.isNotEmpty;
     final heroIndex =
         _heroItems.isEmpty ? 0 : _heroIndex.clamp(0, _heroItems.length - 1);
+    // 698 N43：hero 主海报首色 → 全页面背景色调（extract 有缓存，幂等）。
+    if (_heroItems.isNotEmpty) {
+      final toneUrl = _heroItems[heroIndex].imageUrl ?? '';
+      if (toneUrl.isNotEmpty && toneUrl != _lastToneUrl) {
+        _lastToneUrl = toneUrl;
+        PosterPalette.extract(toneUrl).then((c) {
+          if (mounted && c != null) {
+            ref.read(heroToneProvider.notifier).state = c;
+          }
+        });
+      }
+    }
     // 698：轮播/详情页海报高度单源（屏高 × 0.55，钳位 300~640）。
     final heroHeight = HomeHeroCarousel.carouselHeightOf(context);
 
@@ -704,7 +720,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             duration: const Duration(milliseconds: 500),
             curve: Curves.easeOut,
             decoration: BoxDecoration(
-              gradient: PosterPalette.pageFlat(base),
+              gradient: PosterPalette.fabricGradient(base,
+                  posterTone: ref.watch(heroToneProvider),
+                  isDark: Theme.of(context).brightness == Brightness.dark),
             ),
           ),
           // 轮播开启时：当前海报虚化铺满（详情页同款）

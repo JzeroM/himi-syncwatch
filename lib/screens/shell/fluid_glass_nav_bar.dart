@@ -69,13 +69,13 @@ class FluidGlassNavBar extends ConsumerStatefulWidget {
   static const Key frostedDropsKey = ValueKey('fluidFrostedDrops');
   static const Key flatDropsKey = ValueKey('fluidFlatDrops');
 
-  /// 滴/goo 液体纯色（698 N27：无渐变单色；N41 纳入点缀体系——
-  /// 未设主题色回退**标准蓝 #4A90D9**，点缀语义恒在）。
+  /// 滴/goo 液体纯色（698 N27：无渐变单色；N43 回退银白——主题规划
+  /// 后续再定，未设主题色保持中性银白）。
   @visibleForTesting
   static Color dropFlatColor(int? themeColorValue) {
     return themeColorValue != null
         ? Color(themeColorValue)
-        : const Color(0xFF4A90D9);
+        : const Color(0xFFFFFFFF);
   }
 
   /// 滴/goo 平涂浓度（主题色 0.40 / 银白回退 0.28——goo 液桥层叠 blur

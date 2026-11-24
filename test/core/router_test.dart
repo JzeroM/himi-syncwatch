@@ -474,20 +474,22 @@ void main() {
     expect(find.byType(ShellNavBar), findsNothing); // 顶层路由覆盖导航
   });
 
-  testWidgets('壳层带主题色三段渐变背景，默认为应用底色同色三段', (tester) async {
-    await _pumpApp(tester);
+  testWidgets('壳层背景为织物微渐变（N43）：7 段微抖、未设色中性', (
+      tester,
+    ) async {
+      await _pumpApp(tester);
 
-    final shell = tester.widget<AnimatedContainer>(
-      find.byKey(const ValueKey('shellBackground')),
-    );
-    final gradient =
-        (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
-    expect(gradient.colors, hasLength(3));
-    expect(
-      gradient.colors.toSet(),
-      {ThemeData.light().scaffoldBackgroundColor},
-    );
-  });
+      LinearGradient shellGradient() {
+        final shell = tester.widget<AnimatedContainer>(
+          find.byKey(const ValueKey('shellBackground')),
+        );
+        return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
+      }
+
+      final g = shellGradient();
+      expect(g.colors, hasLength(7), reason: '织物微织 7 段');
+      expect(g.colors.toSet().length, greaterThan(2), reason: '微抖多段');
+    });
 
   testWidgets('主题色写入后壳层背景保持中性平色（N41 主题色退出背景）',
       (tester) async {
@@ -503,13 +505,13 @@ void main() {
       return (shell.decoration! as BoxDecoration).gradient! as LinearGradient;
     }
 
-    // N41：主题色不得染背景——壳层纯平色（三段同色）。
-    expect(shellGradient().colors.toSet().length, 1,
-        reason: '纯平色背景');
+    // N43：背景 = 织物微渐变（微抖多段）+ 无强主题色染。
+    expect(shellGradient().colors.toSet().length, greaterThan(2),
+        reason: '织物微抖多段（非纯平）');
     expect(
       shellGradient().colors.first,
       isNot(PosterPalette.darkenForPage(const Color(0xFF22D3EE))),
-      reason: '主题色退出背景',
+      reason: '无强主题色染（海报色调/中性微染）',
     );
 
     // 切到设置页，壳层渐变仍存在

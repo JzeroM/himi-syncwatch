@@ -1533,7 +1533,7 @@ void main() {
     });
   });
 
-  group('appearanceMode（698 N41 明暗三档）', () {
+  group('appearanceMode（698 N43 明暗三档）', () {
     test('存档读回：light/dark/system 不丢，未知值容错 system', () {
       for (final mode in ['light', 'dark', 'system']) {
         final settings = AppSettings.fromJson({'appearanceMode': mode});
