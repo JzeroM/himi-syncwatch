@@ -49,6 +49,50 @@ class AgoraBookPalette {
 
   static const Color defaultAccent = Color(0xFF6366F1);
 
+  /// 698 N46：**黑金书皮**（暗版）——近黑皮革 + 香槟/亮金烫字、
+  /// 深色纸页金字（书皮不跟主题色，明暗固定）。
+  static const AgoraBookPalette blackGold = AgoraBookPalette(
+    leatherLight: Color(0xFF1E1A14),
+    leather: Color(0xFF0E0D0B),
+    leatherDark: Color(0xFF080706),
+    leatherWorn: Color(0xFF2A241A),
+    foil: Color(0xFFE8C87A), // 烫字=香槟金（标题）
+    foilBright: Color(0xFFD4AF37), // 点缀亮金
+    foilDim: Color(0xFFB9A77E), // 次文字金灰
+    paperLight: Color(0xFF1C1913),
+    paper: Color(0xFF161410),
+    paperDark: Color(0xFF100E0A),
+    paperEdge: Color(0xFF4A3F2C), // 金调描边
+    pageBack: Color(0xFF12100C),
+    ink: Color(0xFFE8C87A), // 内页文字=香槟金
+    mutedInk: Color(0xFFB9A77E),
+    ribbon: Color(0xFF8E3F37),
+  );
+
+  /// 698 N46：**白金书皮**（亮版）——暖白皮革 + 深金烫字、
+  /// 暖白纸页深金字。
+  static const AgoraBookPalette whiteGold = AgoraBookPalette(
+    leatherLight: Color(0xFFFFFDF8),
+    leather: Color(0xFFF7F4EE),
+    leatherDark: Color(0xFFE8E2D6),
+    leatherWorn: Color(0xFFD8CFC0),
+    foil: Color(0xFF8A6D2F), // 烫字=深金（标题）
+    foilBright: Color(0xFFB8860B), // 点缀深金
+    foilDim: Color(0xFF6E6455), // 次文字暖灰
+    paperLight: Color(0xFFFFFDF8),
+    paper: Color(0xFFFAF6EE),
+    paperDark: Color(0xFFF0EADC),
+    paperEdge: Color(0xFFD8CFC0),
+    pageBack: Color(0xFFF0EADC),
+    ink: Color(0xFF8A6D2F), // 内页文字=深金
+    mutedInk: Color(0xFF6E6455),
+    ribbon: Color(0xFF8E3F37),
+  );
+
+  /// 明暗解析书皮：暗版黑金 / 亮版白金（N46 固定，不跟主题色）。
+  static AgoraBookPalette of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark ? blackGold : whiteGold;
+
   final Color leatherLight;
   final Color leather;
   final Color leatherDark;

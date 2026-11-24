@@ -144,13 +144,13 @@ void main() {
           reason: '组块中线 = 54 高 / 2 = 27');
   });
 
-  testWidgets('初始水珠位于首格中心（静止宽 = 格宽 × 1.05）', (tester) async {
+  testWidgets('初始水珠位于首格中心（静止宽 = 格宽 × 0.97）', (tester) async {
     await _pumpNav(tester, onSelect: (_) {});
 
     final pos = _blob(tester);
-    expect(pos.width, closeTo(168, 0.01), reason: '800/5 格宽 160 × 1.05（N45 缩短）');
-    expect(pos.left, closeTo(0, 1),
-        reason: 'N43 首格钳位条内（80-92 负值钳 0）');
+    expect(pos.width, closeTo(155.2, 0.05), reason: '800/5 格宽 160 × 0.97（N46 再缩短）');
+    expect(pos.left, closeTo(2.4, 0.5),
+        reason: 'N46 水珠≤格宽不悬出：80 - 155.2/2 = 2.4（钳位不触发）');
   });
 
   testWidgets('点击切换标签，水珠平滑移到目标格中心', (tester) async {
@@ -162,9 +162,9 @@ void main() {
 
     expect(selected, 4);
     final pos = _blob(tester);
-    expect(pos.width, closeTo(168, 0.5));
-    expect(pos.left, closeTo(800 - 168, 1),
-        reason: 'N43 尾格钳位条内（720+92>800 钳 616）');
+    expect(pos.width, closeTo(155.2, 0.5));
+    expect(pos.left, closeTo(642.4, 0.5),
+        reason: 'N46 尾格不悬出：720 - 155.2/2 = 642.4');
   });
 
   testWidgets('长按拖动水珠跟手并整体放大（宽高同比 ×1.40 不拉长），松手落点才切换', (
@@ -190,8 +190,8 @@ void main() {
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1),
         reason: '中心始终对准手指');
-    expect(dragging.width, closeTo(168 * 1.40, 0.5),
-        reason: '静止 168 整体放大到 ×1.40（而非拉长）');
+    expect(dragging.width, closeTo(155.2 * 1.40, 0.5),
+        reason: '静止 155.2 整体放大到 ×1.40（而非拉长）');
     expect(selected, isNull); // 拖动中途不切换（松手落点才切）
 
     // 拖到第四格中部松手 → 落点切换
@@ -203,8 +203,8 @@ void main() {
 
     // 水珠回弹到第四格中心（center = 0.7*800 = 560）并回落静止宽
     final settled = _blob(tester);
-    expect(settled.left, closeTo(560 - 168 / 2, 0.5));
-    expect(settled.width, closeTo(168, 0.5));
+    expect(settled.left, closeTo(560 - 155.2 / 2, 0.5));
+    expect(settled.width, closeTo(155.2, 0.5));
   });
 
   testWidgets('长按拖动后松手在原格，不切换', (tester) async {
@@ -222,9 +222,9 @@ void main() {
 
     expect(selected, isNull);
     final settled = _blob(tester);
-    expect(settled.left, closeTo(0, 1),
-        reason: 'N43 首槽钳位条内（left ≥ 0）');
-    expect(settled.width, closeTo(168, 0.5));
+    expect(settled.left, closeTo(2.4, 0.5),
+        reason: 'N46 水珠≤格宽不悬出（首槽 80-77.6=2.4，钳位不触发）');
+    expect(settled.width, closeTo(155.2, 0.5));
   });
 
   testWidgets('玻璃开启：navBlob 是镜片而非白色装饰，青色仅用于选中图标', (
@@ -274,11 +274,11 @@ void main() {
     }
   });
 
-  test('凸镜比例（N45）：_restWidthRatio = 槽宽×1.05（≈1.65:1）', () {
+  test('凸镜比例（N46）：_restWidthRatio = 槽宽×0.97（≈1.55:1）', () {
     // 常量名私有——经 restWidth 行为验证在下方 widget 测试覆盖；
-    // 此处锁死比例语义（防回退 0.75 近方块）：N45 较 N43（1.15）再缩短。
-    expect(1.05, greaterThan(1.0), reason: 'N45：凸镜仍横长（>1 槽宽）');
-    expect(1.05, lessThan(1.15), reason: 'N45 再缩短（用户拍板）');
+    // 此处锁死比例语义（防回退 0.75 近方块）：N46 较 N45（1.05）再缩短。
+    expect(0.97, greaterThan(0.75), reason: 'N46：凸镜仍横长于近方块');
+    expect(0.97, lessThan(1.05), reason: 'N46 再缩短（用户拍板）');
   });
 
   testWidgets('静止水滴半实心（N42）：pill α0.30 + rim 0.45', (tester) async {
@@ -297,9 +297,9 @@ void main() {
     expect(lens.activity, 0.0, reason: '静止活动量 0：扁平实心底、镜片不挂载（折射只在移动出现）');
     expect(lens.expansionV, 11, reason: '活动态外扩 11 → 上下各超出胶囊(54) 约 6px');
     expect(lens.paddingV, 5, reason: '54 高导航内水珠 44 高');
-    expect(lens.left, closeTo(0, 1),
-        reason: 'N43 首格钳位条内（left ≥ 0）');
-    expect(lens.width, closeTo(168, 0.01), reason: '静止宽 = 格宽 160 × 1.05（N45 再缩短）');
+    expect(lens.left, closeTo(2.4, 0.5),
+        reason: 'N46 水珠≤格宽不悬出（首格 80-77.6=2.4）');
+    expect(lens.width, closeTo(155.2, 0.05), reason: '静止宽 = 格宽 160 × 0.97（N46 再缩短）');
     expect(lens.velocity, isA<double>());
     expect(lens.pillShadows.first.blurRadius, 14, reason: '静止外光晕替代旧边框');
     // Skia 捕获钥匙：GlassEffect 捕获门槛 interactionIntensity>0.01
@@ -416,13 +416,13 @@ void main() {
     expect(_expandedRect(tester), findsOneWidget,
         reason: '活动态矩形外扩 top=-11，水滴整体放大上下各超出胶囊 6px');
 
-    // 整体放大：宽 120→168（×1.40）；活动态外扩矩形高按公式
+    // 整体放大：宽 120→155.2（×1.40）；活动态外扩矩形高按公式
     // 导航高 54 − 留白 2×5 + 外扩 2×11 = 66（外扩不随缩放走）。
-    expect(moving.width, closeTo(168 * 1.40, 0.5), reason: '宽同倍放大（N42 基宽 168）');
+    expect(moving.width, closeTo(155.2 * 1.40, 0.5), reason: '宽同倍放大（N42 基宽 155.2）');
     final activeRect = tester.renderObject<RenderBox>(_expandedRect(tester));
     expect(activeRect.size.height, closeTo(54 - 2 * 5 + 2 * 11, 1.5),
         reason: '活动态矩形外扩（top=-11，上下各超出胶囊约 6px）');
-    expect(activeRect.size.width, closeTo(168 * 1.40, 0.5),
+    expect(activeRect.size.width, closeTo(155.2 * 1.40, 0.5),
         reason: '宽同比放大不变形（高走外扩公式，几何稳定）');
 
     // 镜片挂载且捕获参数就位（折射/真色散只在移动过程出现）
@@ -466,7 +466,7 @@ void main() {
 
     final rest = tester.widget<LiquidBlobLens>(find.byKey(_navBlob));
     expect(rest.activity, 0.0, reason: '松手后弹簧回落到 0');
-    expect(rest.width, closeTo(168, 0.5), reason: '宽度回落静止比例（N42 横长）');
+    expect(rest.width, closeTo(155.2, 0.5), reason: '宽度回落静止比例（N42 横长）');
     expect(_restBackground(tester), findsOneWidget);
     expect(_expandedRect(tester), findsNothing);
     expect(find.byType(GlassEffect), findsNothing);
@@ -526,7 +526,7 @@ void main() {
     // 原装饰不变
     expect(_blobDecoration(tester).color, Colors.white.withValues(alpha: 0.10));
     expect(_blob(tester).height, 45);
-    expect(_blob(tester).width, closeTo(168, 0.01),
+    expect(_blob(tester).width, closeTo(155.2, 0.05),
         reason: '降级装饰同样用静止 0.75 比例宽度');
   });
 
@@ -545,9 +545,9 @@ void main() {
 
     final dragging = _blob(tester);
     expect(dragging.left, closeTo(300 - dragging.width! / 2, 1));
-    expect(dragging.width!, greaterThanOrEqualTo(168),
-        reason: '移动只放大不缩小（N42 基宽 168）');
-    expect(dragging.width!, lessThan(168 * 1.40 + 1),
+    expect(dragging.width!, greaterThanOrEqualTo(155.2),
+        reason: '移动只放大不缩小（N42 基宽 155.2）');
+    expect(dragging.width!, lessThan(155.2 * 1.40 + 1),
         reason: '封顶 ×1.40 整体放大，不做横向拉长');
     expect(selected, isNull); // 拖动中途不回调
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
@@ -267,7 +268,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface,
+                          color: HimiText.primary(context),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -277,7 +278,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                          color: HimiText.t54(context),
                         ),
                       ),
                     ],
@@ -285,7 +286,7 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                 ),
                 IconButton(
                   key: const ValueKey('serviceSettingsClose'),
-                  icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  icon: Icon(Icons.close, color: HimiText.secondary(context)),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -323,11 +324,11 @@ class _ServiceSettingsSheetState extends ConsumerState<_ServiceSettingsSheet> {
                 onChanged: _toggleStrm,
                 title: Text(
                   'STRM 直链播放',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
+                  style: TextStyle(color: HimiText.primary(context), fontSize: 15),
                 ),
                 subtitle: Text(
                   '开启后使用服务器返回的直链地址作为播放地址，服务器不兼容时可能导致无法播放。',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
+                  style: TextStyle(color: HimiText.t54(context), fontSize: 12),
                 ),
               ),
             ),
@@ -380,12 +381,12 @@ class _ActionTile extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), size: 22),
+                child: Icon(icon, color: HimiText.secondary(context), size: 22),
               ),
               const SizedBox(height: 8),
               Text(
                 label,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 13),
+                style: TextStyle(color: HimiText.primary(context), fontSize: 13),
               ),
             ],
           ),

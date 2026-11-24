@@ -36,26 +36,53 @@ int _green(Color c) => (c.g * 255).round();
 int _blue(Color c) => (c.b * 255).round();
 
 void main() {
-  test('fabricGradient（N43）：织物微织 + 海报色调明暗两套', () {
-    // 未设色：中性微织 7 段。
-    final base = PosterPalette.fabricGradient(const Color(0xFF0F1116))
-        as LinearGradient;
-    expect(base.colors, hasLength(7), reason: '织物微织 7 段');
-    expect(base.colors.toSet().length, greaterThan(2), reason: '微抖多段');
-    // 暗套海报色调：混深 62%/明度封顶 0.38。
-    final dark = PosterPalette.fabricGradient(const Color(0xFF0F1116),
-        posterTone: const Color(0xFFFFAA00), isDark: true) as LinearGradient;
-    final darkTint = HSLColor.fromColor(dark.colors[4]);
-    expect(darkTint.lightness, lessThanOrEqualTo(0.38),
-        reason: '暗套明度封顶 0.38');
-    // 亮套海报色调：饱和下压/明度保底。
-    final light = PosterPalette.fabricGradient(const Color(0xFFF4F5F7),
-        posterTone: const Color(0xFFFF0000), isDark: false) as LinearGradient;
-    final lightTint = HSLColor.fromColor(light.colors[4]);
-    expect(lightTint.saturation, lessThan(0.29),
-        reason: '亮套饱和度下压（0.28 + 8bit 量化容差）');
-    expect(lightTint.lightness, greaterThan(0.81),
-        reason: '亮套明度保底 0.82（8bit 量化容差）');
+  test('computeBottom（N46）：底部垂直三带取色 [衔接, 主, 深调]', () {
+    // 构造 10×10 三带三色图（floor 半开）：y6 蓝 / y7-8 红 / y9 黄（底缘）。
+    final rgba = Uint8List(10 * 10 * 4);
+    for (var y = 0; y < 10; y++) {
+      final (r, g, b) = y >= 9
+          ? (220, 180, 40) // 底缘带 y9（顶衔接色）
+          : y >= 7
+              ? (200, 60, 50) // 中主色带 y7-8
+              : y >= 6
+                  ? (30, 40, 120) // 深调带 y6
+                  : (0, 0, 0); // 带外（不采）
+      for (var x = 0; x < 10; x++) {
+        final o = (y * 10 + x) * 4;
+        rgba[o] = r;
+        rgba[o + 1] = g;
+        rgba[o + 2] = b;
+        rgba[o + 3] = 255;
+      }
+    }
+    final trio = PosterPalette.computeBottom(rgba, 10, 10);
+    expect(trio, hasLength(3), reason: '三带恒 3 色');
+    // 顶衔接色 = 底缘带（黄）——零分割关键。
+    expect(_red(trio[0]), greaterThan(200), reason: '衔接色取底缘黄带');
+    expect(_green(trio[0]), greaterThan(150));
+    // 中主色 = 红带。
+    expect(_red(trio[1]), greaterThan(180), reason: '主色取红带');
+    expect(_green(trio[1]), lessThan(100));
+    // 底深调 = 蓝带。
+    expect(_blue(trio[2]), greaterThan(100), reason: '深调取蓝带');
+    expect(_red(trio[2]), lessThan(60));
+  });
+
+  test('computeBottom 空带向邻带借：透明顶带仍保 3 色', () {
+    // 底 30% 只有底缘带有效，上方两带全透明。
+    final rgba = Uint8List(10 * 10 * 4);
+    for (var y = 9; y < 10; y++) {
+      for (var x = 0; x < 10; x++) {
+        final o = (y * 10 + x) * 4;
+        rgba[o] = 200;
+        rgba[o + 1] = 100;
+        rgba[o + 2] = 60;
+        rgba[o + 3] = 255;
+      }
+    }
+    final trio = PosterPalette.computeBottom(rgba, 10, 10);
+    expect(trio, hasLength(3), reason: '空带借用保 3 色');
+    expect(trio[0], trio[1], reason: '借带同色');
   });
 
   TestWidgetsFlutterBinding.ensureInitialized();

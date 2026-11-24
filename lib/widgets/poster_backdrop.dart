@@ -1,16 +1,17 @@
-import 'dart:ui';
-
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 
-/// 698 N44 全屏海报氛围洗背景（参考图同款，零分割感）：
-/// 当前 hero 海报 → 全屏 blur(σ30) → 明暗色调处理（暗=混黑 65%+降饱和
-/// 蓝灰洗 / 亮=混白 55%+降饱和粉调柔洗）；轮播图与其同源 → 交界天然
-/// 连续。轮播切换交叉淡化 600ms；未就绪回退 [PosterPalette.fabricGradient]
-///（中性织物微渐变）。织物微粒蒙层在 app builder 全局叠。
+/// 698 N46 全屏背景 = 轮播海报**底部垂直三带取色**纯渐变色场：
+/// `[顶衔接色, 中主色, 底深调色]`（[PosterPalette.extractTrioBottom]），
+/// 顶段起点 = 海报底缘色 → 与轮播交界天然零分割。
+///
+/// 明暗派生**保色**（体现背景色，不太亮不太暗）：
+/// 暗版混黑 35% + 饱和×0.7、L 钳 0.25~0.45；亮版混白 30% + 饱和×0.75、
+/// L 钳 0.65~0.85。叠加**暗角聚光**（边缘暗角 + 顶部中心柔光斑，
+/// N46 起替代织物微粒）。轮播切换交叉淡化 600ms；取色未就绪/失败回退
+/// 平色基底（同样叠暗角聚光）。首页与非首页共用（main_shell 一处渲染）。
 class PosterBackdrop extends ConsumerWidget {
   const PosterBackdrop({super.key, required this.base});
 
@@ -21,23 +22,28 @@ class PosterBackdrop extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final url = ref.watch(heroPosterUrlProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fallback = Container(
-      decoration: BoxDecoration(
-        gradient: PosterPalette.fabricGradient(base),
-      ),
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(color: _derived(base, isDark)),
+      child: _vignetteAndSpotlight(),
     );
     if (url == null || url.isEmpty) return fallback;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 600),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
-      child: _PosterWash(key: ValueKey(url), url: url, isDark: isDark, fallback: fallback),
+      child: _PosterField(
+        key: ValueKey(url),
+        url: url,
+        isDark: isDark,
+        fallback: fallback,
+      ),
     );
   }
 }
 
-class _PosterWash extends StatelessWidget {
-  const _PosterWash({
+/// 单张海报的取色色场（stateful：取色异步一次，缓存命中即返回）。
+class _PosterField extends StatefulWidget {
+  const _PosterField({
     super.key,
     required this.url,
     required this.isDark,
@@ -49,42 +55,93 @@ class _PosterWash extends StatelessWidget {
   final Widget fallback;
 
   @override
+  State<_PosterField> createState() => _PosterFieldState();
+}
+
+class _PosterFieldState extends State<_PosterField> {
+  List<Color>? _trio;
+
+  @override
+  void initState() {
+    super.initState();
+    PosterPalette.extractTrioBottom(widget.url).then((trio) {
+      if (mounted && trio != null && trio.length == 3) {
+        setState(() => _trio = trio);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // 明暗色调矩阵（参考图配比）：
-    // 暗 = 饱和×0.6 + 混黑 65%（蓝灰洗）；亮 = 饱和×0.4 + 混白 55% + 明度↑（粉调柔洗）。
-    final sat = isDark ? 0.6 : 0.4;
-    final mix = isDark ? 0.65 : 0.55; // 混黑/混白比
-    final List<double> satMatrix = [
-      // 饱和度矩阵（luma 保持）。
-      0.213 + 0.787 * sat, 0.715 - 0.715 * sat, 0.072 - 0.072 * sat, 0, 0,
-      0.213 - 0.213 * sat, 0.715 + 0.285 * sat, 0.072 - 0.072 * sat, 0, 0,
-      0.213 - 0.213 * sat, 0.715 - 0.715 * sat, 0.072 + 0.928 * sat, 0, 0,
-      0, 0, 0, 1, 0,
+    final trio = _trio;
+    if (trio == null) return widget.fallback;
+    // 顶段 = 底缘衔接色（与轮播交界同色）→ 中主色 → 底深调色。
+    final colors = [
+      _derived(trio[0], widget.isDark),
+      _derived(trio[1], widget.isDark),
+      _derived(trio[2], widget.isDark),
     ];
-    final double mv = isDark ? 0.0 : 55.0 * 0.45; // 亮套轻提明
-    final List<double> mixMatrix = [
-      1 - mix, 0, 0, 0, (isDark ? 0 : 255 * mix) + mv,
-      0, 1 - mix, 0, 0, (isDark ? 0 : 255 * mix) + mv,
-      0, 0, 1 - mix, 0, (isDark ? 0 : 255 * mix) + mv,
-      0, 0, 0, 1, 0,
-    ];
-    return SizedBox.expand(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: ColorFiltered(
-          colorFilter: ColorFilter.matrix(mixMatrix),
-          child: ColorFiltered(
-            colorFilter: ColorFilter.matrix(satMatrix),
-            child: Image(
-              image: CachedNetworkImageProvider(url),
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (_, __, ___) => fallback,
-            ),
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: colors,
+          stops: const [0.0, 0.45, 1.0],
         ),
       ),
+      child: _vignetteAndSpotlight(),
     );
   }
 }
+
+/// 暗角聚光双层（色场/回退共用）：暗角（边缘压暗）+ 聚光（顶部柔光斑）。
+Widget _vignetteAndSpotlight() => DecoratedBox(
+      decoration: BoxDecoration(gradient: _vignetteGradient()),
+      child: const DecoratedBox(
+        decoration: BoxDecoration(gradient: _spotlightGradient),
+        child: SizedBox.expand(),
+      ),
+    );
+
+/// 明暗派生（保色原则：背景色清晰可辨，不太亮不太暗）：
+/// 暗版混黑 35% + 饱和×0.7 + L∈[0.25, 0.45]；
+/// 亮版混白 30% + 饱和×0.75 + L∈[0.65, 0.85]。
+Color _derived(Color source, bool isDark) {
+  final mixed = Color.lerp(source, isDark ? Colors.black : Colors.white,
+      isDark ? 0.35 : 0.30)!;
+  var hsl = HSLColor.fromColor(mixed);
+  hsl = hsl.withSaturation(hsl.saturation * (isDark ? 0.7 : 0.75));
+  final l = hsl.lightness;
+  if (isDark) {
+    if (l < 0.25) hsl = hsl.withLightness(0.25);
+    if (l > 0.45) hsl = hsl.withLightness(0.45);
+  } else {
+    if (l < 0.65) hsl = hsl.withLightness(0.65);
+    if (l > 0.85) hsl = hsl.withLightness(0.85);
+  }
+  return hsl.toColor();
+}
+
+/// 暗角聚光 · 暗角层（边缘压暗四角，中心透）。
+Gradient _vignetteGradient() => const RadialGradient(
+      center: Alignment(0, -0.15),
+      radius: 1.25,
+      colors: [
+        Colors.transparent,
+        Colors.transparent,
+        Color(0x40000000),
+      ],
+      stops: [0.0, 0.62, 1.0],
+    );
+
+/// 暗角聚光 · 聚光层（顶部中心柔光斑，白 α0.08 渐隐）。
+const Gradient _spotlightGradient = RadialGradient(
+  center: Alignment(0, -1.1),
+  radius: 1.6,
+  colors: [
+    Color(0x14FFFFFF),
+    Colors.transparent,
+  ],
+  stops: [0.0, 1.0],
+);

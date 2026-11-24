@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 
 import 'package:himi_syncwatch/utils/asset_image.dart';
@@ -332,7 +333,7 @@ class _HeroSkeleton extends StatelessWidget {
             height: 22,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+              color: HimiText.t24(context),
             ),
           ),
         ),
@@ -398,7 +399,7 @@ class _Hero extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
+                    color: HimiText.primary(context),
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     shadows: [Shadow(color: Colors.black, blurRadius: 6)],
@@ -412,7 +413,7 @@ class _Hero extends StatelessWidget {
                     if (item.communityRating != null)
                       '★ ${item.communityRating!.toStringAsFixed(1)}',
                   ].join('  ·  '),
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), fontSize: 13),
+                  style: TextStyle(color: HimiText.secondary(context), fontSize: 13),
                 ),
                 if (item.overview?.isNotEmpty == true) ...[
                   const SizedBox(height: 8),
@@ -421,7 +422,7 @@ class _Hero extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), fontSize: 13, height: 1.5),
+                        color: HimiText.secondary(context), fontSize: 13, height: 1.5),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -489,7 +490,7 @@ class _EmptyHome extends ConsumerWidget {
             child: Text(
               'TMDB 暂无聚合内容\n请确认服务器媒体带 TMDB id，或换个观看区域',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              style: TextStyle(color: HimiText.secondary(context)),
             ),
           ),
       ],
@@ -694,7 +695,7 @@ class _ConfigPrompt extends StatelessWidget {
             const Icon(Icons.key_off_outlined, size: 56, color: Colors.grey),
             const SizedBox(height: 16),
             Text('TMDB 聚合模式未配置',
-                style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
+                style: TextStyle(fontSize: 18, color: HimiText.secondary(context))),
             const SizedBox(height: 8),
             const Text(
               '填入自己的 TMDB API Key 或 v4 Read Token 后，'
@@ -735,7 +736,7 @@ class _ErrorView extends StatelessWidget {
           const Icon(Icons.cloud_off, size: 56, color: Colors.grey),
           const SizedBox(height: 16),
           Text('TMDB 加载失败',
-              style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
+              style: TextStyle(fontSize: 18, color: HimiText.secondary(context))),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/server_route.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -145,7 +146,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                    color: HimiText.t38(context),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -171,7 +172,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                         ),
                         Text(
                           '线路管理',
-                          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                          style: TextStyle(fontSize: 13, color: HimiText.t54(context)),
                         ),
                       ],
                     ),
@@ -179,7 +180,7 @@ class _RouteManagerSheetState extends ConsumerState<RouteManagerSheet> {
                   IconButton(
                     key: const Key('routeSheetClose'),
                     onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                    icon: Icon(Icons.close, color: HimiText.secondary(context)),
                   ),
                 ],
               ),
@@ -371,12 +372,12 @@ class _RouteTile extends StatelessWidget {
             Padding(
               padding: EdgeInsets.only(right: 8),
               child:
-                  Icon(Icons.drag_indicator, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+                  Icon(Icons.drag_indicator, size: 18, color: HimiText.t38(context)),
             ),
           Icon(
             selected ? Icons.check_circle : Icons.radio_button_unchecked,
             size: 20,
-            color: selected ? Colors.greenAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+            color: selected ? Colors.greenAccent : HimiText.t38(context),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -395,7 +396,7 @@ class _RouteTile extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                 ),
               ],
             ),
@@ -414,14 +415,14 @@ class _RouteTile extends StatelessWidget {
             ),
           IconButton(
             onPressed: measuring ? null : onMeasure,
-            icon: Icon(Icons.speed, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+            icon: Icon(Icons.speed, size: 18, color: HimiText.t54(context)),
             tooltip: '测速',
           ),
           if (onRemove != null)
             IconButton(
               onPressed: onRemove,
               icon: Icon(Icons.delete_outline,
-                  size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+                  size: 18, color: HimiText.t38(context)),
               tooltip: '删除',
             ),
         ],
@@ -515,13 +516,13 @@ class _ActionButton extends StatelessWidget {
               children: [
                 Icon(icon,
                     size: 16,
-                    color: onTap == null ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                    color: onTap == null ? HimiText.t24(context) : HimiText.secondary(context)),
                 const SizedBox(width: 4),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 13,
-                    color: onTap == null ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                    color: onTap == null ? HimiText.t24(context) : HimiText.secondary(context),
                   ),
                 ),
               ],
@@ -660,7 +661,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                      color: HimiText.t38(context),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -682,14 +683,14 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                           Text(
                             widget.server.label,
                             style: TextStyle(
-                                fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                                fontSize: 13, color: HimiText.t54(context)),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                      icon: Icon(Icons.close, color: HimiText.secondary(context)),
                     ),
                   ],
                 ),
@@ -717,7 +718,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                 ),
                 const SizedBox(height: 8),
                 Text('配置',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
+                    style: TextStyle(fontSize: 13, color: HimiText.t54(context))),
                 const SizedBox(height: 4),
                 _switchRow(
                   label: '使用 HTTPS',
@@ -766,7 +767,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
+              style: TextStyle(fontSize: 13, color: HimiText.t54(context))),
           const SizedBox(height: 6),
           TextField(
             key: fieldKey,
@@ -811,7 +812,7 @@ class _AddRouteSheetState extends ConsumerState<AddRouteSheet> {
                 if (subtitle != null)
                   Text(subtitle,
                       style:
-                          TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38))),
+                          TextStyle(fontSize: 12, color: HimiText.t38(context))),
               ],
             ),
           ),

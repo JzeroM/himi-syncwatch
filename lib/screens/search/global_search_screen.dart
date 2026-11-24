@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/skeleton.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -175,7 +176,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                   children: [
                     IconButton(
                       key: const ValueKey('globalSearchBack'),
-                      icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+                      icon: Icon(Icons.arrow_back, color: HimiText.primary(context)),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 4),
@@ -189,10 +190,10 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                           key: const ValueKey('globalSearchField'),
                           controller: _controller,
                           autofocus: !tvMode,
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          style: TextStyle(color: HimiText.primary(context)),
                           decoration: InputDecoration(
                             hintText: '输入关键词搜索全部服务器',
-                            hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                            hintStyle: TextStyle(color: HimiText.t54(context)),
                             filled: true,
                             fillColor: Colors.white.withValues(alpha: 0.10),
                             contentPadding: const EdgeInsets.symmetric(
@@ -208,7 +209,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
                                   : IconButton(
                                       key: const ValueKey('globalSearchClear'),
                                       icon: Icon(Icons.clear,
-                                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                                          color: HimiText.secondary(context)),
                                       onPressed: _clear,
                                     ),
                             ),
@@ -231,7 +232,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
   Widget _buildBody() {
     if (!_hasInput) {
       return Center(
-        child: Text('输入关键词，搜索所有服务器', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
+        child: Text('输入关键词，搜索所有服务器', style: TextStyle(color: HimiText.secondary(context))),
       );
     }
     final results = _results;
@@ -243,7 +244,7 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
       return _loading
           ? const SkeletonPosterGrid(columns: 3, rows: 3)
           : Center(
-              child: Text('未找到结果', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
+              child: Text('未找到结果', style: TextStyle(color: HimiText.secondary(context))),
             );
     }
 
@@ -380,7 +381,7 @@ class _ServerChip extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface,
+              color: HimiText.primary(context),
               fontSize: 13,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             ),

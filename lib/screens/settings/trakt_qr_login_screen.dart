@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/trakt_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
@@ -121,7 +122,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+              color: HimiText.t62(context),
               height: 1.5,
             ),
           ),
@@ -166,7 +167,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.onSurface,
+                color: HimiText.primary(context),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: QrImageView(
@@ -216,7 +217,7 @@ class _TraktQrLoginScreenState extends ConsumerState<TraktQrLoginScreen> {
                 SizedBox(width: 10),
                 Text(
                   '等待手机授权…',
-                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
+                  style: TextStyle(fontSize: 13, color: HimiText.t62(context)),
                 ),
               ],
             ),

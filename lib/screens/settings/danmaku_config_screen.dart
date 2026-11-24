@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_caches.dart';
 import 'package:himi_syncwatch/services/danmaku/danmaku_match_memory.dart';
@@ -241,7 +242,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                   trailing: Icon(
                     Icons.chevron_right,
                     size: 18,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: HimiText.t54(context),
                   ),
                   onTap: _openQrConfig,
                 ),
@@ -294,7 +295,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   '还没有弹幕源，点下面「添加弹幕源」',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                 ),
               ),
             Align(
@@ -409,7 +410,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                             border: Border.all(
                               color: s.danmakuCustomColor == c
                                   ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                                  : HimiText.t24(context),
                               width: s.danmakuCustomColor == c ? 3 : 1,
                             ),
                           ),
@@ -427,7 +428,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                     width: 76,
                     child: Text(
                       '描边宽度',
-                      style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                      style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
                     ),
                   ),
                   Expanded(
@@ -449,7 +450,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                       s.danmakuOutlineWidth.toStringAsFixed(1),
                       style: TextStyle(
                         fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                        color: HimiText.secondary(context),
                       ),
                     ),
                   ),
@@ -463,7 +464,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 dense: true,
                 title: Text(
                   '暂无绑定记录（自动/手动匹配成功后自动保存）',
-                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 13, color: HimiText.t54(context)),
                 ),
               ),
             for (final entry in _matchEntries)
@@ -479,14 +480,14 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
                 subtitle: Text(
                   '${entry.record.source == DanmakuMatchSource.manual ? '手动绑定' : '自动匹配'}'
                   ' · ${DateTime.fromMillisecondsSinceEpoch(entry.record.savedAtMs).toString().substring(0, 16)}',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                 ),
                 trailing: IconButton(
                   key: ValueKey('danmakuMatchDelete-${entry.key}'),
                   icon: Icon(
                     Icons.delete_outline,
                     size: 18,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: HimiText.t54(context),
                   ),
                   onPressed: () async {
                     await DanmakuCaches.matchMemory
@@ -526,7 +527,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
       child: Text(
         title,
-        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+        style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
       ),
     );
   }
@@ -552,7 +553,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
             ),
           ),
           Expanded(
@@ -571,7 +572,7 @@ class _DanmakuConfigScreenState extends ConsumerState<DanmakuConfigScreen> {
               '$value',
               key: ValueKey(valueKey),
               textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              style: TextStyle(fontSize: 12, color: HimiText.secondary(context)),
             ),
           ),
         ],

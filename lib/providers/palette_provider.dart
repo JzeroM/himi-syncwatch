@@ -18,7 +18,7 @@ final posterTrioProvider =
 });
 
 /// 698 N43：首页 hero 当前主海报首色（extract 首色）——全页面背景
-/// 跟随海报色调（明暗两套混色见 [PosterPalette.fabricGradient]）。
+/// 跟随海报色调（698 N46：背景色场走海报底部三带取色）。
 /// 首页 hero 切换时写入；null = 未就绪（背景回退中性）。
 final heroToneProvider = StateProvider<Color?>((ref) => null);
 

@@ -114,19 +114,30 @@ class PosterPalette {
     return _raw(url, headers: headers);
   }
 
+  /// 698 N46：**底部垂直三带取色**（背景色场专用）——返回
+  /// `[顶衔接色, 中主色, 底深调色]`，分别取自海报底部三带：
+  /// y 0.90~1.0（底缘，衔接轮播零分割）/ 0.75~0.90 / 0.60~0.75。
+  /// 每带 4-bit 量化取高频桶均色；空带向邻带借（保 3 色恒定）。
+  /// 缓存 key `url#bottom3` 与全图 trio 共存；失败返回 null。
+  static Future<List<Color>?> extractTrioBottom(String url,
+      {Map<String, String>? headers}) {
+    return _raw(url, headers: headers, bottom: true);
+  }
+
   /// 读取原始三色组（缓存存 raw，压暗/提亮/中深在各入口按需派生）。
   static Future<List<Color>?> _raw(String url,
-      {Map<String, String>? headers}) async {
+      {Map<String, String>? headers, bool bottom = false}) async {
     if (url.isEmpty) return null;
-    final hit = _cache.remove(url);
+    final key = bottom ? '$url#bottom3' : url;
+    final hit = _cache.remove(key);
     if (hit != null) {
-      _cache[url] = hit;
+      _cache[key] = hit;
       return hit;
     }
-    final pending = _inflight[url];
+    final pending = _inflight[key];
     if (pending != null) return pending;
-    final future = _load(url, headers: headers);
-    _inflight[url] = future;
+    final future = _load(url, headers: headers, bottom: bottom);
+    _inflight[key] = future;
     try {
       return await future;
     } finally {
@@ -135,7 +146,7 @@ class PosterPalette {
   }
 
   static Future<List<Color>?> _load(String url,
-      {Map<String, String>? headers}) async {
+      {Map<String, String>? headers, bool bottom = false}) async {
     try {
       final source =
           await (debugImageLoader ?? _loadImage)(url, headers: headers)
@@ -145,10 +156,11 @@ class PosterPalette {
       try {
         final data = await small.toByteData(format: ui.ImageByteFormat.rawRgba);
         if (data == null) return null;
-        final colors =
-            compute(data.buffer.asUint8List(), small.width, small.height);
+        final colors = bottom
+            ? computeBottom(data.buffer.asUint8List(), small.width, small.height)
+            : compute(data.buffer.asUint8List(), small.width, small.height);
         if (colors.isEmpty) return null;
-        _putCache(url, colors);
+        _putCache(bottom ? '$url#bottom3' : url, colors);
         return colors;
       } finally {
         small.dispose();
@@ -156,6 +168,67 @@ class PosterPalette {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 698 N46：底部垂直三带取色——`[顶衔接色, 中主色, 底深调色]`。
+  /// 三带：y ∈ [0.90, 1.0] / [0.75, 0.90] / [0.60, 0.75]；每带 4-bit
+  /// 量化分桶取最高频桶均色（带内近黑/近白不滤——底段本就深）；
+  /// 空带（全透明/噪点）向下方邻带借、仍空则整体失败返回空表。
+  static List<Color> computeBottom(Uint8List rgba, int width, int height) {
+    if (width <= 0 || height <= 0) return const [];
+    if (rgba.length < width * height * 4) return const [];
+    const bands = <(double, double)>[
+      (0.90, 1.0), // 底缘衔接带（顶段渐变起点）
+      (0.75, 0.90), // 中主色带
+      (0.60, 0.75), // 深调色带
+    ];
+    final result = <Color>[];
+    for (final (y0, y1) in bands) {
+      final counts = <int, int>{};
+      final sums = <int, List<int>>{};
+      // floor 半开区间 [y0h, y1h)：三带不重叠；极小图保底至少 1 行。
+      var rowStart = (height * y0).floor();
+      var rowEnd = (height * y1).floor();
+      if (rowEnd <= rowStart) rowEnd = rowStart + 1;
+      if (rowEnd > height) rowEnd = height;
+      if (rowStart < 0) rowStart = 0;
+      for (var y = rowStart; y < rowEnd; y++) {
+        for (var x = 0; x < width; x++) {
+          final offset = (y * width + x) * 4;
+          if (rgba[offset + 3] < 128) continue;
+          final r = rgba[offset];
+          final g = rgba[offset + 1];
+          final b = rgba[offset + 2];
+          final key = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
+          counts[key] = (counts[key] ?? 0) + 1;
+          final sum = sums[key] ??= <int>[0, 0, 0];
+          sum[0] += r;
+          sum[1] += g;
+          sum[2] += b;
+        }
+      }
+      if (counts.isEmpty) {
+        // 空带向下方邻带借（result 顺序顶→底，已收的是更靠顶的带）。
+        if (result.isNotEmpty) result.add(result.last);
+        continue;
+      }
+      var bestKey = 0;
+      var bestCount = -1;
+      counts.forEach((key, count) {
+        if (count > bestCount) {
+          bestCount = count;
+          bestKey = key;
+        }
+      });
+      final sum = sums[bestKey]!;
+      result.add(Color.fromARGB(
+        255,
+        sum[0] ~/ bestCount,
+        sum[1] ~/ bestCount,
+        sum[2] ~/ bestCount,
+      ));
+    }
+    return result;
   }
 
   static Future<ui.Image?> _loadImage(String url,
@@ -360,49 +433,6 @@ class PosterPalette {
     );
   }
 
-  /// 698 N43 织物微粒背景渐变（玻璃透感友好，跟随主题色）：
-  /// 深基底混主题色 12% + 上亮下暗微晕影 + 多段微幅亮度抖动（±3% 细横
-  /// 纹织物感）——低频梯度折射有「内容」可显、低饱和不抢海报。
-  /// [themeColor] 为 null 中性。织纹噪点蒙层见 [FabricWeavePainter]
-  ///（壳层全局叠一层）。
-  /// [posterTone]：首页海报主色（extract 首色）——背景跟随海报色调。
-  /// [isDark]：明暗两套混色（暗 = 深混 62%/明度封顶；亮 = 轻混白底）。
-  static Gradient fabricGradient(Color base,
-      {Color? themeColor, Color? posterTone, bool isDark = true}) {
-    // 698 N43：背景色源 = 海报首色（未设回退 base 中性）。
-    final source = posterTone ?? themeColor;
-    final Color tint;
-    if (source == null) {
-      tint = base;
-    } else if (isDark) {
-      // 暗套：海报色重混深底 62%+、明度封顶 0.38（沉稳不刺眼）。
-      final mixed = Color.lerp(source, base, 0.62)!;
-      var hsl = HSLColor.fromColor(mixed);
-      if (hsl.lightness > 0.38) hsl = hsl.withLightness(0.38);
-      tint = hsl.toColor();
-    } else {
-      // 亮套：海报色轻混白底 55%、饱和度下压（浅色织物底）。
-      final mixed = Color.lerp(source, base, 0.55)!;
-      var hsl = HSLColor.fromColor(mixed);
-      if (hsl.saturation > 0.28) hsl = hsl.withSaturation(0.28);
-      if (hsl.lightness < 0.82) hsl = hsl.withLightness(0.82);
-      tint = hsl.toColor();
-    }
-    final top = Color.lerp(tint, isDark ? Colors.white : Colors.white, 0.045)!;
-    final bottom = Color.lerp(tint, Colors.black, isDark ? 0.16 : 0.06)!;
-    // 微幅亮度抖动 stops（±3%）= 细横纹织物感。
-    final t1 = Color.lerp(top, Colors.white, 0.03)!;
-    final t2 = Color.lerp(top, Colors.black, 0.03)!;
-    final m1 = Color.lerp(tint, Colors.white, 0.03)!;
-    final m2 = Color.lerp(tint, Colors.black, 0.03)!;
-    return LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [top, t1, t2, m1, tint, m2, bottom],
-      stops: const [0.0, 0.16, 0.32, 0.48, 0.62, 0.78, 1.0],
-    );
-  }
-
   /// 页面背景垂直渐变：顶部 [accent] 主色 → 底部 [base] 页面底色。
   /// [accent] 为 null 时整页保持 [base]（与取色前视觉一致）。
   /// 【N41 起弃用：主题色退出背景——改用 [pageFlat]。】
@@ -473,34 +503,3 @@ class _Bucket {
 /// 亮度差，静态一次绘制（随背景铺满），玻璃折射穿出细腻织纹。
 /// 织物微粒噪点蒙层（698 N43）：确定性种子细点阵（微亮/微暗 α 低），
 /// 全局叠一层出胶片颗粒/织物细粒感——玻璃折射穿出细腻微纹理。
-class FabricWeavePainter extends CustomPainter {
-  const FabricWeavePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 确定性伪随机（种子固定 → 每次绘制同图案，无闪烁）。
-    var seed = 0x9E3779B9;
-    int next() {
-      seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
-      return seed;
-    }
-
-    final step = 3.0; // 织纹密度（每 3px 一点）
-    final paint = Paint();
-    for (double y = 0; y < size.height; y += step) {
-      for (double x = 0; x < size.width; x += step) {
-        final v = next() % 100;
-        if (v < 3) {
-          paint.color = const Color(0x08FFFFFF); // 微亮蒙层
-          canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), paint);
-        } else if (v < 6) {
-          paint.color = const Color(0x08000000); // 微暗蒙层
-          canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), paint);
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(FabricWeavePainter oldDelegate) => false;
-}

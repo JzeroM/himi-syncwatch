@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/device_profile_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/player/player_screen.dart';
@@ -35,7 +36,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.memory, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                Icon(Icons.memory, size: 18, color: HimiText.secondary(context)),
                 const SizedBox(width: 8),
                 const Text(
                   '设备能力评估',
@@ -44,7 +45,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
                 const Spacer(),
                 Text(
                   profile.probed ? '已评估' : '未评估',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                 ),
               ],
             ),
@@ -53,7 +54,7 @@ class DeviceCapabilityCard extends ConsumerWidget {
               Text(
                 '未执行原生评估（非 Android 或通道不可用）——'
                 '路由按历史默认行为执行。',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
+                style: TextStyle(fontSize: 12, color: HimiText.t62(context)),
               )
             else ...[
               _CapRow(
@@ -194,13 +195,13 @@ class _CapRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+              style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              style: TextStyle(fontSize: 12, color: HimiText.secondary(context)),
             ),
           ),
         ],

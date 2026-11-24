@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 
@@ -49,7 +50,7 @@ class _StatCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onSurface,
+                color: HimiText.primary(context),
               ),
             ),
             const SizedBox(height: 2),
@@ -58,10 +59,7 @@ class _StatCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 // 698 N45：玻璃卡片承载 → 明亮版反转（onSurface + 灰阶平移）。
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.75),
+                color: HimiText.t75(context),
               ),
             ),
           ],

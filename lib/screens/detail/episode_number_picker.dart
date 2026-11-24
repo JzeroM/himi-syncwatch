@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/sheet_bottom_safe_area.dart';
@@ -66,7 +67,7 @@ Future<void> showEpisodeNumberPicker(
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                        color: HimiText.t38(context),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -86,7 +87,7 @@ Future<void> showEpisodeNumberPicker(
                       Text(
                         descending ? '倒序' : '正序',
                         style: TextStyle(
-                            fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                            fontSize: 13, color: HimiText.secondary(context)),
                       ),
                       const SizedBox(width: 4),
                       IconButton(
@@ -137,7 +138,7 @@ Future<void> showEpisodeNumberPicker(
                             ep.indexNumber?.toString() ?? '${i + 1}',
                             style: TextStyle(
                               fontSize: 16,
-                              color: highlighted ? primary : Theme.of(context).colorScheme.onSurface,
+                              color: highlighted ? primary : HimiText.primary(context),
                               fontWeight: highlighted
                                   ? FontWeight.bold
                                   : FontWeight.normal,

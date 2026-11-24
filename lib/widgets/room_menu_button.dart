@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/agora_provider.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -90,7 +91,7 @@ class RoomMenuButton extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: HimiText.primary(context),
                     ),
                   ),
                 ),
@@ -141,7 +142,7 @@ class RoomMenuButton extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
             children: [
-              Icon(icon, size: 24, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70)),
+              Icon(icon, size: 24, color: HimiText.secondary(dialogContext)),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -152,7 +153,7 @@ class RoomMenuButton extends ConsumerWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Theme.of(dialogContext).colorScheme.onSurface,
+                        color: HimiText.primary(dialogContext),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -160,13 +161,13 @@ class RoomMenuButton extends ConsumerWidget {
                       subtitle,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.62),
+                        color: HimiText.t62(dialogContext),
                       ),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, size: 20, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.38)),
+              Icon(Icons.chevron_right, size: 20, color: HimiText.t38(dialogContext)),
             ],
           ),
         ),

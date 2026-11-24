@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/tv_device.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
@@ -127,7 +128,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
           children: [
             Row(
               children: [
-                Icon(Icons.tv, size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                Icon(Icons.tv, size: 20, color: HimiText.secondary(context)),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
@@ -191,7 +192,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                               size: 22,
                               color: isPaired
                                   ? Colors.greenAccent
-                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  : HimiText.t54(context),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -214,7 +215,7 @@ class _TvDeviceSheetState extends ConsumerState<TvDeviceSheet> {
                                       color: isPaired
                                           ? Colors.greenAccent
                                               .withValues(alpha: 0.8)
-                                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                                          : HimiText.t38(context),
                                     ),
                                   ),
                                 ],

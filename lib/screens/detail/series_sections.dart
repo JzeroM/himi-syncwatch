@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/utils/emby_image_url.dart';
 import 'package:himi_syncwatch/widgets/emby_image.dart';
@@ -207,10 +208,10 @@ class _SeasonSelector extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface,
+              color: HimiText.primary(context),
             ),
           ),
-          Icon(Icons.arrow_drop_down, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70), size: 22),
+          Icon(Icons.arrow_drop_down, color: HimiText.secondary(context), size: 22),
         ],
       ),
     );
@@ -367,11 +368,8 @@ class _SeasonSelector extends StatelessWidget {
           style: TextStyle(
             fontSize: 15,
             color: selected
-                ? Theme.of(menuCtx).colorScheme.onSurface
-                : Theme.of(menuCtx)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.70),
+                ? HimiText.primary(menuCtx)
+                : HimiText.secondary(menuCtx),
             fontWeight: selected ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -430,10 +428,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Text('暂无剧集',
             style: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.70))),
+                color: HimiText.secondary(context))),
       );
     }
 
@@ -511,7 +506,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                                       ? Icons.favorite
                                       : Icons.favorite_border,
                                   size: 16,
-                                  color: favorited ? primary : Theme.of(context).colorScheme.onSurface,
+                                  color: favorited ? primary : HimiText.primary(context),
                                 ),
                               ),
                             ),
@@ -536,7 +531,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                                       ? Icons.check_circle
                                       : Icons.check_circle_outline,
                                   size: 16,
-                                  color: watched ? primary : Theme.of(context).colorScheme.onSurface,
+                                  color: watched ? primary : HimiText.primary(context),
                                 ),
                               ),
                             ),
@@ -561,7 +556,7 @@ class _SeasonEpisodeRow extends StatelessWidget {
                 _metaLine(ep),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                style: TextStyle(fontSize: 12, color: HimiText.secondary(context)),
               ),
               const SizedBox(height: 4),
               Text(
@@ -675,7 +670,7 @@ class _SeasonCardRow extends StatelessWidget {
                     : Container(
                         color: Colors.white10,
                         child: Icon(Icons.tv,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38), size: 32),
+                            color: HimiText.t38(context), size: 32),
                       ),
               ),
             ),
@@ -706,7 +701,7 @@ class _SeasonCardRow extends StatelessWidget {
                           child: Text(
                             '${season.childCount}集',
                             style: TextStyle(
-                                fontSize: 11, color: Theme.of(context).colorScheme.onSurface),
+                                fontSize: 11, color: HimiText.primary(context)),
                           ),
                         ),
                       ),
@@ -722,7 +717,7 @@ class _SeasonCardRow extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                    color: HimiText.secondary(context),
                   ),
                 ),
               ],

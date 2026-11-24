@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/cache_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
@@ -289,7 +290,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
               '播放器网络缓冲为运行时内存，可在「播放器 > 播放器配置 > 缓存大小」调整。',
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                color: HimiText.t54(context),
                 height: 1.5,
               ),
             ),
@@ -329,7 +330,7 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
             '解码/HDR/渲染器等设备相关设置。',
             style: TextStyle(
               fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+              color: HimiText.t54(context),
               height: 1.5,
             ),
           ),
@@ -369,7 +370,7 @@ class _BackupActionRow extends StatelessWidget {
       key: rowKey,
       leading: Icon(
         icon,
-        color: active ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+        color: active ? accent : HimiText.t24(context),
       ),
       title: Text(title),
       subtitle: Text(subtitle),
@@ -382,7 +383,7 @@ class _BackupActionRow extends StatelessWidget {
           : Icon(
               Icons.chevron_right,
               size: 18,
-              color: active ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+              color: active ? HimiText.t54(context) : HimiText.t24(context),
             ),
       onTap: active ? onTap : null,
     );
@@ -415,7 +416,7 @@ class _CacheErrorView extends ConsumerWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+            style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
           ),
           const SizedBox(height: 16),
           settingsTvWrapRow(
@@ -482,7 +483,7 @@ class _CacheSummaryCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             '磁盘缓存 · 不含更新包与播放器内存缓冲',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+            style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
           ),
           const SizedBox(height: 16),
           _CacheBar(stats: stats),
@@ -506,7 +507,7 @@ class _CacheSummaryCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   '弹幕缓存 ${snapshot.totalDanmakuCount} 条（内存）',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                  style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                 ),
               ),
               TvFocusable(
@@ -541,7 +542,7 @@ class _CacheSummaryCard extends StatelessWidget {
                               size: 18,
                               color: canClear
                                   ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                                  : HimiText.t38(context),
                             ),
                             const SizedBox(width: 6),
                             Text(
@@ -551,7 +552,7 @@ class _CacheSummaryCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                                 color: canClear
                                     ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                                    : HimiText.t38(context),
                               ),
                             ),
                           ],
@@ -628,7 +629,7 @@ class _LegendItem extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '$value · $percent',
-          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+          style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
         ),
       ],
     );
@@ -667,7 +668,7 @@ class _CacheRow extends StatelessWidget {
         children: [
           Text(
             value,
-            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+            style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
           ),
           const SizedBox(width: 6),
           if (clearing)
@@ -683,7 +684,7 @@ class _CacheRow extends StatelessWidget {
               onPressed: enabled ? onTap : null,
               icon: Icon(
                 Icons.delete_outline,
-                color: enabled ? Colors.redAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                color: enabled ? Colors.redAccent : HimiText.t24(context),
               ),
             ),
         ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/services/trakt/trakt_sync_models.dart';
 
 class TraktSyncStatusPanel extends StatelessWidget {
@@ -39,7 +40,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.sync, size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              Icon(Icons.sync, size: 20, color: HimiText.secondary(context)),
               const SizedBox(width: 8),
               const Text(
                 '同步概览',
@@ -68,7 +69,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
             syncState.lastSuccessAt == null
                 ? '上次成功：尚未同步'
                 : '上次成功：${_formatTime(syncState.lastSuccessAt!)}',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+            style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
           ),
           const SizedBox(height: 14),
           Row(
@@ -94,7 +95,7 @@ class TraktSyncStatusPanel extends StatelessWidget {
             const SizedBox(height: 7),
             Text(
               _phaseText(),
-              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+              style: TextStyle(fontSize: 11, color: HimiText.t54(context)),
             ),
           ],
           const SizedBox(height: 12),
@@ -171,13 +172,13 @@ class _Metric extends StatelessWidget {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
-                color: Theme.of(context).colorScheme.onSurface,
+                color: HimiText.primary(context),
               ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+              style: TextStyle(fontSize: 11, color: HimiText.t54(context)),
             ),
           ],
         ),

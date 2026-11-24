@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
 
 /// 打开剧集横卡的 TV 操作面板。
@@ -199,7 +200,7 @@ class _EpisodeActionRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: HimiText.primary(context),
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -209,7 +210,7 @@ class _EpisodeActionRow extends StatelessWidget {
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                    style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
                   ),
                 ],
               ),

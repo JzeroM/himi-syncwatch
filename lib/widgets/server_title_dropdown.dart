@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -134,7 +135,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                               ),
                               child: Text(
                                 '未添加服务器',
-                                style: TextStyle(color: Theme.of(titleContext).colorScheme.onSurface.withValues(alpha: 0.54)),
+                                style: TextStyle(color: HimiText.t54(titleContext)),
                               ),
                             )
                           else
@@ -196,7 +197,7 @@ class ServerTitleDropdown extends ConsumerWidget {
             Icon(
               active ? Icons.check_circle : Icons.local_movies_outlined,
               size: 18,
-              color: active ? Colors.green : Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70),
+              color: active ? Colors.green : HimiText.secondary(dialogContext),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -204,7 +205,7 @@ class ServerTitleDropdown extends ConsumerWidget {
                 'TMDB 聚合',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.onSurface,
+                  color: HimiText.primary(dialogContext),
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
@@ -242,14 +243,14 @@ class ServerTitleDropdown extends ConsumerWidget {
             if (active)
               const Icon(Icons.check_circle, size: 18, color: Colors.green)
             else
-              Icon(Icons.dns_outlined, size: 18, color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.70)),
+              Icon(Icons.dns_outlined, size: 18, color: HimiText.secondary(dialogContext)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 server.label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.onSurface,
+                  color: HimiText.primary(dialogContext),
                   fontWeight: active ? FontWeight.bold : FontWeight.normal,
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/library_counts.dart';
 import 'package:himi_syncwatch/providers/library_counts_provider.dart';
@@ -66,7 +67,7 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: HimiText.primary(context),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -82,12 +83,12 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                     ),
                     child: Text(
                       '主线路',
-                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                      style: TextStyle(fontSize: 11, color: HimiText.secondary(context)),
                     ),
                   ),
                 IconButton(
                   key: const ValueKey('resourceStatsClose'),
-                  icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  icon: Icon(Icons.close, color: HimiText.secondary(context)),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -106,7 +107,7 @@ class _ResourceStatsSheetState extends ConsumerState<_ResourceStatsSheet> {
                 child: Center(
                   child: Text(
                     '未能获取统计信息',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                    style: TextStyle(color: HimiText.t54(context)),
                   ),
                 ),
               )
@@ -148,7 +149,7 @@ class _CountsTable extends StatelessWidget {
               ),
             ],
           ),
-          Divider(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24), height: 16),
+          Divider(color: HimiText.t24(context), height: 16),
           _Row(label: '电影', a: without?.movies, b: withV?.movies),
           _Row(label: '剧集', a: without?.series, b: withV?.series),
           _Row(label: '集', a: without?.episodes, b: withV?.episodes),
@@ -193,7 +194,7 @@ class _Row extends StatelessWidget {
             flex: 2,
             child: Text(
               label,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
+              style: TextStyle(color: HimiText.primary(context), fontSize: 14),
             ),
           ),
           Expanded(
@@ -221,7 +222,7 @@ class _Value extends StatelessWidget {
       value == null ? '—' : '$value',
       textAlign: TextAlign.center,
       style: TextStyle(
-        color: Theme.of(context).colorScheme.onSurface,
+        color: HimiText.primary(context),
         fontSize: 15,
         fontWeight: FontWeight.w600,
       ),

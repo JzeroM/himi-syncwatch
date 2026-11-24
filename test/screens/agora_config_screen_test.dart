@@ -257,8 +257,8 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('指南书封面跟随设置主题色', (tester) async {
-    const accent = Color(0xFFEC4899);
+  testWidgets('指南书封面为明暗固定书皮（亮白金），不随主题色', (tester) async {
+    // N46：书皮明暗固定（亮版白金），不跟主题色。
     await _pumpScreen(
       tester,
       settings: const AppSettings(themeColor: 0xFFEC4899),
@@ -272,7 +272,8 @@ void main() {
 
     expect(
       gradient.colors,
-      contains(AgoraBookPalette.fromAccent(accent).leather),
+      contains(AgoraBookPalette.whiteGold.leather),
+      reason: '亮版白金书皮（不随主题色）',
     );
   });
 

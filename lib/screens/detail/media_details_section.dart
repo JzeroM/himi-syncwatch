@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/poster_card.dart';
@@ -222,11 +223,11 @@ class MediaDetailsSection extends StatelessWidget {
           const _SectionTitle('媒体信息'),
           if (path != null) ...[
             Text('路径:',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70))),
+                style: TextStyle(fontSize: 13, color: HimiText.secondary(context))),
             const SizedBox(height: 4),
             SelectableText(
               path,
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
+              style: TextStyle(fontSize: 12, color: HimiText.primary(context)),
             ),
             const SizedBox(height: 8),
           ],
@@ -237,12 +238,12 @@ class MediaDetailsSection extends StatelessWidget {
               if (size != null)
                 Text(
                   formatSize(size),
-                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
                 ),
               if (media.dateCreated != null)
                 Text(
                   '加入时间: ${formatDate(item.dateCreated)}',
-                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
                 ),
             ],
           ),
@@ -374,7 +375,7 @@ class _StreamCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurface),
+              Icon(icon, size: 18, color: HimiText.primary(context)),
               const SizedBox(width: 8),
               Text(title,
                   style: const TextStyle(
@@ -392,12 +393,12 @@ class _StreamCard extends StatelessWidget {
                     width: 88,
                     child: Text(r.$1,
                         style: TextStyle(
-                            fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62))),
+                            fontSize: 13, color: HimiText.t62(context))),
                   ),
                   Expanded(
                     child: Text(
                       r.$2,
-                      style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+                      style: TextStyle(fontSize: 13, color: HimiText.primary(context)),
                     ),
                   ),
                 ],
@@ -439,10 +440,10 @@ class _LinkChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.open_in_new, size: 14, color: Theme.of(context).colorScheme.onSurface),
+            Icon(Icons.open_in_new, size: 14, color: HimiText.primary(context)),
             const SizedBox(width: 6),
             Text(link.name,
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
+                style: TextStyle(fontSize: 13, color: HimiText.primary(context))),
           ],
         ),
       ),
@@ -461,7 +462,7 @@ class _GlassChip extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Text(label,
-          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
+          style: TextStyle(fontSize: 13, color: HimiText.primary(context))),
     );
   }
 }

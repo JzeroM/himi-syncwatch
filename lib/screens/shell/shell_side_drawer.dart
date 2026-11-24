@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -233,7 +234,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
                   const SizedBox(height: 2),
                   Text(
                     '同步观影',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
+                    style: TextStyle(color: HimiText.t54(context), fontSize: 11),
                   ),
                 ],
               )
@@ -285,7 +286,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
 
     final iconColor = selected
         ? kNavBlobColor
-        : (hovered ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70));
+        : (hovered ? HimiText.primary(context) : HimiText.secondary(context));
 
     // ── 底色：选中主色渐变玻璃 / 悬停淡玻璃 / 常态透明 ──
     final BoxDecoration decoration;
@@ -371,7 +372,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
               child: Text(
                 kShellNavLabels[index],
                 style: TextStyle(
-                  color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                  color: selected ? HimiText.primary(context) : HimiText.secondary(context),
                   fontSize: 14,
                   fontWeight:
                       selected ? FontWeight.bold : FontWeight.normal,
@@ -466,7 +467,7 @@ class _ShellDesktopLayoutState extends State<ShellDesktopLayout>
               ? Icon(
                   open ? Icons.chevron_left : Icons.chevron_right,
                   size: 18,
-                  color: open ? kNavBlobColor : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                  color: open ? kNavBlobColor : HimiText.secondary(context),
                 )
               : null,
         ),

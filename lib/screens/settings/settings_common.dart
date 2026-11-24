@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_config.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
 import 'package:himi_syncwatch/widgets/glass/scroll_glass_scope.dart';
@@ -124,7 +125,7 @@ Widget settingOptionTile({
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(labels[value] ?? value),
-            Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+            Icon(Icons.chevron_right, size: 18, color: HimiText.t54(context)),
           ],
         ),
       ),
@@ -302,7 +303,7 @@ class SettingsGroupCard extends StatelessWidget {
                     fontSize: 12,
                     letterSpacing: 1.2,
                     fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                    color: HimiText.t62(context),
                   ),
                 ),
               ),
@@ -402,7 +403,7 @@ class SettingsCategoryCard extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurface),
+            child: Icon(icon, size: 18, color: HimiText.primary(context)),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -415,7 +416,7 @@ class SettingsCategoryCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface,
+                    color: HimiText.primary(context),
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -423,13 +424,13 @@ class SettingsCategoryCard extends StatelessWidget {
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
+                  style: TextStyle(fontSize: 11, color: HimiText.t62(context)),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+          Icon(Icons.chevron_right, size: 18, color: HimiText.t38(context)),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/models/media_counts.dart';
 import 'package:himi_syncwatch/providers/server_stats_provider.dart';
@@ -150,19 +151,16 @@ class MovieSeriesCounts extends StatelessWidget {
     if (c == null) return const SizedBox.shrink();
     final style = TextStyle(
           fontSize: 12,
-          color: Theme.of(context)
-              .colorScheme
-              .onSurface
-              .withValues(alpha: 0.70),
+          color: HimiText.secondary(context),
         );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.movie_outlined, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+        Icon(Icons.movie_outlined, size: 14, color: HimiText.secondary(context)),
         const SizedBox(width: 2),
         Text('${c.movies}', style: style),
         const SizedBox(width: 8),
-        Icon(Icons.tv, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+        Icon(Icons.tv, size: 14, color: HimiText.secondary(context)),
         const SizedBox(width: 2),
         Text('${c.series}', style: style),
       ],
@@ -615,7 +613,7 @@ class _PanelItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = action.danger ? Colors.redAccent : Theme.of(context).colorScheme.onSurface;
+    final color = action.danger ? Colors.redAccent : HimiText.primary(context);
     final primary = Theme.of(context).colorScheme.primary;
     final row = SizedBox(
       height: 48,
@@ -758,7 +756,7 @@ class ServerListCard extends StatelessWidget {
                 '${server.username} · ${server.serverUrl}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -809,7 +807,7 @@ class ServerListCard extends StatelessWidget {
                             width: 40,
                             height: 40,
                             child: Icon(Icons.cast_connected,
-                                size: 20, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+                                size: 20, color: HimiText.t54(context)),
                           ),
                         ),
                       ServerMoreButton(
@@ -916,7 +914,7 @@ class ServerGridCard extends StatelessWidget {
           width: 40,
           height: 40,
           child:
-              Icon(Icons.cast_connected, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+              Icon(Icons.cast_connected, size: 18, color: HimiText.t54(context)),
         ),
       );
 
@@ -960,7 +958,7 @@ class ServerGridCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                      color: HimiText.secondary(context),
                       fontWeight: FontWeight.w500,
                     ),
                   ),

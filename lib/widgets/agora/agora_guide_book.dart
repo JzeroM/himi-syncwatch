@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_cover.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_page.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
@@ -235,7 +236,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
       builder: (context, accent, _) {
-        final palette = AgoraBookPalette.fromAccent(accent);
+        // 698 N46：书皮明暗固定（暗黑金/亮白金），不随主题色。
+        final palette = AgoraBookPalette.of(context);
         // 687：整本书独立成层——翻页/重置时不牵连同级兄弟节点重绘。
         return RepaintBoundary(
           child: Column(
@@ -636,7 +638,7 @@ class _BookControls extends StatelessWidget {
         child: Center(
           child: Text(
             '共 $total 步 · 左右滑动阅读',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), fontSize: 11),
+            style: TextStyle(color: HimiText.t62(context), fontSize: 11),
           ),
         ),
       );
@@ -651,8 +653,8 @@ class _BookControls extends StatelessWidget {
             tooltip: '上一页',
             onPressed: !busy ? onPrevious : null,
             iconSize: 18,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
-            disabledColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+            color: HimiText.secondary(context),
+            disabledColor: HimiText.t24(context),
             icon: const Icon(Icons.chevron_left),
           ),
           Expanded(
@@ -670,7 +672,7 @@ class _BookControls extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: i == page
                             ? const Color(0xFFD8B26B)
-                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                            : HimiText.t38(context),
                         borderRadius: BorderRadius.circular(99),
                       ),
                     ),
@@ -680,7 +682,7 @@ class _BookControls extends StatelessWidget {
                   child: Text(
                     '左右滑动翻页',
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 11),
+                    style: TextStyle(color: HimiText.t54(context), fontSize: 11),
                   ),
                 ),
               ],
@@ -691,8 +693,8 @@ class _BookControls extends StatelessWidget {
             tooltip: '下一页',
             onPressed: !busy && page < total - 1 ? onNext : null,
             iconSize: 18,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
-            disabledColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+            color: HimiText.secondary(context),
+            disabledColor: HimiText.t24(context),
             icon: const Icon(Icons.chevron_right),
           ),
         ],

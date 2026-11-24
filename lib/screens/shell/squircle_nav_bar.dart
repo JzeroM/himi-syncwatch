@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_bar.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_container.dart';
@@ -481,8 +482,8 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
     // 颜色：填充（块内）白；描边（槽位）白70；拖动预览点亮白。
     final previewLit = _dragSlot == slot;
     final color = Color.lerp(
-      previewLit ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
-      Theme.of(context).colorScheme.onSurface,
+      previewLit ? HimiText.primary(context) : HimiText.secondary(context),
+      HimiText.primary(context),
       morph,
     )!;
     return Positioned(
@@ -652,7 +653,7 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
+                            color: HimiText.primary(context),
                           ),
                         ),
                       ),
@@ -663,7 +664,7 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
+                          color: HimiText.primary(context),
                         ),
                       ),
                     ),

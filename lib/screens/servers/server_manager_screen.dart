@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/server_avatar_provider.dart';
@@ -1335,7 +1336,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface,
+                        color: HimiText.primary(context),
                       ),
                     ),
                     const Spacer(),
@@ -1462,7 +1463,7 @@ class _AddServerFormState extends ConsumerState<_AddServerForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54))),
+              style: TextStyle(fontSize: 13, color: HimiText.t54(context))),
           const SizedBox(height: 6),
           TextField(
             key: fieldKey,

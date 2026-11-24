@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:himi_syncwatch/models/app_settings.dart';
 import 'package:himi_syncwatch/screens/shell/main_shell.dart';
 import 'package:himi_syncwatch/screens/shell/nav_bar_registry.dart';
-import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/screens/settings/settings_common.dart';
 import 'package:himi_syncwatch/screens/settings/version_preference_sheet.dart';
 import 'package:himi_syncwatch/services/app_icon_service.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 
@@ -88,7 +87,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  color: HimiText.t54(context),
                 ),
                 onTap: () => _showAppearanceModeSheet(context, ref),
               ),
@@ -111,7 +110,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                   trailing: Icon(
                     Icons.chevron_right,
                     size: 18,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    color: HimiText.t54(context),
                   ),
                   onTap: () => _showNavBarStyleSheet(context, ref),
                 ),
@@ -127,7 +126,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  color: HimiText.t54(context),
                 ),
                 onTap: () => context.push('/settings/general/tmdb'),
               ),
@@ -149,7 +148,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  color: HimiText.t54(context),
                 ),
                 onTap: () => showVersionPreferenceSheet(context, ref),
               ),
@@ -186,7 +185,7 @@ class _CategoryColumnsSection extends ConsumerWidget {
           child: Text(
             '0 = 自动跟随屏幕（TV 默认每行 8 个）；指定后屏幕放不下时'
             '自动压缩为可显示的最大列数',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
+            style: TextStyle(fontSize: 12, color: HimiText.t62(context), height: 1.5),
           ),
         ),
         Padding(
@@ -198,7 +197,7 @@ class _CategoryColumnsSection extends ConsumerWidget {
                 child: Text(
                   columns == null ? '自动' : '每行 $columns 个',
                   key: const ValueKey('categoryColumnsValue'),
-                  style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
                 ),
               ),
               Expanded(
@@ -267,7 +266,7 @@ class _GlassTuningSection extends ConsumerWidget {
           ),
           Text(
             '实时调节磨砂与折射效果，拖动即生效',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62)),
+            style: TextStyle(fontSize: 12, color: HimiText.t62(context)),
           ),
           const SizedBox(height: 4),
           for (final spec in glassParamSpecs)
@@ -294,7 +293,7 @@ class _GlassTuningSection extends ConsumerWidget {
           width: 72,
           child: Text(
             spec.label,
-            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+            style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
           ),
         ),
         Expanded(
@@ -332,7 +331,7 @@ class _GlassTuningSection extends ConsumerWidget {
             value.toStringAsFixed(spec.decimals),
             key: ValueKey('glassValue_${spec.key}'),
             textAlign: TextAlign.right,
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+            style: TextStyle(fontSize: 12, color: HimiText.secondary(context)),
           ),
         ),
       ],
@@ -416,7 +415,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             '自定义首页与底部导航的背景渐变，「默认」跟随应用底色',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
+            style: TextStyle(fontSize: 12, color: HimiText.t62(context), height: 1.5),
           ),
         ),
         Padding(
@@ -434,7 +433,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                     .update(themeColor: null),
                 child: Text(
                   '默认',
-                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                  style: TextStyle(fontSize: 11, color: HimiText.secondary(context)),
                 ),
               ),
               for (var i = 0; i < _presets.length; i++)
@@ -462,21 +461,18 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
               child: DecoratedBox(
                 key: const ValueKey('themeColorPreview'),
                 decoration: BoxDecoration(
-                  // 698 N41：预览 = 平色背景 + 顶部氛围光随主题色
-                  //（主题色退出背景，只做点缀/氛围光）。
-                  gradient: PosterPalette.fabricGradient(
-                    base,
-                    themeColor: current == null ? null : Color(current),
-                    posterTone: ref.watch(heroToneProvider),
-                    isDark: Theme.of(context).brightness == Brightness.dark,
-                  ),
+                  // 698 N46：预览 = 平色底 + 主题色轻混（背景已走海报
+                  // 底部色场，此处仅示意主题色点缀观感）。
+                  color: current == null
+                      ? base
+                      : Color.lerp(base, Color(current), 0.22),
                 ),
                 child: Center(
                   child: Text(
                     current == null ? '默认底色' : '预览',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                      color: HimiText.secondary(context),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -533,13 +529,13 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           color: color ?? Colors.white12,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? Theme.of(context).colorScheme.onSurface : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+            color: selected ? HimiText.primary(context) : HimiText.t24(context),
             width: selected ? 2.5 : 1,
           ),
         ),
         child: child ??
             (selected
-                ? Icon(Icons.check, size: 18, color: Theme.of(context).colorScheme.onSurface)
+                ? Icon(Icons.check, size: 18, color: HimiText.primary(context))
                 : null),
       ),
     );
@@ -561,7 +557,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
             width: 36,
             child: Text(
               label,
-              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+              style: TextStyle(fontSize: 13, color: HimiText.secondary(context)),
             ),
           ),
           Expanded(
@@ -606,7 +602,7 @@ class _AppIconSection extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Text(
             '选择桌面图标外观（Android 首次切换会重启应用，之后切换会刷新界面；若桌面仍未刷新，可重启手机或清除桌面启动器缓存。iOS 会弹系统提示）',
-            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62), height: 1.5),
+            style: TextStyle(fontSize: 12, color: HimiText.t62(context), height: 1.5),
           ),
         ),
         Padding(
@@ -682,7 +678,7 @@ class _AppIconTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: selected ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                      color: selected ? accent : HimiText.t24(context),
                       width: selected ? 2 : 1,
                     ),
                   ),
@@ -709,7 +705,7 @@ class _AppIconTile extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.check,
-                          size: 12, color: Theme.of(context).colorScheme.onSurface),
+                          size: 12, color: HimiText.primary(context)),
                     ),
                   ),
               ],
@@ -719,7 +715,7 @@ class _AppIconTile extends StatelessWidget {
               option.label,
               style: TextStyle(
                 fontSize: 12,
-                color: selected ? accent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                color: selected ? accent : HimiText.secondary(context),
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
             ),

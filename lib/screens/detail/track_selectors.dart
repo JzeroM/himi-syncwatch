@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
 import 'package:himi_syncwatch/providers/track_provider.dart';
@@ -90,7 +91,7 @@ class TrackActionRow extends ConsumerWidget {
         icon: Icon(icon),
         color: active
             ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.onSurface,
+            : HimiText.primary(context),
         tooltip: null,
         onPressed: onTap,
       );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/remote_search_provider.dart';
 import 'package:himi_syncwatch/screens/search/global_search_screen.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
@@ -118,7 +119,7 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.onSurface,
+            color: HimiText.primary(context),
             borderRadius: BorderRadius.circular(16),
           ),
           child: QrImageView(
@@ -175,7 +176,7 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
         ),
         child: Text(
           '电视本机搜索',
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
+          style: TextStyle(color: HimiText.primary(context), fontSize: 15),
         ),
       ),
     );
@@ -203,7 +204,7 @@ class _RemoteSearchScreenState extends ConsumerState<RemoteSearchScreen> {
             ),
             child: Text(
               '重试',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
+              style: TextStyle(color: HimiText.primary(context), fontSize: 15),
             ),
           ),
         ),

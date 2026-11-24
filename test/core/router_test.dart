@@ -474,29 +474,31 @@ void main() {
     expect(find.byType(ShellNavBar), findsNothing); // 顶层路由覆盖导航
   });
 
-  testWidgets('壳层背景为织物微渐变（N43）：7 段微抖、未设色中性', (
+  testWidgets('壳层背景回退平色 + 暗角聚光双层（N46）', (
       tester,
     ) async {
       await _pumpApp(tester);
 
-      LinearGradient shellGradient() {
-        // N44：shellBackground = PosterBackdrop（无海报 URL 时回退织物
-        // 微渐变 Container）——从子树取回退渐变断言。
-        final container = tester.widget<Container>(
-          find
-              .descendant(
-                of: find.byKey(const ValueKey('shellBackground')),
-                matching: find.byType(Container),
-              )
-              .first,
-        );
-        return (container.decoration! as BoxDecoration).gradient!
-            as LinearGradient;
-      }
+      // N46：shellBackground = PosterBackdrop（无海报 URL 回退平色基底
+      // + 暗角/聚光双渐变层；织物微粒已移除）。
+      final layers = tester
+          .widgetList<DecoratedBox>(find.descendant(
+            of: find.byKey(const ValueKey('shellBackground')),
+            matching: find.byType(DecoratedBox),
+          ))
+          .toList();
+      expect(layers, isNotEmpty, reason: '回退态渲染');
 
-      final g = shellGradient();
-      expect(g.colors, hasLength(7), reason: '织物微织 7 段');
-      expect(g.colors.toSet().length, greaterThan(2), reason: '微抖多段');
+      final base = layers.first.decoration! as BoxDecoration;
+      expect(base.color, isNotNull, reason: 'N46 回退平色底');
+      expect(base.gradient, isNull, reason: '织物渐变已移除');
+
+      final gradients = layers
+          .map((l) => (l.decoration! as BoxDecoration).gradient)
+          .whereType<Gradient>()
+          .toList();
+      expect(gradients.length, greaterThanOrEqualTo(2),
+          reason: '暗角 + 聚光双渐变层');
     });
 
   testWidgets('主题色写入后壳层背景保持中性平色（N41 主题色退出背景）',
@@ -506,32 +508,27 @@ void main() {
       settings: const AppSettings(themeColor: 0xFF22D3EE),
     );
 
-    LinearGradient shellGradient() {
-      // N44：shellBackground = PosterBackdrop（无海报 URL 时回退织物微渐变）。
-      final container = tester.widget<Container>(
+    Color shellBaseColor() {
+      // N46：回退态首层 = 平色基底（无海报 URL）。
+      final layer = tester.widget<DecoratedBox>(
         find
             .descendant(
               of: find.byKey(const ValueKey('shellBackground')),
-              matching: find.byType(Container),
+              matching: find.byType(DecoratedBox),
             )
             .first,
       );
-      return (container.decoration! as BoxDecoration).gradient! as LinearGradient;
+      return (layer.decoration! as BoxDecoration).color!;
     }
 
-    // N43：背景 = 织物微渐变（微抖多段）+ 无强主题色染。
-    expect(shellGradient().colors.toSet().length, greaterThan(2),
-        reason: '织物微抖多段（非纯平）');
-    expect(
-      shellGradient().colors.first,
-      isNot(PosterPalette.darkenForPage(const Color(0xFF22D3EE))),
-      reason: '无强主题色染（海报色调/中性微染）',
-    );
+    // N41/N46：主题色退出背景——回退平色不含主题色。
+    expect(shellBaseColor(), isNot(const Color(0xFF22D3EE)),
+        reason: '无强主题色染');
 
-    // 切到设置页，壳层渐变仍存在
+    // 切到设置页，壳层背景仍存在
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
-    expect(shellGradient(), isA<LinearGradient>());
+    expect(shellBaseColor(), isNotNull);
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 

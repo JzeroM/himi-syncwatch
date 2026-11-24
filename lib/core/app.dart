@@ -4,7 +4,6 @@ import 'package:himi_syncwatch/core/page_transitions.dart';
 import 'package:himi_syncwatch/core/router.dart';
 import 'package:himi_syncwatch/core/scroll_behavior.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/providers/tv_sync_provider.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_tuning.dart';
 import 'package:himi_syncwatch/widgets/trakt_deep_link_listener.dart';
@@ -51,23 +50,9 @@ class HimiSyncApp extends ConsumerWidget {
                 tvMode ? TvRemoteShell(child: subtree) : subtree;
             // 695：Windows 全局键（Space=暂停/播放、ESC=退全屏/返回/房间
             // 解散确认）——挂根部让任意 Flutter 页面都生效。
-            // 698 N43：织物微粒噪点蒙层（全局细粒，明暗通用，玻璃折射
-            // 穿出织纹质感）。
+            //（698 N46：织物微粒蒙层移除，背景改海报色场 + 暗角聚光。）
             return TraktDeepLinkListener(
-              child: WindowsGlobalHotkeys(
-                child: Stack(
-                  fit: StackFit.passthrough,
-                  children: [
-                    modeSubtree,
-                    const IgnorePointer(
-                      child: CustomPaint(
-                        painter: FabricWeavePainter(),
-                        size: Size.infinite,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              child: WindowsGlobalHotkeys(child: modeSubtree),
             );
           },
           themeMode: switch (appearanceMode) {

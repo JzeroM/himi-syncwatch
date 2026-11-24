@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_server_config.dart';
 import 'package:himi_syncwatch/providers/emby_provider.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -153,7 +154,7 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             '间隔可在下方设置。',
             style: TextStyle(
               fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+              color: HimiText.t54(context),
               height: 1.5,
             ),
           ),
@@ -178,7 +179,7 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                  color: HimiText.t54(context),
                 ),
                 onTap: _openQrLogin,
               ),
@@ -271,7 +272,7 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
                 '如授权后无法同步，请先在 Trakt 设置中断开其他客户端。',
                 style: TextStyle(
                   fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                  color: HimiText.t38(context),
                   height: 1.5,
                 ),
               ),
@@ -339,7 +340,7 @@ class _TraktSettingsScreenState extends ConsumerState<TraktSettingsScreen> {
             padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
             child: Text(
               '参与的服务器',
-              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
+              style: TextStyle(fontSize: 12, color: HimiText.t54(context)),
             ),
           ),
           if (servers.isEmpty)

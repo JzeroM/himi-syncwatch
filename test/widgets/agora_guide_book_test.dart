@@ -263,19 +263,18 @@ void main() {
     expect(tapped, 'assets/images/agora_step1.png');
   });
 
-  testWidgets('封面颜色跟随自定义主题色', (tester) async {
-    const accent = Color(0xFFEC4899);
-    final expected = AgoraBookPalette.fromAccent(accent);
+  testWidgets('封面为明暗固定书皮（亮白金），不随主题色', (tester) async {
+    // N46：书皮明暗固定（亮版白金），不跟主题色。
+    await _pumpBook(tester, themeColor: const Color(0xFFEC4899));
 
-    await _pumpBook(tester, themeColor: accent);
+    expect(_coverGradient(tester).colors,
+        contains(AgoraBookPalette.whiteGold.leather));
 
-    expect(_coverGradient(tester).colors, contains(expected.leather));
+    // 换主题色封面不变（白金锁定）。
+    await _pumpBook(tester, themeColor: const Color(0xFF10B981));
 
-    const otherAccent = Color(0xFF10B981);
-    final other = AgoraBookPalette.fromAccent(otherAccent);
-    await _pumpBook(tester, themeColor: otherAccent);
-
-    expect(_coverGradient(tester).colors, contains(other.leather));
+    expect(_coverGradient(tester).colors,
+        contains(AgoraBookPalette.whiteGold.leather));
   });
 
   testWidgets('做旧纸张与书页纹理可渲染', (tester) async {

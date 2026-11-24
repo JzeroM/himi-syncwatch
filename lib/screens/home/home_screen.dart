@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/widgets/glass/glass_refresh_indicator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -446,7 +447,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: 16),
           Text(
             '加载失败',
-            style: TextStyle(fontSize: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+            style: TextStyle(fontSize: 18, color: HimiText.secondary(context)),
           ),
           const SizedBox(height: 8),
           Padding(
@@ -901,7 +902,7 @@ class _LibraryBar extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
+                            color: HimiText.primary(context),
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),

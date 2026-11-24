@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/providers/lan_config_provider.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_app_bar_icon_button.dart';
 import 'package:himi_syncwatch/widgets/tv/tv_focusable.dart';
@@ -123,7 +124,7 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.onSurface,
+            color: HimiText.primary(context),
             borderRadius: BorderRadius.circular(16),
           ),
           child: QrImageView(
@@ -185,7 +186,7 @@ class _QrConfigScreenState extends ConsumerState<QrConfigScreen> {
             ),
             child: Text(
               '重试',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 15),
+              style: TextStyle(color: HimiText.primary(context), fontSize: 15),
             ),
           ),
         ),

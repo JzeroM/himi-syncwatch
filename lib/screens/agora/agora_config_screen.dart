@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_config_page.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_guide_book.dart';
@@ -193,7 +194,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => Center(
                         child: Text('图片加载失败',
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+                            style: TextStyle(color: HimiText.primary(context))),
                       ),
                     ),
                   ),

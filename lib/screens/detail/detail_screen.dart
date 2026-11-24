@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -1733,7 +1734,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // 非 TV 占半行高 48。
     ButtonStyle glassStyle({bool compact = false}) => FilledButton.styleFrom(
           backgroundColor: Colors.transparent,
-          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          foregroundColor: HimiText.primary(context),
           minimumSize: Size(0, compact ? 40 : 48),
           // TV 紧凑态补水平内边距：否则图标+文字贴到玻璃胶囊边缘，
           // 文字看起来"溢出"胶囊；非 TV 靠 Expanded 撑宽居中，无需内边距
@@ -1791,7 +1792,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             Text(
               label,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
+                color: HimiText.primary(context),
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -2002,7 +2003,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               // 贴边小按钮不用面板级悬浮投影，避免返回键外一圈黑影。
               showShadow: false,
               child: IconButton(
-                icon: Icon(Icons.arrow_back, color: Theme.of(context).colorScheme.onSurface),
+                icon: Icon(Icons.arrow_back, color: HimiText.primary(context)),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -2087,7 +2088,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           errorWidget: Text(
                             item.name,
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
+                              color: HimiText.primary(context),
                               fontSize: tv ? 20 : 24,
                               fontWeight: FontWeight.bold,
                               shadows: DetailScreen.heroTextShadows,
@@ -2098,7 +2099,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         Text(
                           item.name,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
+                            color: HimiText.primary(context),
                             fontSize: tv ? 20 : 24,
                             fontWeight: FontWeight.bold,
                             shadows: DetailScreen.heroTextShadows,
@@ -2135,13 +2136,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                       ? Icons.unfold_less
                                       : Icons.subject,
                                   size: 14,
-                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                                  color: HimiText.secondary(context),
                                 ),
                               ),
                             ),
                           ),
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+                            color: HimiText.secondary(context),
                             fontSize: 13,
                             height: 1.5,
                             shadows: DetailScreen.heroTextShadows,
@@ -2159,7 +2160,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           iconSize: 15,
                           alignment: WrapAlignment.center,
                           textStyle: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface,
+                            color: HimiText.primary(context),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             shadows: DetailScreen.heroTextShadows,
@@ -2191,7 +2192,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 Text(
                                   '简介',
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color: HimiText.primary(context),
                                     fontSize: tv ? 16 : 18,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -2209,13 +2210,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(Icons.expand_less,
-                                            size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
+                                            size: 14, color: HimiText.secondary(context)),
                                         const SizedBox(width: 5),
                                         Text(
                                           '收起',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: Theme.of(context).colorScheme.onSurface,
+                                            color: HimiText.primary(context),
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -2231,7 +2232,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                 child: Text(
                                   item.overview!,
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color: HimiText.primary(context),
                                     fontSize: 14,
                                     height: 1.5,
                                   ),
@@ -2268,7 +2269,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                                     horizontal: 14, vertical: 7),
                                 child: Text(g,
                                     style: TextStyle(
-                                        fontSize: 13, color: Theme.of(context).colorScheme.onSurface)),
+                                        fontSize: 13, color: HimiText.primary(context))),
                               ))
                           .toList(),
                     ),
@@ -2527,7 +2528,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       chips.add(Text(
         item.communityRating!.toStringAsFixed(1),
         style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
+            color: HimiText.primary(context),
             fontWeight: FontWeight.bold,
             // 698 N10-C：等宽数字（tnum）。
             fontFeatures: [ui.FontFeature.tabularFigures()],
@@ -2538,7 +2539,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       gap();
       chips.add(Text(item.year!,
           style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+              color: HimiText.secondary(context),
               fontFeatures: [ui.FontFeature.tabularFigures()],
               shadows: DetailScreen.heroTextShadows)));
     }
@@ -2546,7 +2547,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       gap();
       chips.add(Text(item.runtimeText!,
           style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70),
+              color: HimiText.secondary(context),
               fontFeatures: [ui.FontFeature.tabularFigures()],
               shadows: DetailScreen.heroTextShadows)));
     }
@@ -2616,13 +2617,13 @@ class _MetaBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+        border: Border.all(color: HimiText.t38(context)),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
+          color: HimiText.primary(context),
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
