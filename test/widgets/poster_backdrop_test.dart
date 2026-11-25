@@ -73,26 +73,74 @@ void main() {
   setUp(() {
     PosterPalette.debugReset();
     fake.clear();
-  });
-  tearDown(PosterPalette.debugReset);
-
-  group('computeDominant（N53 spec）', () {
-    test('过滤：近白/近黑/近灰剔除，红主导簇胜出', () {
-      final rgba = Uint8List(10 * 10 * 4);
-      for (var i = 0; i < 100; i++) {
-        final o = i * 4;
-        // 70% 红主导 + 30% 干扰（近白/近黑/近灰各 10%）。
-        final r = (i % 10 < 7) ? 200 : 128;
-        final g = (i % 10 < 7) ? 60 : 128;
-        final b = (i % 10 < 7) ? 50 : 128;
-        rgba[o] = (i % 10 >= 7 && i % 10 < 8) ? 250 : r;
-        rgba[o + 1] = (i % 10 >= 8 && i % 10 < 9) ? 2 : g;
-        rgba[o + 2] = b;
-        rgba[o + 3] = 255;
+    // 同步注入（fake-async 兼容）：按像素主导色直读。
+    PosterPalette.debugExtractPalette = (image) async {
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return (const Color(0xFF808080), null);
+      final rgba = data.buffer.asUint8List();
+      final w = image.width;
+      final h = image.height;
+      // 上下半区均色（基调=下半、晕染=上半——测试双色链路）。
+      List<int> avg(int y0, int y1) {
+        var r = 0, g = 0, b = 0, n = 0;
+        for (var y = y0; y < y1; y++) {
+          for (var x = 0; x < w; x++) {
+            final o = (y * w + x) * 4;
+            if (rgba[o + 3] < 128) continue;
+            r += rgba[o];
+            g += rgba[o + 1];
+            b += rgba[o + 2];
+            n++;
+          }
+        }
+        return n == 0 ? [128, 128, 128] : [r ~/ n, g ~/ n, b ~/ n];
       }
-      final (dom, _) = PosterPalette.computeDominant(rgba, 10, 10);
-      final hsl = HSLColor.fromColor(dom);
-      expect(hsl.hue, inInclusiveRange(0, 30), reason: '红主导簇（干扰剔除）');
+
+      final lo = avg(h ~/ 2, h);
+      final up = avg(0, h ~/ 2);
+      return (
+        Color.fromARGB(255, lo[0], lo[1], lo[2]),
+        Color.fromARGB(255, up[0], up[1], up[2]),
+      );
+    };
+  });
+  tearDown(() {
+    PosterPalette.debugExtractPalette = null;
+    PosterPalette.debugReset();
+  });
+
+  group('extractDesignPalette（N55 设计调色板）', () {
+    testWidgets('palette_generator 六 swatch + thief 交叉验证出基调', (tester) async {
+      // 红主导海报 → 基调为红系暗色（darkMuted/dominant 派生）、保底可用。
+      final image = await _posterImage();
+      PosterPalette.debugExtractPalette = null; // 测生产逻辑
+      final result = await tester
+          .runAsync(() => PosterPalette.extractDesignPalette(image));
+      final (base, _) = result!;
+      final hsl = HSLColor.fromColor(base);
+      // 深色保底：结果 L≥0.11（ambientTrio 前的原色；调色板色可亮可暗，
+      // 但不能是近黑丢色相——L<0.07 的极端值由 swatch 目标法天然避开）。
+      expect(hsl.lightness, greaterThan(0.05), reason: '基调非死黑');
+      // 红主导图 → 基调色相红系（thief/palette 交叉一致）。
+      expect(hsl.hue, inInclusiveRange(0, 40), reason: '红主导色相保留');
+    });
+
+    testWidgets('下半区取色（上下协调）：底缘色彩胜出', (tester) async {
+      // 上蓝下红图 → 基调应偏红（下半区 darkMuted）。
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawRect(const Rect.fromLTWH(0, 0, 8, 12), Paint()..color = const Color(0xFF2244CC));
+      canvas.drawRect(const Rect.fromLTWH(0, 12, 8, 12), Paint()..color = const Color(0xFFCC4422));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(8, 24);
+      picture.dispose();
+      PosterPalette.debugExtractPalette = null; // 测生产逻辑
+      final result = await tester
+          .runAsync(() => PosterPalette.extractDesignPalette(image));
+      final (base, _) = result!;
+      final hue = HSLColor.fromColor(base).hue;
+      expect(hue < 30 || hue > 330, isTrue,
+          reason: '下半（海报底缘侧）色彩胜出（上下协调）');
     });
 
     test('ambientTrio（spec 派生）：L 压区/S 收敛/深色保底', () {

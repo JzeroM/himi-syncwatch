@@ -1,4 +1,7 @@
 import 'dart:async';
+
+import 'package:color_thief_dart/color_thief_dart.dart' as thief;
+import 'package:palette_generator/palette_generator.dart';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -212,6 +215,96 @@ class PosterPalette {
     Color at(double t, double lightness) =>
         HSLColor.fromAHSL(1, flowHue(t), s, lightness).toColor();
     return (at(0.15, l), at(0.08, 0.20), at(0.05, 0.14));
+  }
+
+  /// 698 N55：设计调色板——**palette_generator（Vibrant.js 同源六 swatch
+  /// 目标法）+ color_thief（MMCQ）交叉验证**，替代自研 K-means。
+  ///
+  /// - 基调（背景底色）= **下半区** darkMuted ?? muted ?? darkVibrant
+  ///   ——下半区取色与轮播底缘渐隐带天然协调（根治上下不搭）；
+  /// - 晕染（邻色）= 全图 vibrant ?? lightVibrant（鲜色 subtle 混入）；
+  /// - color_thief 交叉验证：MMCQ top 色与基调色相接近（≤60°）则采用
+  ///   thief 色（两边都认 = 可靠）；差太远信 palette（目标法更设计导向）；
+  ///   palette 全空时 thief 顶色兜底。
+  /// 测试注入（PaletteGenerator 真异步在 fake-async 测试环境不推进
+  /// ——测试注入同步实现；生产走六 swatch + thief 交叉验证）。
+  static Future<(Color, Color?)> Function(ui.Image image)? debugExtractPalette;
+
+  static Future<(Color, Color?)> extractDesignPalette(ui.Image image) async {
+    if (debugExtractPalette != null) return debugExtractPalette!(image);
+    final w = image.width.toDouble();
+    final h = image.height.toDouble();
+    PaletteGenerator? full;
+    PaletteGenerator? lower;
+    // spec 过滤（近白/近黑/近灰剔除）——替代默认 avoidRedBlackWhite
+    //（默认会避开红色系，红色海报主色丢失的元凶）。
+    // PaletteFilter 语义：true = 保留（include）——spec 三剔除的反面。
+    bool specFilter(HSLColor hsl) =>
+        hsl.lightness <= 0.88 &&
+        hsl.lightness >= 0.07 &&
+        hsl.saturation >= 0.04;
+    try {
+      // fromByteData（纯字节，不碰 dart:ui——比 fromImage 稳）。
+      final bytes =
+          await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bytes != null) {
+        final encoded =
+            EncodedImage(bytes, width: image.width, height: image.height);
+        full = await PaletteGenerator.fromByteData(encoded,
+            maximumColorCount: 16, filters: [specFilter]);
+        lower = await PaletteGenerator.fromByteData(
+          encoded,
+          region: Rect.fromLTWH(0, h / 2, w, h / 2),
+          maximumColorCount: 16,
+          filters: [specFilter],
+        );
+      }
+    } catch (_) {
+      // palette 失败走 thief 兜底。
+    }
+
+    final baseSwatch = lower?.darkMutedColor ??
+        lower?.mutedColor ??
+        lower?.darkVibrantColor ??
+        lower?.dominantColor ?? // 下半区主导色兜底（上下协调关键）
+        full?.darkMutedColor ??
+        full?.mutedColor ??
+        full?.darkVibrantColor ??
+        full?.dominantColor;
+    final washSwatch = full?.vibrantColor ?? full?.lightVibrantColor;
+
+    Color? base = baseSwatch?.color;
+    Color? wash = washSwatch?.color;
+
+    // color_thief 交叉验证（RGBA 像素）。
+    try {
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data != null) {
+        final rgba = data.buffer.asUint8List();
+        final top = await thief.getPaletteFromBytes(
+            rgba, image.width, image.height, 5, 10);
+        if (top != null && top.isNotEmpty) {
+          final topColor = Color.fromARGB(255, top[0][0], top[0][1], top[0][2]);
+          if (base == null) {
+            base = topColor; // 兜底
+          } else {
+            final dh = ((HSLColor.fromColor(topColor).hue -
+                        HSLColor.fromColor(base).hue +
+                        540) %
+                    360) -
+                180;
+            if (dh.abs() <= 60) {
+              base = topColor; // 两边都认 → 采用 thief 顶色
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // thief 失败保持 palette 结果。
+    }
+
+    if (base == null) return (const Color(0xFF3A3A3A), wash);
+    return (base, wash);
   }
 
   /// 清空缓存与调试注入（测试用）。

@@ -84,11 +84,10 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
   /// dominant 提取 → 同色调派生 → S 曲线渐变带（短色弧展开）+ 邻色晕染色。
   Future<(List<Color>, Color?)?> _extractField(ui.Image image) async {
     try {
-      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (data == null) return null;
-      final rgba = data.buffer.asUint8List();
+      // 698 N55：设计调色板（palette_generator 六 swatch + color_thief
+      // 交叉验证）——基调=下半区 darkMuted（上下协调）、晕染=全图 vibrant。
       final (dominant, secondary) =
-          PosterPalette.computeDominant(rgba, image.width, image.height);
+          await PosterPalette.extractDesignPalette(image);
       final (top, mid, base) =
           PosterPalette.ambientTrio(dominant, secondary);
 
@@ -112,10 +111,14 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
         }
       }
       out.add(anchorColors.last);
-      // 698 N54：邻色晕染色 = 辅簇同色调派生（L 提到 0.32 柔和混入）。
+      // 698 N55：邻色晕染色 = vibrant 鲜色柔和提亮（L 0.32）混入。
       final wash = secondary == null
           ? null
-          : PosterPalette.ambientTrio(secondary, dominant).$1;
+          : HSLColor.fromColor(secondary)
+              .withLightness(0.32)
+              .withSaturation(
+                  HSLColor.fromColor(secondary).saturation.clamp(0.0, 0.5))
+              .toColor();
       return (out, wash);
     } catch (_) {
       return null;
