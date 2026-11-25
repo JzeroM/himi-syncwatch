@@ -1285,7 +1285,10 @@ void main() {
 
     // 698 N43：消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending
     // 断言）——真实网络/解码在测试环境不返回，timeout 驱动后自然完成。
-    await tester.pump(const Duration(milliseconds: 2600));
+    // 698 N48：轮播切页/预取链各挂 2.5s timeout——大泵一次消化所有
+    // pending timer（任何已创建的 timeout 在 10s 内必到期）。
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
   });
 
   testWidgets('首页轮播关闭：无英雄轮播，背景透明透 wash', (tester) async {

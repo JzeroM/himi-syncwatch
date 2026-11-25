@@ -85,13 +85,13 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
   /// 采样此 RepaintBoundary → 水珠划过时图标被物理折射形变。
   final GlobalKey _navCaptureKey = GlobalKey(debugLabel: 'navCapture');
 
-  /// 静止水珠宽度占单格宽的比例（698 N46：再缩短 1.05→0.97（≈1.55:1）；
+  /// 静止水珠宽度占单格宽的比例（698 N48：再缩短 0.97→0.90（≈1.45:1）；
   /// 首/末槽钳位条内不悬出条缘）。
-  static const double _restWidthRatio = 0.97;
+  static const double _restWidthRatio = 0.90;
 
-  /// 移动态整体放大倍数（宽高同倍，与镜片外扩 50→72 = ×1.44 对齐，
-  /// 纯整体放大、不拉长不压扁）。
-  static const double activeScale = 1.40;
+  /// 移动态整体放大倍数（宽高同倍，纯整体放大、不拉长不压扁；
+  /// 698 N48：动态态同缩短 1.40→1.28，观感更收敛）。
+  static const double activeScale = 1.28;
 
   double _fromT = 0;
   double _toT = 0;
@@ -303,8 +303,8 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       glassColor: Colors.white.withValues(alpha: isIOS ? 0.05 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散：物理色散 1.0（698 N37 拍板；[PATCH himi] ×4.0 见 shader）
-      chromaticAberration: 1.0,
+      // 色散：N48 降低 1.0→0.6（减图标彩边重影，酷安对照更素）
+      chromaticAberration: 0.6,
       refractiveIndex:
           tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
       // 698 N37：去镜面（lightIntensity 恒 0，无镜面高光）——玻璃观感
@@ -312,11 +312,12 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       lightIntensity: 0,
       // Skia 捕获钥匙：GlassEffect 捕获门槛要求 blur > 0（0.01 无感）
       blur: 0.01,
-      // 结构参数：standard 归一化补偿（iOS 收低白边/光晕/环境光）
-      ambientRim: isIOS ? 0.08 : 0.18,
-      glowIntensity: isIOS ? 0.6 : 1.2,
+      // 结构参数：N48 酷安对照修正——弱化水滴自身边缘亮线（「两道杠」
+      // 主因）与边缘暗带挤压感，折弯更平滑连续。
+      ambientRim: isIOS ? 0.05 : 0.10,
+      glowIntensity: isIOS ? 0.4 : 0.8,
       ambientStrength: isIOS ? 0.0 : 0.4,
-      edgeAbsorption: 0.10,
+      edgeAbsorption: 0.06,
       // 光源相位随水珠位置扫动：key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,
     );

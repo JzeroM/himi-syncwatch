@@ -80,7 +80,8 @@ const List<GlassParamSpec> glassParamSpecs = [
     label: '玻璃厚度',
     min: 0,
     max: 60,
-    defaultValue: 28,
+    // 698 N48：默认 28→18（镜片形变更轻，酷安对照折弯平滑）。
+    defaultValue: 18,
     divisions: 60,
   ),
   GlassParamSpec(
@@ -141,7 +142,7 @@ class GlassIosStandard {
   const GlassIosStandard._();
 
   static const double blur = 0; // 默认 4（去雾化模糊）
-  static const double thickness = 22; // 默认 28（降镜片厚/白感）
+  static const double thickness = 18; // N48：与安卓统一 18（折弯平滑）
   static const double saturation = 1.1; // 默认 1.7（去奶感，尽量透）
   static const double lightIntensity = 0.5; // 默认 1.2（降白色高光）
   static const double ambientStrength = 0.0; // 环境光归零（安卓 dark 默认也是 0）

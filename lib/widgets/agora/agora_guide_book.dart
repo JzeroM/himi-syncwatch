@@ -34,14 +34,16 @@ class AgoraGuideBook extends StatefulWidget {
     this.steps = agoraGuideSteps,
     this.extraPageBuilder,
     this.onImageTap,
-    this.themeColor,
+    this.tone,
     this.resetSignal,
   });
 
   final List<AgoraGuideStep> steps;
   final AgoraBookExtraPageBuilder? extraPageBuilder;
   final ValueChanged<String>? onImageTap;
-  final Color? themeColor;
+
+  /// 698 N48：书皮跟随背景色（海报色调源 heroToneProvider）。
+  final Color? tone;
 
   /// 687：外部重置信号——值变化时书本**回到合上封面**。
   ///
@@ -98,7 +100,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
     // 旧实现每次 build 都新建 `ColorTween`，`TweenAnimationBuilder` 会
     // 从当前值再跑一遍 320ms → 整本书每帧重建、`AgoraBookPalette.
     // fromAccent` 每帧重算（切标签卡顿的第二个来源）。
-    if (old.themeColor != widget.themeColor) {
+    if (old.tone != widget.tone) {
       _accentTween = ColorTween(begin: _accent, end: _accentTarget);
     }
   }
@@ -121,9 +123,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       _accentTween.evaluate(AlwaysStoppedAnimation(1)) ??
       AgoraBookPalette.defaultAccent;
 
-  /// 目标主题色。
-  Color get _accentTarget =>
-      widget.themeColor ?? AgoraBookPalette.defaultAccent;
+  /// 目标色（698 N48：背景色调源）。
+  Color get _accentTarget => widget.tone ?? AgoraBookPalette.defaultAccent;
 
   /// 687：缓存的主题色 tween（避免每次 build 新建导致动画重跑）。
   late ColorTween _accentTween;
@@ -236,8 +237,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
       builder: (context, accent, _) {
-        // 698 N46：书皮明暗固定（暗黑金/亮白金），不随主题色。
-        final palette = AgoraBookPalette.of(context);
+        // 698 N48：书皮跟随背景色（暗基调 + 背景色相派生 + 金点缀）。
+        final palette = AgoraBookPalette.fromTone(widget.tone);
         // 687：整本书独立成层——翻页/重置时不牵连同级兄弟节点重绘。
         return RepaintBoundary(
           child: Column(

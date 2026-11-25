@@ -548,6 +548,31 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
+  testWidgets('TV 模式背景保持平色（N48 拍板）：无海报色场，平色+暗角聚光',
+      (tester) async {
+    await _pumpApp(tester, settings: const AppSettings(tvMode: true));
+
+    final layers = tester
+        .widgetList<DecoratedBox>(find.descendant(
+          of: find.byKey(const ValueKey('shellBackground')),
+          matching: find.byType(DecoratedBox),
+        ))
+        .toList();
+    expect(layers, isNotEmpty, reason: '全局背景层在');
+    final base = layers.first.decoration! as BoxDecoration;
+    expect(base.color, isNotNull, reason: 'TV 平色基底');
+    final linear = layers
+        .map((l) => (l.decoration! as BoxDecoration).gradient)
+        .whereType<LinearGradient>()
+        .length;
+    expect(linear, 0, reason: 'N48 拍板：TV 无海报色场（保持平色）');
+    final radial = layers
+        .map((l) => (l.decoration! as BoxDecoration).gradient)
+        .whereType<RadialGradient>()
+        .length;
+    expect(radial, greaterThanOrEqualTo(2), reason: '暗角聚光保留');
+  });
+
   testWidgets('N47 背景全局统一：push 独立路由下色场+暗角聚光仍在（与首页同款）',
       (tester) async {
     final router = await _pumpApp(tester);

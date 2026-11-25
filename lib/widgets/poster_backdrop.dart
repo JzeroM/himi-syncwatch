@@ -12,18 +12,27 @@ import 'package:himi_syncwatch/services/poster_palette.dart';
 /// L 钳 0.65~0.85。叠加**暗角聚光**（边缘暗角 + 顶部中心柔光斑，
 /// N46 起替代织物微粒）。轮播切换交叉淡化 600ms；取色未就绪/失败回退
 /// 平色基底（同样叠暗角聚光）。首页与非首页共用（main_shell 一处渲染）。
-class PosterBackdrop extends ConsumerWidget {
+class PosterBackdrop extends ConsumerStatefulWidget {
   const PosterBackdrop({super.key, required this.base});
 
   /// 回退基底（scaffoldBackgroundColor）。
   final Color base;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PosterBackdrop> createState() => _PosterBackdropState();
+}
+
+class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
+  /// 698 N48：最近一次成功的三带取色——新海报取色未就绪时保持旧场
+  ///（不闪平色），就绪后交叉淡化（消除「下方背景是上一张」的跳变面）。
+  List<Color>? _lastTrio;
+
+  @override
+  Widget build(BuildContext context) {
     final url = ref.watch(heroPosterUrlProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fallback = DecoratedBox(
-      decoration: BoxDecoration(color: _derived(base, isDark)),
+      decoration: BoxDecoration(color: _derived(widget.base, isDark)),
       child: _vignetteAndSpotlight(),
     );
     if (url == null || url.isEmpty) return fallback;
@@ -36,6 +45,8 @@ class PosterBackdrop extends ConsumerWidget {
         url: url,
         isDark: isDark,
         fallback: fallback,
+        lastTrio: _lastTrio,
+        onTrio: (trio) => _lastTrio = trio,
       ),
     );
   }
@@ -48,11 +59,19 @@ class _PosterField extends StatefulWidget {
     required this.url,
     required this.isDark,
     required this.fallback,
+    this.lastTrio,
+    this.onTrio,
   });
 
   final String url;
   final bool isDark;
   final Widget fallback;
+
+  /// 上一张海报的三带色（取色未就绪时保持旧场）。
+  final List<Color>? lastTrio;
+
+  /// 取色成功回报（供外层保存 lastTrio）。
+  final ValueChanged<List<Color>>? onTrio;
 
   @override
   State<_PosterField> createState() => _PosterFieldState();
@@ -66,6 +85,7 @@ class _PosterFieldState extends State<_PosterField> {
     super.initState();
     PosterPalette.extractTrioBottom(widget.url).then((trio) {
       if (mounted && trio != null && trio.length == 3) {
+        widget.onTrio?.call(trio);
         setState(() => _trio = trio);
       }
     });
@@ -73,7 +93,8 @@ class _PosterFieldState extends State<_PosterField> {
 
   @override
   Widget build(BuildContext context) {
-    final trio = _trio;
+    // 698 N48：取色未就绪 → 保持旧场（无跳变）；旧场也无 → 回退平色。
+    final trio = _trio ?? widget.lastTrio;
     if (trio == null) return widget.fallback;
     // 顶段 = 底缘衔接色（与轮播交界同色）→ 中主色 → 底深调色。
     final colors = [

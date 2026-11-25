@@ -45,13 +45,11 @@ void main() {
     await _pump(tester, platform: TargetPlatform.android);
     expect(find.byKey(const ValueKey('navBarStyleEntry')), findsOneWidget,
         reason: '手机布局（底部导航生效处）显示');
-    // 排序：外观模式（N41 插入）→ 导航栏样式（N36 拍板紧随轮播区）。
+    // N48：外观模式行已删（只留暗版）——导航栏样式行紧随轮播区下方。
     final carouselY = tester.getTopLeft(find.text('首页轮播')).dy;
     final navY = tester.getTopLeft(find.text('导航栏样式')).dy;
-    final appearanceY = tester.getTopLeft(find.text('外观模式')).dy;
-    expect(appearanceY, greaterThan(carouselY), reason: '外观模式在轮播下方');
-    expect(navY, greaterThan(appearanceY),
-        reason: '导航栏样式紧随外观模式下方');
+    expect(navY, greaterThan(carouselY), reason: '导航栏样式紧随轮播区下方');
+    expect(find.text('外观模式'), findsNothing, reason: 'N48 外观模式行已删');
     debugDefaultTargetPlatformOverride = null;
   });
 

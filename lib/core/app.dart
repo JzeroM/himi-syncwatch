@@ -19,9 +19,7 @@ class HimiSyncApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    // 698 N43：明暗三档（经典/深色/跟随系统）。
-    final appearanceMode =
-        ref.watch(settingsProvider.select((s) => s.appearanceMode));
+    //（698 N48：删亮版只留暗版——恒深色主题，现有暗版观感不变。）
 
     // 玻璃参数实时调节：设置页滑杆改值 → theme 重建 → 全部玻璃面更新
     final glassTuning = ref.watch(glassTuningProvider);
@@ -73,12 +71,8 @@ class HimiSyncApp extends ConsumerWidget {
               ),
             );
           },
-          themeMode: switch (appearanceMode) {
-            'light' => ThemeMode.light,
-            'dark' => ThemeMode.dark,
-            _ => ThemeMode.system, // 698 N43：三档
-          },
-          theme: _buildHimiTheme(Brightness.light),
+          // 698 N48：删亮版只留暗版——恒深色。
+          themeMode: ThemeMode.dark,
           darkTheme: _buildHimiTheme(Brightness.dark),
           routerConfig: router,
         ),

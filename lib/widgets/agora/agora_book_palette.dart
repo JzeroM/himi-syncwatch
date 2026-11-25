@@ -49,6 +49,57 @@ class AgoraBookPalette {
 
   static const Color defaultAccent = Color(0xFF6366F1);
 
+  /// 698 N48：**书皮跟随背景色**（暗基调 + 背景色相派生 + 金点缀调和）：
+  /// 皮革 = 背景色调调暗深皮革（L 0.14、S 钳 0.45）；烫字 = 暖金基
+  /// 向背景色相调和 25%（金不孤立、与背景同氛围）；纸页同色相深纸；
+  /// 内页文字米金；丝带酒红点睛。memo 同 tone 不重算（687 防重建）。
+  static AgoraBookPalette fromTone(Color? tone) {
+    if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
+    final src = HSLColor.fromColor(tone ?? defaultAccent);
+    // 皮革：背景色相深皮革。
+    final leather = HSLColor.fromAHSL(
+      1,
+      src.hue,
+      src.saturation.clamp(0.15, 0.45),
+      0.14,
+    ).toColor();
+    // 烫金调和：暖金基向背景色相 25%。
+    Color goldMix(Color gold, double l, double sat) {
+      final target = HSLColor.fromAHSL(1, src.hue, sat, l).toColor();
+      return Color.lerp(gold, target, 0.25)!;
+    }
+
+    final palette = AgoraBookPalette(
+      leatherLight: _shift(leather, lightness: 0.07, saturation: -0.02),
+      leather: leather,
+      leatherDark: _shift(leather, lightness: -0.075, saturation: 0.02),
+      leatherWorn: _shift(leather, lightness: 0.17, saturation: -0.18),
+      foil: goldMix(const Color(0xFFD4AF37), 0.72, 0.45),
+      foilBright: goldMix(const Color(0xFFE8C87A), 0.80, 0.40),
+      foilDim: goldMix(const Color(0xFFB9A77E), 0.55, 0.25),
+      paperLight: _shift(leather, lightness: 0.10, saturation: -0.05),
+      paper: _shift(leather, lightness: 0.06, saturation: -0.06),
+      paperDark: _shift(leather, lightness: 0.02, saturation: -0.07),
+      paperEdge: _shift(leather, lightness: 0.22, saturation: -0.15),
+      pageBack: _shift(leather, lightness: 0.03, saturation: -0.07),
+      ink: const Color(0xFFEDE3C8), // 内页文字米金
+      mutedInk: goldMix(const Color(0xFFB9A77E), 0.62, 0.20),
+      ribbon: const Color(0xFF8E3F37), // 丝带酒红点睛
+    );
+    _memoTone = tone;
+    _memoPalette = palette;
+    return palette;
+  }
+
+  static Color? _memoTone;
+  static AgoraBookPalette? _memoPalette;
+
+  /// 清 memo（测试用）。
+  static void debugResetMemo() {
+    _memoTone = null;
+    _memoPalette = null;
+  }
+
   /// 698 N46：**黑金书皮**（暗版）——近黑皮革 + 香槟/亮金烫字、
   /// 深色纸页金字（书皮不跟主题色，明暗固定）。
   static const AgoraBookPalette blackGold = AgoraBookPalette(

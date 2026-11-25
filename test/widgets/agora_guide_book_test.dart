@@ -25,7 +25,7 @@ Future<void> _pumpBook(
             width: 390,
             child: AgoraGuideBook(
               onImageTap: onImageTap,
-              themeColor: themeColor,
+              tone: themeColor,
               extraPageBuilder: extraPageBuilder,
             ),
           ),
@@ -263,18 +263,35 @@ void main() {
     expect(tapped, 'assets/images/agora_step1.png');
   });
 
-  testWidgets('封面为明暗固定书皮（亮白金），不随主题色', (tester) async {
-    // N46：书皮明暗固定（亮版白金），不跟主题色。
-    await _pumpBook(tester, themeColor: const Color(0xFFEC4899));
+  testWidgets('封面书皮跟随背景色调（N48 fromTone）', (tester) async {
+    // N48：书皮跟随背景色（暗基调 + 背景色相派生 + 金点缀）。
+    const tone = Color(0xFFEC4899);
+    await _pumpBook(tester, themeColor: tone);
 
     expect(_coverGradient(tester).colors,
-        contains(AgoraBookPalette.whiteGold.leather));
+        contains(AgoraBookPalette.fromTone(tone).leather));
 
-    // 换主题色封面不变（白金锁定）。
-    await _pumpBook(tester, themeColor: const Color(0xFF10B981));
+    // 换背景色调封面跟随变化。
+    const otherTone = Color(0xFF10B981);
+    await _pumpBook(tester, themeColor: otherTone);
 
     expect(_coverGradient(tester).colors,
-        contains(AgoraBookPalette.whiteGold.leather));
+        contains(AgoraBookPalette.fromTone(otherTone).leather));
+  });
+
+  test('N48 书皮 fromTone：烫字/皮革对比 ≥0.35（可读性守卫）', () {
+    for (final tone in const [
+      Color(0xFFEC4899),
+      Color(0xFF10B981),
+      Color(0xFF3B82F6),
+      null,
+    ]) {
+      final p = AgoraBookPalette.fromTone(tone);
+      final foilL = HSLColor.fromColor(p.foil).lightness;
+      final leatherL = HSLColor.fromColor(p.leather).lightness;
+      expect(foilL - leatherL, greaterThanOrEqualTo(0.35),
+          reason: '烫字比皮革亮 ≥0.35（tone=$tone）');
+    }
   });
 
   testWidgets('做旧纸张与书页纹理可渲染', (tester) async {

@@ -117,6 +117,38 @@ void main() {
     expect(sw.duration, const Duration(milliseconds: 600));
   });
 
+  testWidgets('N48 保持旧场：新海报取色未就绪时不闪平色', (tester) async {
+    await tester.pumpWidget(_app(isDark: true));
+    await _setUrl(tester, 'https://old/p.jpg');
+    // 旧场就绪（黄顶衔接色）。
+    LinearGradient? fieldOf() => _layers(tester)
+        .map((l) => (l.decoration! as BoxDecoration).gradient)
+        .whereType<LinearGradient>()
+        .firstOrNull;
+    expect(fieldOf(), isNotNull, reason: '旧场已渲染');
+
+    // 切新海报 + 挂起取色（loader 慢）——未就绪期间应保持旧场。
+    PosterPalette.debugImageLoader = (url, {headers}) async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      return _bandImage();
+    };
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(PosterBackdrop)));
+    container.read(heroPosterUrlProvider.notifier).state = 'https://new/p.jpg';
+    await tester.pump();
+
+    // 交叉淡化进行中（旧场淡出 + 新 field lastTrio 保持旧色）。
+    final mid = fieldOf();
+    expect(mid, isNotNull, reason: 'N48 取色未就绪保持旧场（不闪平色）');
+    expect(HSLColor.fromColor(mid!.colors.first).hue,
+        inInclusiveRange(35, 65),
+        reason: '仍为旧场衔接色（黄带）');
+
+    // drain 慢 loader 的 pending timer（fake async 200ms delayed）。
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+  });
+
   testWidgets('暗角聚光层叠于色场之上（取色态同构）', (tester) async {
     await tester.pumpWidget(_app(isDark: true));
     await _setUrl(tester, 'https://d/p.jpg');

@@ -274,9 +274,10 @@ void main() {
       expect(build, isNot(contains('ColorTween(')));
     });
 
-    test('F2 themeColor 变化才重建 tween', () {
+    test('F2 tone（背景色调）变化才重建 tween', () {
       final body = extract(guideBook, 'void didUpdateWidget(');
-      expect(body, contains('old.themeColor != widget.themeColor'));
+      expect(body, contains('old.tone != widget.tone'),
+          reason: 'N48：书皮跟背景色调——tone 变化才重建');
     });
 
     test('F3 书本包 RepaintBoundary（隔离重绘）', () {

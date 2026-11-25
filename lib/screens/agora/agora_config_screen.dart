@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/agora_config_model.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_config_page.dart';
@@ -96,7 +97,6 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
     // 防御性：声网页在 TV 顶栏被隐藏（当前不可达），但表单字段仍
     // 统一屏蔽焦点（遥控器无输入法）
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
-    final themeColor = ref.watch(settingsProvider.select((s) => s.themeColor));
 
     // 切 tab 离开本页（v1.1.243）：未点保存的输入一律丢弃，
     // 输入框还原为已保存值；已配置时收起表单。
@@ -136,7 +136,7 @@ class _AgoraConfigScreenState extends ConsumerState<AgoraConfigScreen> {
             constraints: const BoxConstraints(maxWidth: 540),
             child: AgoraGuideBook(
               resetSignal: _bookReset,
-              themeColor: themeColor == null ? null : Color(themeColor),
+              tone: ref.watch(heroToneProvider),
               onImageTap: (image) => _showFullImage(context, image),
               extraPageBuilder: (context, palette, index, total) {
                 return AgoraBookConfigPage(

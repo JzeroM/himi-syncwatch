@@ -118,7 +118,7 @@ void main() {
       expect(s.blur, glassDefault('glassBlur'));
       expect(s.blur, 4, reason: '磨砂默认 4');
       expect(s.thickness, glassDefault('glassThickness'));
-      expect(s.thickness, 28, reason: '厚度默认 28');
+      expect(s.thickness, 18, reason: 'N48 厚度默认 18');
       expect(s.saturation, glassDefault('glassSaturation'));
       expect(s.saturation, 1.7);
       expect(s.chromaticAberration, glassDefault('glassChromatic'));
@@ -253,9 +253,10 @@ void main() {
       expect(GlassIosStandard.blur, lessThan(blurSpec.defaultValue));
       expect(
           GlassIosStandard.thickness,
-          lessThan(glassParamSpecs
+          lessThanOrEqualTo(glassParamSpecs
               .firstWhere((s) => s.key == 'glassThickness')
-              .defaultValue));
+              .defaultValue),
+          reason: 'N48：iOS 与安卓统一 18（折弯平滑）');
       expect(
           GlassIosStandard.lightIntensity,
           lessThan(glassParamSpecs

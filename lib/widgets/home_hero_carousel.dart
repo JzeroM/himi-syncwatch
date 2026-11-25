@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/utils/motion.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
 import 'package:himi_syncwatch/models/media_item.dart';
@@ -231,6 +232,13 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
   void _advance() {
     if (!mounted || widget.items.length < 2) return;
     final next = (_index + 1) % widget.items.length;
+    // 698 N48：预取下一张海报色（三带取色 + 首色双暖缓存）——切换瞬间
+    // 缓存命中，背景色场与轮播同步（消除「下方背景是上一张」）。
+    final nextUrl = widget.items[next].imageUrl;
+    if (nextUrl != null && nextUrl.isNotEmpty) {
+      PosterPalette.extractTrioBottom(nextUrl);
+      PosterPalette.extract(nextUrl);
+    }
     widget.controller.animateToPage(
       next,
       duration: const Duration(milliseconds: 420),

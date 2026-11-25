@@ -257,8 +257,8 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('指南书封面为明暗固定书皮（亮白金），不随主题色', (tester) async {
-    // N46：书皮明暗固定（亮版白金），不跟主题色。
+  testWidgets('指南书封面跟随背景色调（N48 fromTone）', (tester) async {
+    // N48：书皮跟随背景色——tone 源 heroToneProvider（未设走默认派生）。
     await _pumpScreen(
       tester,
       settings: const AppSettings(themeColor: 0xFFEC4899),
@@ -272,8 +272,8 @@ void main() {
 
     expect(
       gradient.colors,
-      contains(AgoraBookPalette.whiteGold.leather),
-      reason: '亮版白金书皮（不随主题色）',
+      contains(AgoraBookPalette.fromTone(null).leather),
+      reason: 'N48 书皮跟随背景色调（默认色派生，不跟主题色）',
     );
   });
 
