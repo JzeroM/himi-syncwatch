@@ -80,8 +80,10 @@ void main() {
         reason: 'rim 只合成 hairline 核心（1.5 → 1.2，无 haloBand 扩散）');
     expect(frag.contains('(keyHighlight + kickHighlight) * 0.4'), isTrue,
         reason: '白色镜面瓣 ×0.4 → 边缘是柔和微光不是白框');
-    expect(frag.contains('0.88 : standardEdgeAlpha'), isTrue,
-        reason: '边缘 alpha 0.95 → 0.88，不再近乎实心');
+    expect(frag.contains('1.0 : standardEdgeAlpha'), isTrue,
+        reason: 'N51 透镜替换式合成：边缘 alpha 1.0（不透底，消重影）');
+    expect(frag.contains('1.0 : standardBaseAlpha'), isTrue,
+        reason: 'N51 透镜替换式合成：baseAlpha 1.0（滴内纯折射像）');
     expect(
       frag.contains('borderMask * 0.5 * clamp(uAmbientRim * 3.0'),
       isTrue,

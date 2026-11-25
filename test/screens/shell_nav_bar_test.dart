@@ -315,10 +315,10 @@ void main() {
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
     // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动中性白微光；
     // glow/ambient 收低弱化白色边框感；edgeAbsorption 收低淡化边缘暗带
-    expect(lens.settings.ambientRim, 0.10,
-        reason: 'N48：弱化边缘亮线（「两道杠」主因）');
-    expect(lens.settings.glowIntensity, 0.8, reason: 'N48：光晕再收敛，折弯平滑');
-    expect(lens.settings.ambientStrength, 0.4, reason: '内壁白光提亮收敛');
+    expect(lens.settings.ambientRim, 0.22,
+        reason: 'N52：圆润柔亮环（参考图柔和渐变亮环）');
+    expect(lens.settings.glowIntensity, 1.1, reason: 'N52：菲涅尔光晕圆润包裹');
+    expect(lens.settings.ambientStrength, 0.55, reason: 'N52：体内通透明亮');
     expect(lens.settings.edgeAbsorption, 0.06, reason: 'N48：边缘暗带再淡化');
     expect(lens.edgeZone, 20, reason: '折射范围默认 20（设置滑杆 20~24，round-7）');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,

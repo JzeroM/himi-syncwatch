@@ -1,5 +1,7 @@
-import 'dart:typed_data';
+import 'dart:async';
 import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,17 +10,38 @@ import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
 
-/// 698 N50：纯三带色场（7 段氛围编排、原色、无模糊/无暗角）守卫。
-Future<ui.Image> _bandImage() async {
-  // 10×10 三带三色（floor 半开）：y9 黄 / y7-8 红 / y6 蓝（带外黑）。
+/// 测试用图片 provider（可控就绪时机——保持旧场守卫）。
+class _FakeImageProvider extends ImageProvider<_FakeImageProvider> {
+  _FakeImageProvider(this.image, {this.completer});
+
+  final ui.Image image;
+
+  /// 慢就绪：非 null 时须手动 complete 才出帧。
+  final Completer<ImageInfo>? completer;
+
+  @override
+  Future<_FakeImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_FakeImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+      _FakeImageProvider key, ImageDecoderCallback decode) {
+    if (completer != null) {
+      return OneFrameImageStreamCompleter(completer!.future);
+    }
+    return OneFrameImageStreamCompleter(
+      SynchronousFuture<ImageInfo>(ImageInfo(image: image)),
+    );
+  }
+}
+
+Future<ui.Image> _posterImage() async {
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder);
-  canvas.drawRect(const Rect.fromLTWH(0, 0, 10, 10), Paint()..color = const Color(0xFF000000));
-  canvas.drawRect(const Rect.fromLTWH(0, 6, 10, 1), Paint()..color = const Color(0xFF1E2878));
-  canvas.drawRect(const Rect.fromLTWH(0, 7, 10, 2), Paint()..color = const Color(0xFFC83C32));
-  canvas.drawRect(const Rect.fromLTWH(0, 9, 10, 1), Paint()..color = const Color(0xFFDCB428));
+  canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 16, 24), Paint()..color = const Color(0xFFCC4422));
   final picture = recorder.endRecording();
-  final image = await picture.toImage(10, 10);
+  final image = await picture.toImage(16, 24);
   picture.dispose();
   return image;
 }
@@ -32,14 +55,6 @@ Widget _app({required bool isDark}) => ProviderScope(
       ),
     );
 
-List<DecoratedBox> _layers(WidgetTester tester) => tester
-    .widgetList<DecoratedBox>(find.descendant(
-      of: find.byType(PosterBackdrop),
-      matching: find.byType(DecoratedBox),
-    ))
-    .toList();
-
-/// 测试内写入海报 URL → 推进取色异步链（toImage 真异步须 runAsync）。
 Future<void> _setUrl(WidgetTester tester, String url) async {
   final container =
       ProviderScope.containerOf(tester.element(find.byType(PosterBackdrop)));
@@ -51,90 +66,90 @@ Future<void> _setUrl(WidgetTester tester, String url) async {
 }
 
 void main() {
+  final fake = <String, _FakeImageProvider>{};
+
   setUp(() {
     PosterPalette.debugReset();
-    PosterPalette.debugImageLoader = (url, {headers}) => _bandImage();
+    fake.clear();
   });
   tearDown(PosterPalette.debugReset);
 
-  testWidgets('回退态（无海报 URL）：纯平色基底（N50 极简，无暗角聚光）',
-      (tester) async {
+  testWidgets('回退态（无海报 URL）：纯平色基底（TV 拍板不变）', (tester) async {
     await tester.pumpWidget(_app(isDark: true));
-
-    final layers = _layers(tester);
-    expect(layers, hasLength(1), reason: 'N50 极简：仅平色单层');
-    final base = layers.first.decoration! as BoxDecoration;
-    expect(base.color, isNotNull);
-    expect(base.gradient, isNull);
+    expect(find.byType(ImageFiltered), findsNothing);
+    final box = tester
+        .widgetList<DecoratedBox>(find.descendant(
+          of: find.byType(PosterBackdrop),
+          matching: find.byType(DecoratedBox),
+        ))
+        .first
+        .decoration! as BoxDecoration;
+    expect(box.color, isNotNull, reason: '回退平色');
+    expect(box.gradient, isNull);
   });
 
-  testWidgets('取色态：7 段氛围色场 + 顶段=底缘原色（零分割）', (tester) async {
+  testWidgets('N51 模糊氛围场：降采样 + blur + 梯度压暗层', (tester) async {
+    final image = await _posterImage();
+    debugAmbientImageProvider = (url) =>
+        fake[url] ??= _FakeImageProvider(image);
     await tester.pumpWidget(_app(isDark: true));
     await _setUrl(tester, 'https://a/p.jpg');
 
-    final field = _layers(tester)
+    // 降采样氛围场：ResizeImage（宽 24）+ blur + ColorFiltered。
+    expect(find.byType(ImageFiltered), findsWidgets, reason: '轻 blur 抹细节');
+    expect(find.byType(ColorFiltered), findsWidgets, reason: '降饱和 ×0.85');
+    final img = tester.widget<Image>(find.byType(Image).first);
+    expect(img.image, isA<ResizeImage>(), reason: '降采样解码（宽 24 抹细节）');
+    final resize = img.image as ResizeImage;
+    expect(resize.width, 24, reason: '解码级局部像素加权平均');
+
+    // 梯度压暗层（顶部受光 → 底部沉暗）。
+    final gradients = tester
+        .widgetList<DecoratedBox>(find.descendant(
+          of: find.byType(PosterBackdrop),
+          matching: find.byType(DecoratedBox),
+        ))
         .map((l) => (l.decoration! as BoxDecoration).gradient)
         .whereType<LinearGradient>()
-        .firstOrNull;
-    expect(field, isNotNull, reason: '色场渲染');
-    expect(field!.colors, hasLength(7), reason: 'N50 七段氛围编排');
-    expect(field.stops, orderedEquals(<double>[0.0, 0.08, 0.28, 0.48, 0.70, 0.88, 1.0]),
-        reason: '氛围节奏锁');
-
-    // 零分割：顶段 = 底缘带（黄）原色（无派生、无混色）。
-    final top = field.colors.first;
-    expect(HSLColor.fromColor(top).hue, inInclusiveRange(35, 65),
-        reason: '顶段 = 底缘黄带（同源）');
-    // 原色保真：无混黑/混白（饱和与原带一致量级）。
-    expect(HSLColor.fromColor(top).saturation, greaterThan(0.5),
-        reason: 'N50 原色鲜活（无派生压暗）');
+        .toList();
+    expect(gradients, isNotEmpty, reason: '梯度压暗层在');
+    final g = gradients.first;
+    expect(g.colors.first.computeLuminance(),
+        greaterThan(g.colors.last.computeLuminance()),
+        reason: '顶部受光亮于底部（明暗流动 + 白字可读）');
+    debugAmbientImageProvider = null;
   });
 
-  testWidgets('N50 极简：无模糊层无暗角层（ImageFiltered/径向渐变为零）',
-      (tester) async {
-    await tester.pumpWidget(_app(isDark: true));
-    await _setUrl(tester, 'https://d/p.jpg');
-
-    expect(find.byType(ImageFiltered), findsNothing, reason: '无模糊氛围层');
-    final radial = _layers(tester)
-        .map((l) => (l.decoration! as BoxDecoration).gradient)
-        .whereType<RadialGradient>()
-        .length;
-    expect(radial, 0, reason: '无暗角聚光');
-  });
-
-  testWidgets('N48 保持旧场：新海报取色未就绪时不闪平色', (tester) async {
+  testWidgets('N51 保持旧场：新图就绪前不换场', (tester) async {
+    final image = await _posterImage();
+    debugAmbientImageProvider = (url) =>
+        fake[url] ??= _FakeImageProvider(image);
     await tester.pumpWidget(_app(isDark: true));
     await _setUrl(tester, 'https://old/p.jpg');
-    LinearGradient? fieldOf() => _layers(tester)
-        .map((l) => (l.decoration! as BoxDecoration).gradient)
-        .whereType<LinearGradient>()
-        .firstOrNull;
-    expect(fieldOf(), isNotNull, reason: '旧场已渲染');
+    expect(find.byType(AnimatedSwitcher), findsOneWidget);
 
-    PosterPalette.debugImageLoader = (url, {headers}) async {
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      return _bandImage();
-    };
+    // 新 URL 慢就绪（手动 complete）——未就绪期间保持旧场。
+    final slow = Completer<ImageInfo>();
+    fake['https://new/p.jpg'] = _FakeImageProvider(image, completer: slow);
     final container =
         ProviderScope.containerOf(tester.element(find.byType(PosterBackdrop)));
     container.read(heroPosterUrlProvider.notifier).state = 'https://new/p.jpg';
     await tester.pump();
-
-    final mid = fieldOf();
-    expect(mid, isNotNull, reason: 'N48 取色未就绪保持旧场（不闪平色）');
-    expect(HSLColor.fromColor(mid!.colors.first).hue, inInclusiveRange(35, 65),
-        reason: '仍为旧场衔接色（黄带）');
-
-    // drain 慢 loader 的 pending timer（fake async 200ms delayed）。
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)));
     await tester.pump();
+
+    final sw = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+    expect(sw.child, isNotNull, reason: '保持旧场（不闪空白）');
+
+    // 就绪后切换完成（drain）。
+    slow.complete(ImageInfo(image: image));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 650));
+    debugAmbientImageProvider = null;
   });
 
-  testWidgets('轮播切换交叉淡化：AnimatedSwitcher 600ms', (tester) async {
-    await tester.pumpWidget(_app(isDark: true));
-    await _setUrl(tester, 'https://c/p.jpg');
-    final sw = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
-    expect(sw.duration, const Duration(milliseconds: 600));
+  test('预热函数：precacheAmbientPoster 可用', () {
+    precacheAmbientPoster('https://warm/p.jpg');
   });
 }

@@ -1,16 +1,22 @@
+import 'dart:ui' as ui;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
-import 'package:himi_syncwatch/services/poster_palette.dart';
 
-/// 698 N50 纯三带色场背景（极简）：
-/// 海报底部垂直三带取色（[PosterPalette.extractTrioBottom]）→ **7 段
-/// 氛围编排**渐变（顶部呼吸 → 中部饱满 → 底部沉稳）。
+/// 698 N51 背景 = 当前轮播图**高斯模糊氛围场**（细节全抹）：
+/// 海报降采样解码（宽 24px——解码级局部像素加权平均）→ 放大铺全屏
+/// （双线性再平均）+ 轻 blur σ10——细节完全抹掉、只剩大色块明暗流动
+/// （afusekt 参考图云雾氛围本源）。
 ///
-/// 零分割：顶段 0.00 = 底缘带取色**原色**（与轮播底部渐隐终点完全一致）。
-/// 无明暗派生（原色鲜活）、无模糊层、无暗角聚光（极简，GPU≈0）。
-/// 轮播切换交叉淡化 600ms；取色未就绪保持旧场（不闪平色）。
-/// 首页与非首页共用（main_shell/app builder 全局层一处渲染）。
+/// **梯度压暗**（零分割关键）：顶部交界带几乎不压（混黑 ~8%，与轮播
+/// 底缘同明度溶解）→ 往下渐增到底部 ~30%——明暗流动光感（顶部受光/
+/// 底部沉暗）+ 白字可读（中下部 L≤0.45）。
+///
+/// 降饱和 ×0.85（背景退后不抢戏）；同源零分割（与轮播同一张海报 +
+/// 底部渐隐带溶解）；轮播切换 600ms 交叉淡化；新图就绪前保持旧场。
+/// 无海报 URL 回退平色（TV 拍板不变）。
 class PosterBackdrop extends ConsumerStatefulWidget {
   const PosterBackdrop({super.key, required this.base});
 
@@ -22,8 +28,8 @@ class PosterBackdrop extends ConsumerStatefulWidget {
 }
 
 class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
-  /// 最近一次成功的三带取色——新海报取色未就绪时保持旧场。
-  List<Color>? _lastTrio;
+  /// 当前已就绪的海报 URL（图片解码完成才切换——保持旧场）。
+  String? _readyUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -33,101 +39,93 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
       child: const SizedBox.expand(),
     );
     if (url == null || url.isEmpty) return fallback;
+
+    // 新图就绪检测：ImageStream resolve 出首帧后才切（保持旧场）。
+    if (url != _readyUrl) {
+      final provider = _ambientProvider(url);
+      final stream = provider.resolve(const ImageConfiguration());
+      late ImageStreamListener listener;
+      listener = ImageStreamListener((_, __) {
+        stream.removeListener(listener);
+        if (mounted) setState(() => _readyUrl = url);
+      }, onError: (_, __) {
+        stream.removeListener(listener);
+      });
+      stream.addListener(listener);
+    }
+
+    final shown = _readyUrl;
+    if (shown == null) return fallback;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 600),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
-      child: _PosterField(
-        key: ValueKey(url),
-        url: url,
-        fallback: fallback,
-        lastTrio: _lastTrio,
-        onTrio: (trio) => _lastTrio = trio,
-      ),
+      child: _AmbientField(key: ValueKey(shown), url: shown),
     );
   }
 }
 
-class _PosterField extends StatefulWidget {
-  const _PosterField({
-    super.key,
-    required this.url,
-    required this.fallback,
-    this.lastTrio,
-    this.onTrio,
-  });
-
-  final String url;
-  final Widget fallback;
-
-  /// 上一张海报的三带色（取色未就绪时保持旧场）。
-  final List<Color>? lastTrio;
-
-  /// 取色成功回报。
-  final ValueChanged<List<Color>>? onTrio;
-
-  @override
-  State<_PosterField> createState() => _PosterFieldState();
+/// 预热背景海报图（轮播切页前调——ImageCache 解码缓存命中，切换即时）。
+void precacheAmbientPoster(String url) {
+  _ambientProvider(url).resolve(const ImageConfiguration());
 }
 
-class _PosterFieldState extends State<_PosterField> {
-  List<Color>? _trio;
+/// 测试注入（默认 null = 生产 CachedNetworkImageProvider）。
+ImageProvider Function(String url)? debugAmbientImageProvider;
 
-  @override
-  void initState() {
-    super.initState();
-    PosterPalette.extractTrioBottom(widget.url).then((trio) {
-      if (mounted && trio != null && trio.length == 3) {
-        widget.onTrio?.call(trio);
-        setState(() => _trio = trio);
-      }
-    });
-  }
+/// 降采样海报 provider（宽 24px 解码——局部像素加权平均抹细节）。
+ImageProvider _ambientProvider(String url) => ResizeImage(
+      debugAmbientImageProvider?.call(url) ?? CachedNetworkImageProvider(url),
+      width: 24,
+      allowUpscaling: true,
+    );
+
+class _AmbientField extends StatelessWidget {
+  const _AmbientField({super.key, required this.url});
+
+  final String url;
 
   @override
   Widget build(BuildContext context) {
-    final trio = _trio ?? widget.lastTrio;
-    if (trio == null) return widget.fallback;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: ambientFieldGradient(trio[0], trio[1], trio[2]),
-      ),
-      child: const SizedBox.expand(),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 降采样海报放大 + 轻模糊（细节全抹，大色块明暗流动）。
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: ColorFiltered(
+            // 降饱和 ×0.85（背景退后不抢戏）——饱和度矩阵。
+            colorFilter: const ui.ColorFilter.matrix(<double>[
+              0.9275, 0.0725, 0, 0, 0,
+              0.01075, 0.98925, 0, 0, 0,
+              0, 0.0725, 0.9275, 0, 0,
+              0, 0, 0, 1, 0,
+            ]),
+            child: Image(
+              image: _ambientProvider(url),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+        // 梯度压暗（零分割 + 明暗流动 + 白字可读）：
+        // 顶部受光微亮 → 中部渐暗 → 底部沉暗（~30%）。
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0x0FFFFFFF), // 顶部受光微亮（白 α0.06）
+                Color(0x00000000),
+                Color(0x24000000), // 中部暗 α0.14
+                Color(0x4D000000), // 底部沉暗 α0.30
+              ],
+              stops: [0.0, 0.18, 0.55, 1.0],
+            ),
+          ),
+        ),
+      ],
     );
   }
-}
-
-/// 698 N50 三带色场 7 段氛围编排（纯渐变，无派生）：
-/// `[顶衔接原色, 呼吸提明, 色彩升腾, 主色最饱满, 主色微沉, 深调, 深调收边]`。
-///
-/// 零分割关键：**0.00 段 = [edge] 原色**（与轮播底部渐隐终点同源同值）；
-/// 提亮/升腾都从 0.08 之后开始。
-Gradient ambientFieldGradient(Color edge, Color mid, Color deep) {
-  Color lift(Color c, double delta) {
-    var hsl = HSLColor.fromColor(c);
-    final l = (hsl.lightness + delta).clamp(0.0, 1.0);
-    return hsl.withLightness(l).toColor();
-  }
-
-  Color saturateUp(Color c, double delta) {
-    var hsl = HSLColor.fromColor(c);
-    final s = (hsl.saturation + delta).clamp(0.0, 1.0);
-    return hsl.withSaturation(s).toColor();
-  }
-
-  final rise = Color.lerp(edge, mid, 0.5)!;
-  return LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [
-      edge, // 0.00 底缘原色（零分割）
-      lift(edge, 0.06), // 顶部呼吸
-      saturateUp(rise, 0.08), // 色彩升腾
-      mid, // 主色最饱满
-      lift(mid, -0.08), // 主色微沉
-      deep, // 深调
-      lift(deep, -0.06), // 深调收边
-    ],
-    stops: const [0.0, 0.08, 0.28, 0.48, 0.70, 0.88, 1.0],
-  );
 }

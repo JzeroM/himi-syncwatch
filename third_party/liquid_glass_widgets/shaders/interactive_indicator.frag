@@ -435,7 +435,7 @@ vec3 bg;
   // 反射——N37 去镜面保持，这是玻璃「厚度」菲涅尔弧，酷安凸包观感）。
   float topArc = max(-surfaceNormal.y, 0.0);
   float botArc = max(surfaceNormal.y, 0.0);
-  float bumpGlow = (topArc * 1.0 + botArc * 0.55) * 0.16
+  float bumpGlow = (topArc * 1.0 + botArc * 0.55) * 0.24 // [PATCH himi] 698 N52 立体高光 0.16→0.24（圆润鼓感）
       * (0.35 + 0.65 * (radialDist * radialDist));
   
   // ==========================================================================
@@ -561,15 +561,15 @@ vec3 bg;
   // Standard mode: Provide a solid glassy body even at rest (Intensity 0), 
   // boosting it slightly when pressed.
   float standardBaseAlpha = uBaseAlphaMultiplier * mix(0.6, 1.0, uInteractionIntensity);
-  // Restore original 0.70 when background is enabled — clear glass is translucent, not frosted.
-  float baseAlpha = (uHasBackground > 0.5) ? 0.70 : standardBaseAlpha;
+  // [PATCH himi] 698 N51: 0.70 → 1.0 —— 透镜**替换式合成**（酷安同款）：
+  // 滴内纯折射像、不透底（消除原条体线直穿/原文字重影/弯折被压住）。
+  float baseAlpha = (uHasBackground > 0.5) ? 1.0 : standardBaseAlpha;
   
   // TWEAK: edgeAlpha - edge opacity (higher = more solid edges)
   // Standard mode: Keep a strong structural rim at rest to match 3D bevel.
   float standardEdgeAlpha = uEdgeAlphaMultiplier * mix(0.6, 1.0, uInteractionIntensity);
-  // [PATCH himi] 0.95 → 0.88: 边缘不再近乎实心 —— 边框感弱化，
-  // 内容透过镜片边缘依旧可见（参考图气泡无硬边框）。
-  float edgeAlpha = (uHasBackground > 0.5) ? 0.88 : standardEdgeAlpha;
+  // [PATCH himi] 698 N51: 0.88 → 1.0 —— 边缘同为折射替换（不透底）。
+  float edgeAlpha = (uHasBackground > 0.5) ? 1.0 : standardEdgeAlpha;
   
   // Blend from center to edge
   float glassAlpha = mix(baseAlpha, edgeAlpha, edgeInfluence);

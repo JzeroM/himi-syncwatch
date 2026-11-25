@@ -25,6 +25,14 @@ void main() {
     expect(r.stdout, contains('全部在位'));
   });
 
+  test('N51 透镜替换式合成（baseAlpha/edgeAlpha 1.0 不透底）', () {
+    final s = frag.readAsStringSync();
+    expect(s, contains('float baseAlpha = (uHasBackground > 0.5) ? 1.0 :'),
+        reason: 'N51：滴内纯折射替换（消重影/原线直穿）');
+    expect(s, contains('float edgeAlpha = (uHasBackground > 0.5) ? 1.0 :'),
+        reason: 'N51：边缘同为折射替换');
+  });
+
   test('N50 透镜强度 0.45（酷安对照：明显凸透镜感）', () {
     final lens = File('lib/widgets/glass/blob_lens.dart').readAsStringSync();
     expect(lens, contains('lensZoom: 0.45'),
