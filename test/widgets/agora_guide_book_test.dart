@@ -289,9 +289,36 @@ void main() {
       final p = AgoraBookPalette.fromTone(tone);
       final foilL = HSLColor.fromColor(p.foil).lightness;
       final leatherL = HSLColor.fromColor(p.leather).lightness;
-      expect(foilL - leatherL, greaterThanOrEqualTo(0.35),
-          reason: '烫字比皮革亮 ≥0.35（tone=$tone）');
+      // N49 文字回归原版固定金——对比锁原版水准 ≥0.30。
+      expect(foilL - leatherL, greaterThanOrEqualTo(0.30),
+          reason: '烫字比皮革亮 ≥0.30（原版金箔水准；tone=$tone）');
     }
+  });
+
+  test('N49 文字回归原版：固定金箔 + 墨字 + 近白装饰字', () {
+    for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
+      final p = AgoraBookPalette.fromTone(tone);
+      expect(p.foil, const Color(0xFFC2A064), reason: '烫字原版金（tone=$tone）');
+      expect(p.foilBright, const Color(0xFFE0C58C));
+      expect(p.foilDim, const Color(0xFF8D7447));
+      expect(p.ink, const Color(0xFF3B2A1C), reason: '内页墨字');
+      expect(p.mutedInk, const Color(0xFF6E5741), reason: '次文字原版棕墨');
+      // 近白装饰字（封面/书页 paperLight 文字源）。
+      expect(p.paperLight, const Color(0xFFF0DFBF), reason: '近白装饰字');
+      final plL = HSLColor.fromColor(p.paperLight).lightness;
+      expect(plL, greaterThan(0.80), reason: '白色字（近白）');
+    }
+  });
+
+  test('N49 书皮柔和 + 书页泛黄纸', () {
+    final p = AgoraBookPalette.fromTone(const Color(0xFF10B981));
+    // 皮革柔和：L∈[0.20, 0.28]（不压死）。
+    final leatherL = HSLColor.fromColor(p.leather).lightness;
+    expect(leatherL, inInclusiveRange(0.20, 0.28), reason: '皮革柔和');
+    // 书页泛黄纸（N46 前原版暖纸）。
+    expect(p.paper, const Color(0xFFE4CFA9), reason: '泛黄纸张');
+    expect(p.paperLight, const Color(0xFFF0DFBF));
+    expect(p.ink, const Color(0xFF3B2A1C), reason: '暖纸深墨字');
   });
 
   testWidgets('做旧纸张与书页纹理可渲染', (tester) async {

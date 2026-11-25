@@ -151,6 +151,7 @@ cleanup() {
 trap cleanup EXIT
 
 flutter pub get
+bash scripts/patch_glass_shader.sh
 
 build_hap() {
   flutter build hap --release --no-codesign \

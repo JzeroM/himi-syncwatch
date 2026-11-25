@@ -44,6 +44,7 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
       - run: dart pub get
+      - run: bash scripts/patch_glass_shader.sh
       - run: dart analyze lib/
 
   build-android:
@@ -154,6 +155,7 @@ jobs:
         run: chmod +x scripts/verify_sources.sh && bash scripts/verify_sources.sh
 
       - run: flutter pub get
+      - run: bash scripts/patch_glass_shader.sh
       # 650：缓存 Erika Android 预编译包 + fvp MDK SDK。
       #
       # 【为什么】两者都从 GitHub Releases 下载（实测 v1.5.70 报
@@ -365,6 +367,7 @@ jobs:
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' ios/Runner.xcodeproj/project.pbxproj
 
       - run: flutter pub get
+      - run: bash scripts/patch_glass_shader.sh
 
       - name: Run flutter build ios --release --no-codesign
         env:
@@ -447,6 +450,7 @@ jobs:
       # 仓库内 windows/ 为事实来源（HIMI 窗口标题、app_icon、插件注册由
       # flutter pub get 生成），不再用模板重建覆盖本地定制
       - run: flutter pub get
+      - run: bash scripts/patch_glass_shader.sh
       - name: Run flutter build windows --release
         shell: pwsh
         env:

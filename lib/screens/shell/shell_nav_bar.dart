@@ -303,8 +303,9 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       glassColor: Colors.white.withValues(alpha: isIOS ? 0.05 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
-      // 色散：N48 降低 1.0→0.6（减图标彩边重影，酷安对照更素）
-      chromaticAberration: 0.6,
+      // 色散：N49 真实棱镜色散（shader 柯西模型）驱动量回 1.0——
+      // 色散跟随折射梯度，弯折处「内蓝外红」彩虹环。
+      chromaticAberration: 1.0,
       refractiveIndex:
           tuning.refractiveIndex ?? glassDefault('glassRefractiveIndex'),
       // 698 N37：去镜面（lightIntensity 恒 0，无镜面高光）——玻璃观感

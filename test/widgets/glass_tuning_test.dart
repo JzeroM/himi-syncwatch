@@ -118,7 +118,7 @@ void main() {
       expect(s.blur, glassDefault('glassBlur'));
       expect(s.blur, 4, reason: '磨砂默认 4');
       expect(s.thickness, glassDefault('glassThickness'));
-      expect(s.thickness, 18, reason: 'N48 厚度默认 18');
+      expect(s.thickness, 24, reason: 'N49 厚度默认 24');
       expect(s.saturation, glassDefault('glassSaturation'));
       expect(s.saturation, 1.7);
       expect(s.chromaticAberration, glassDefault('glassChromatic'));

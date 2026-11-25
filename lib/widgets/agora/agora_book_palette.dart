@@ -56,34 +56,34 @@ class AgoraBookPalette {
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
     final src = HSLColor.fromColor(tone ?? defaultAccent);
-    // 皮革：背景色相深皮革。
+    // 皮革：背景色相**柔和**深皮革（698 N49：L 0.14 太黑 → 0.24、
+    // S 钳 0.35——带色相柔皮革，不压死）。
     final leather = HSLColor.fromAHSL(
       1,
       src.hue,
-      src.saturation.clamp(0.15, 0.45),
-      0.14,
+      src.saturation.clamp(0.15, 0.35),
+      0.24,
     ).toColor();
-    // 烫金调和：暖金基向背景色相 25%。
-    Color goldMix(Color gold, double l, double sat) {
-      final target = HSLColor.fromAHSL(1, src.hue, sat, l).toColor();
-      return Color.lerp(gold, target, 0.25)!;
-    }
+    //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
 
     final palette = AgoraBookPalette(
       leatherLight: _shift(leather, lightness: 0.07, saturation: -0.02),
       leather: leather,
       leatherDark: _shift(leather, lightness: -0.075, saturation: 0.02),
       leatherWorn: _shift(leather, lightness: 0.17, saturation: -0.18),
-      foil: goldMix(const Color(0xFFD4AF37), 0.72, 0.45),
-      foilBright: goldMix(const Color(0xFFE8C87A), 0.80, 0.40),
-      foilDim: goldMix(const Color(0xFFB9A77E), 0.55, 0.25),
-      paperLight: _shift(leather, lightness: 0.10, saturation: -0.05),
-      paper: _shift(leather, lightness: 0.06, saturation: -0.06),
-      paperDark: _shift(leather, lightness: 0.02, saturation: -0.07),
-      paperEdge: _shift(leather, lightness: 0.22, saturation: -0.15),
-      pageBack: _shift(leather, lightness: 0.03, saturation: -0.07),
-      ink: const Color(0xFFEDE3C8), // 内页文字米金
-      mutedInk: goldMix(const Color(0xFFB9A77E), 0.62, 0.20),
+      // 698 N49：**文字回归原版固定金/墨/近白**（未改主题色时的经典
+      // 文字设计）——烫字恒金箔、内页墨字、装饰近白字，不随背景色调和。
+      foil: const Color(0xFFC2A064),
+      foilBright: const Color(0xFFE0C58C),
+      foilDim: const Color(0xFF8D7447),
+      // 698 N49：书页回**泛黄纸张**（与封面分离，N46 前原版暖纸）。
+      paperLight: const Color(0xFFF0DFBF),
+      paper: const Color(0xFFE4CFA9),
+      paperDark: const Color(0xFFCDB183),
+      paperEdge: const Color(0xFFB69566),
+      pageBack: const Color(0xFFD9C098),
+      ink: const Color(0xFF3B2A1C), // 内页墨字（暖纸深墨）
+      mutedInk: const Color(0xFF6E5741),
       ribbon: const Color(0xFF8E3F37), // 丝带酒红点睛
     );
     _memoTone = tone;

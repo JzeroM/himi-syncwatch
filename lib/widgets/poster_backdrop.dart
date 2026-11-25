@@ -1,3 +1,6 @@
+import 'dart:ui' as ui;
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
@@ -111,7 +114,60 @@ class _PosterFieldState extends State<_PosterField> {
           stops: const [0.0, 0.45, 1.0],
         ),
       ),
-      child: _vignetteAndSpotlight(),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 698 N49：首页同款模糊海报氛围层（blur σ36 + 黑渐变压暗 +
+          // 垂直渐隐）——所有页背景观感 = 首页（浮块折射观感自然一致）。
+          _AmbientWash(url: widget.url),
+          _vignetteAndSpotlight(),
+        ],
+      ),
+    );
+  }
+}
+
+/// 首页同款模糊海报氛围层（与 HomeHeroBackground 同公式：同源 hero 海报
+/// blur σ36、scale 1.35、黑渐变 0.30→0.42→渐隐透明）。
+class _AmbientWash extends StatelessWidget {
+  const _AmbientWash({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+            child: Transform.scale(
+              scale: 1.35,
+              child: Image(
+                image: CachedNetworkImageProvider(url),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x4D000000), // 黑 α0.30
+                  Color(0x6B000000), // 黑 α0.42
+                  Colors.transparent,
+                  Colors.transparent,
+                ],
+                stops: [0.0, 0.5, 0.85, 1.0],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

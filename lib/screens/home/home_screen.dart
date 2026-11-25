@@ -733,12 +733,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: Colors.transparent,
             ),
           ),
-          // 轮播开启时：当前海报虚化铺满（详情页同款）
-          if (showHero)
-            HomeHeroBackground(
-              imageUrl: _heroItems[heroIndex].imageUrl,
-              heroHeight: heroHeight,
-            ),
+          //（698 N49：HomeHeroBackground 收敛——全局 PosterBackdrop 的
+          // 模糊氛围层同公式接管，防双糊；首页与其他页背景完全统一。）
           content,
         ],
       ),

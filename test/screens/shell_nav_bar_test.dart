@@ -306,11 +306,11 @@ void main() {
     // && scopeKey≠null && blur>0 —— 无 blur 则背景捕获永不启动，
     // 折射与彩虹色散全部失效（v1.1.87 根因）
     expect(lens.settings.blur, 0.01, reason: '捕获钥匙，0.01 模糊不可感知');
-    expect(lens.settings.chromaticAberration, 0.6,
-        reason: 'N48：色散降 0.6（减彩边重影，酷安对照更素）');
+    expect(lens.settings.chromaticAberration, 1.0,
+        reason: 'N49：真实棱镜色散（shader 柯西模型）驱动量 1.0');
     expect(lens.settings.lightIntensity, 0,
         reason: 'N37：去镜面（无镜面高光，靠折射形变 + 色散）');
-    expect(lens.settings.thickness, 18, reason: 'N48：镜片形变更轻（默认 28→18，滑杆仍可调）');
+    expect(lens.settings.thickness, 24, reason: 'N49：形变体感回升（默认 24，滑杆仍可调）');
     expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
     // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动中性白微光；
@@ -432,8 +432,8 @@ void main() {
     expect(effect.backgroundKey, isNotNull,
         reason: 'N40：双纹理复合——nav 主源 + body 第二源（统一微缩）');
     expect(effect.settings.blur, 0.01, reason: '拷贝态保留 blur 原值供捕获门槛判定');
-    expect(effect.settings.chromaticAberration, 0.6,
-        reason: 'N48：色散降 0.6（减彩边重影）');
+    expect(effect.settings.chromaticAberration, 1.0,
+        reason: 'N49：真实棱镜色散驱动量 1.0');
     expect(effect.settings.visibility, closeTo(1.0, 0.02),
         reason: 'visibility=activity 已淡入完成（允许微量过冲）');
     expect(effect.edgeZone, 20, reason: 'edgeZone 默认 20 透传给 shader uniform');

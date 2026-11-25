@@ -282,12 +282,7 @@ class _HomeListState extends ConsumerState<_HomeList> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (showCarousel && hero != null)
-          HomeHeroBackground(
-            imageUrl: _toHero(hero).imageUrl,
-            heroHeight: heroHeight,
-            imageBuilder: _heroImage,
-          ),
+        //（698 N49：HomeHeroBackground 收敛——全局氛围层接管，防双糊。）
         list,
       ],
     );

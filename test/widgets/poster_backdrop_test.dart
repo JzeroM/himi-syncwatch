@@ -149,6 +149,13 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('N49 模糊海报氛围层在（首页同款公式，全局统一）', (tester) async {
+    await tester.pumpWidget(_app(isDark: true));
+    await _setUrl(tester, 'https://ambient/p.jpg');
+    expect(find.byType(ImageFiltered), findsWidgets,
+        reason: 'N49 模糊氛围层（blur σ36 首页同款公式）全局渲染');
+  });
+
   testWidgets('暗角聚光层叠于色场之上（取色态同构）', (tester) async {
     await tester.pumpWidget(_app(isDark: true));
     await _setUrl(tester, 'https://d/p.jpg');
