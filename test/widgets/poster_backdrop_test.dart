@@ -173,6 +173,54 @@ void main() {
     debugAmbientImageProvider = null;
   });
 
+  test('N54 y 加权取色：下半像素权重高（上下协调根治）', () {
+    // 构造：上 5 行蓝、下 5 行红（像素 1:1）——不加权难分胜负，
+    // y 加权（下半权重高）后红（海报底缘侧）必胜出。
+    final rgba = Uint8List(10 * 10 * 4);
+    for (var y = 0; y < 10; y++) {
+      for (var x = 0; x < 10; x++) {
+        final o = (y * 10 + x) * 4;
+        final lower = y >= 5;
+        rgba[o] = lower ? 200 : 40;
+        rgba[o + 1] = lower ? 60 : 60;
+        rgba[o + 2] = lower ? 50 : 180;
+        rgba[o + 3] = 255;
+      }
+    }
+    final (dom, _) = PosterPalette.computeDominant(rgba, 10, 10);
+    // 下半红像素少但权重高（1+0.8y/h）→ 主导色向红偏移（或至少非纯蓝）。
+    final hue = HSLColor.fromColor(dom).hue;
+    final redWins = hue < 30 || hue > 330;
+    expect(redWins, isTrue,
+        reason: 'y 加权：下半（海报底缘侧）色彩胜出（上下协调）');
+  });
+
+  testWidgets('N54 邻色晕染层：辅簇对角径向柔混', (tester) async {
+    // 双色海报（上红下蓝）→ 辅簇存在 → 晕染层渲染。
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRect(const Rect.fromLTWH(0, 0, 8, 12), Paint()..color = const Color(0xFFCC4422));
+    canvas.drawRect(const Rect.fromLTWH(0, 12, 8, 12), Paint()..color = const Color(0xFF2244CC));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(8, 24);
+    picture.dispose();
+    debugAmbientImageProvider =
+        (url) => fake[url] ??= _FakeImageProvider(image);
+    await tester.pumpWidget(_app(isDark: true));
+    await _setUrl(tester, 'https://wash/p.jpg');
+
+    final radials = tester
+        .widgetList<DecoratedBox>(find.descendant(
+          of: find.byType(PosterBackdrop),
+          matching: find.byType(DecoratedBox),
+        ))
+        .map((l) => (l.decoration! as BoxDecoration).gradient)
+        .whereType<RadialGradient>()
+        .toList();
+    expect(radials, isNotEmpty, reason: 'N54 邻色晕染层（对角径向）');
+    debugAmbientImageProvider = null;
+  });
+
   test('预热函数：precacheAmbientPoster 可用', () {
     precacheAmbientPoster('https://warm/p.jpg');
   });

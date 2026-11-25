@@ -26,13 +26,14 @@ class PosterBackdrop extends ConsumerStatefulWidget {
 }
 
 class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
-  /// 取色渐变缓存（url → 渐变带色）。
-  static final Map<String, List<Color>> _fieldCache = {};
+  /// 取色渐变缓存（url → (渐变带色, 邻色晕染色)）。
+  static final Map<String, (List<Color>, Color?)> _fieldCache = {};
 
   /// 当前已就绪的海报 URL（渐变算好才切换——保持旧场）。
   String? _readyUrl;
 
-  List<Color>? get _field => _readyUrl == null ? null : _fieldCache[_readyUrl];
+  (List<Color>, Color?)? get _field =>
+      _readyUrl == null ? null : _fieldCache[_readyUrl];
 
   @override
   Widget build(BuildContext context) {
@@ -72,12 +73,16 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
       duration: const Duration(milliseconds: 600),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
-      child: _FieldMask(key: ValueKey(_readyUrl), field: field),
+      child: _FieldMask(
+        key: ValueKey(_readyUrl),
+        field: field.$1,
+        wash: field.$2,
+      ),
     );
   }
 
-  /// dominant 提取 → 同色调派生 → S 曲线 9 停点渐变带（短色弧展开）。
-  Future<List<Color>?> _extractField(ui.Image image) async {
+  /// dominant 提取 → 同色调派生 → S 曲线渐变带（短色弧展开）+ 邻色晕染色。
+  Future<(List<Color>, Color?)?> _extractField(ui.Image image) async {
     try {
       final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) return null;
@@ -107,7 +112,11 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
         }
       }
       out.add(anchorColors.last);
-      return out;
+      // 698 N54：邻色晕染色 = 辅簇同色调派生（L 提到 0.32 柔和混入）。
+      final wash = secondary == null
+          ? null
+          : PosterPalette.ambientTrio(secondary, dominant).$1;
+      return (out, wash);
     } catch (_) {
       return null;
     }
@@ -131,10 +140,13 @@ ImageProvider _ambientProvider(String url) => ResizeImage(
 
 /// dominant 同色调渐变遮罩场。
 class _FieldMask extends StatelessWidget {
-  const _FieldMask({super.key, required this.field});
+  const _FieldMask({super.key, required this.field, this.wash});
 
   /// S 曲线短色弧渐变带（11 停点）。
   final List<Color> field;
+
+  /// 698 N54：邻色晕染色（辅簇派生，右上对角小面积柔混）。
+  final Color? wash;
 
   @override
   Widget build(BuildContext context) {
@@ -155,20 +167,36 @@ class _FieldMask extends StatelessWidget {
         ),
       ),
       child: DecoratedBox(
-        // 自适应压暗（白字可读）+ 顶部微受光。
+        // 698 N54：邻色晕染（辅簇对角径向柔混，subtle 多色氛围）。
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0x0AFFFFFF), // 顶部受光微亮
-              Color.fromARGB((darkAlpha * 0.55 * 255).round(), 0, 0, 0),
-              Color.fromARGB((darkAlpha * 255).round(), 0, 0, 0),
-            ],
-            stops: const [0.0, 0.55, 1.0],
-          ),
+          gradient: wash == null
+              ? null
+              : RadialGradient(
+                  center: const Alignment(0.95, -1.05),
+                  radius: 1.15,
+                  colors: [
+                    wash!.withValues(alpha: 0.16),
+                    wash!.withValues(alpha: 0.0),
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
         ),
-        child: const SizedBox.expand(),
+        child: DecoratedBox(
+          // 自适应压暗（白字可读）+ 顶部微受光。
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0x0AFFFFFF), // 顶部受光微亮
+                Color.fromARGB((darkAlpha * 0.55 * 255).round(), 0, 0, 0),
+                Color.fromARGB((darkAlpha * 255).round(), 0, 0, 0),
+              ],
+              stops: const [0.0, 0.55, 1.0],
+            ),
+          ),
+          child: const SizedBox.expand(),
+        ),
       ),
     );
   }

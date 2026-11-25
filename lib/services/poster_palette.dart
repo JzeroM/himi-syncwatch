@@ -90,8 +90,10 @@ class PosterPalette {
     if (width <= 0 || height <= 0 || rgba.length < width * height * 4) {
       return (const Color(0xFF808080), null);
     }
-    // ① 过滤 + 收集。
-    final pts = <HSLColor>[];
+    // ① 过滤 + 收集（698 N54：y 加权——像素权重 1+0.8×y/h，越靠下
+    // 权重越高 → 主导色偏向海报下半部，与轮播底缘渐隐带天然协调，
+    // 根治「主色和海报色上下不搭」）。
+    final pts = <(HSLColor, double)>[];
     final total = width * height;
     var stride = (total / targetSamples).ceil();
     if (stride < 1) stride = 1;
@@ -103,7 +105,8 @@ class PosterPalette {
       if (hsl.lightness > 0.88) continue; // 近白剔除
       if (hsl.lightness < 0.07) continue; // 近黑剔除
       if (hsl.saturation < 0.04) continue; // 近灰剔除
-      pts.add(hsl);
+      final y = i ~/ width;
+      pts.add((hsl, 1.0 + 0.8 * y / height));
     }
     if (pts.isEmpty) return (const Color(0xFF808080), null);
 
@@ -111,7 +114,7 @@ class PosterPalette {
     const k = 6;
     final centers = <HSLColor>[];
     for (var i = 0; i < k; i++) {
-      centers.add(pts[(i * pts.length) ~/ k]);
+      centers.add(pts[(i * pts.length) ~/ k].$1);
     }
     var assigns = List<int>.filled(pts.length, 0);
     for (var iter = 0; iter < 8; iter++) {
@@ -119,7 +122,7 @@ class PosterPalette {
         var best = 0;
         var bestD = double.infinity;
         for (var c = 0; c < k; c++) {
-          final d = _hslDist(pts[i], centers[c]);
+          final d = _hslDist(pts[i].$1, centers[c]);
           if (d < bestD) {
             bestD = d;
             best = c;
@@ -127,31 +130,29 @@ class PosterPalette {
         }
         assigns[i] = best;
       }
-      // 簇均值更新（H 用圆均值）。
-      final sums = List.generate(k, (_) => <double>[0, 0, 0]);
+      // 簇均值更新（H 圆均值；**y 加权**——下半像素权重高）。
+      final sums = List.generate(k, (_) => <double>[0, 0, 0, 0]);
       for (var i = 0; i < pts.length; i++) {
         final c = assigns[i];
-        final hRad = pts[i].hue * 3.1415926535 / 180;
-        sums[c][0] += _cos(hRad);
-        sums[c][1] += _sin(hRad);
-        sums[c][2] += pts[i].lightness;
+        final w = pts[i].$2;
+        final hRad = pts[i].$1.hue * 3.1415926535 / 180;
+        sums[c][0] += _cos(hRad) * w;
+        sums[c][1] += _sin(hRad) * w;
+        sums[c][2] += pts[i].$1.lightness * w;
+        sums[c][3] += w;
       }
       for (var c = 0; c < k; c++) {
-        var n = 0;
-        for (final a in assigns) {
-          if (a == c) n++;
-        }
-        if (n == 0) continue;
+        if (sums[c][3] <= 0) continue;
         final hue = (_atan2(sums[c][1], sums[c][0]) * 180 / 3.1415926535 + 360) % 360;
-        centers[c] =
-            HSLColor.fromAHSL(1, hue, centers[c].saturation, sums[c][2] / n);
+        centers[c] = HSLColor.fromAHSL(
+            1, hue, centers[c].saturation, sums[c][2] / sums[c][3]);
       }
     }
 
-    // ③ 占比排序 → top2。
-    final counts = List<int>.filled(k, 0);
-    for (final a in assigns) {
-      counts[a]++;
+    // ③ 加权占比排序 → top2。
+    final counts = List<double>.filled(k, 0);
+    for (var i = 0; i < pts.length; i++) {
+      counts[assigns[i]] += pts[i].$2;
     }
     final order = [for (var c = 0; c < k; c++) c]
       ..sort((a, b) => counts[b].compareTo(counts[a]));
