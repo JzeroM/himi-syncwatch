@@ -307,6 +307,120 @@ class PosterPalette {
     return (base, wash);
   }
 
+  /// 测试注入（真异步解码在 fake-async 测试环境不推进）。
+  static Future<LightField?> Function(ui.Image image)? debugExtractLightField;
+
+  /// 698 N56：海报光场数据（多色调色板 + 3×3 网格光影 + 基调）。
+  static Future<LightField?> extractLightField(ui.Image image) async {
+    if (debugExtractLightField != null) return debugExtractLightField!(image);
+    // ① 多色调色板：thief 6 色 + palette 六 swatch 合并去重（4~6 色）。
+    final swatchColors = <Color>[];
+    Color? base;
+    try {
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bytes == null) return null;
+      final rgba = bytes.buffer.asUint8List();
+      final w = image.width;
+      final h = image.height;
+
+      // palette 六 swatch。
+      bool specFilter(HSLColor hsl) =>
+          hsl.lightness <= 0.88 &&
+          hsl.lightness >= 0.07 &&
+          hsl.saturation >= 0.04;
+      try {
+        final encoded = EncodedImage(bytes, width: w, height: h);
+        final full = await PaletteGenerator.fromByteData(encoded,
+            maximumColorCount: 16, filters: [specFilter]);
+        final lower = await PaletteGenerator.fromByteData(encoded,
+            region: Rect.fromLTWH(0, h / 2, w.toDouble(), h / 2),
+            maximumColorCount: 16,
+            filters: [specFilter]);
+        for (final sc in [
+          full.vibrantColor,
+          full.lightVibrantColor,
+          full.darkVibrantColor,
+          full.mutedColor,
+          full.lightMutedColor,
+          full.darkMutedColor,
+        ]) {
+          if (sc != null) swatchColors.add(sc.color);
+        }
+        base = lower.darkMutedColor?.color ??
+            lower.mutedColor?.color ??
+            lower.darkVibrantColor?.color ??
+            lower.dominantColor?.color ??
+            full.darkMutedColor?.color ??
+            full.mutedColor?.color ??
+            full.darkVibrantColor?.color ??
+            full.dominantColor?.color;
+      } catch (_) {
+        // palette 失败走 thief。
+      }
+
+      // thief 6 色并入。
+      try {
+        final top = await thief.getPaletteFromBytes(rgba, w, h, 6, 10);
+        if (top != null) {
+          for (final c in top) {
+            swatchColors.add(Color.fromARGB(255, c[0], c[1], c[2]));
+          }
+        }
+      } catch (_) {
+        // thief 失败忽略。
+      }
+
+      // 去重（色相+明度近似 12°/0.08 内视为同色）→ 上限 6 色。
+      final palette = <Color>[];
+      for (final c in swatchColors) {
+        final ch = HSLColor.fromColor(c);
+        final dup = palette.any((p) {
+          final ph = HSLColor.fromColor(p);
+          final dh = ((ch.hue - ph.hue + 540) % 360) - 180;
+          return dh.abs() < 12 && (ch.lightness - ph.lightness).abs() < 0.08;
+        });
+        if (!dup && palette.length < 6) palette.add(c);
+      }
+
+      // ② 3×3 网格光影：每格像素均色 + 亮度。
+      final grid = <(Color, double)>[];
+      for (var gy = 0; gy < 3; gy++) {
+        for (var gx = 0; gx < 3; gx++) {
+          final x0 = w * gx ~/ 3;
+          final x1 = w * (gx + 1) ~/ 3;
+          final y0 = h * gy ~/ 3;
+          final y1 = h * (gy + 1) ~/ 3;
+          var r = 0, g = 0, b = 0, n = 0;
+          for (var y = y0; y < y1; y++) {
+            for (var x = x0; x < x1; x++) {
+              final o = (y * w + x) * 4;
+              if (rgba[o + 3] < 128) continue;
+              r += rgba[o];
+              g += rgba[o + 1];
+              b += rgba[o + 2];
+              n++;
+            }
+          }
+          if (n == 0) {
+            grid.add((base ?? const Color(0xFF808080), 0.2));
+            continue;
+          }
+          final c = Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+          grid.add((c, HSLColor.fromColor(c).lightness));
+        }
+      }
+
+      if (palette.isEmpty && base != null) palette.add(base);
+      return LightField(
+        base: base ?? palette.first,
+        palette: palette.isEmpty ? [const Color(0xFF808080)] : palette,
+        grid: grid,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 清空缓存与调试注入（测试用）。
   static void debugReset() {
     _cache.clear();
@@ -728,3 +842,21 @@ class _Bucket {
 /// 亮度差，静态一次绘制（随背景铺满），玻璃折射穿出细腻织纹。
 /// 织物微粒噪点蒙层（698 N43）：确定性种子细点阵（微亮/微暗 α 低），
 /// 全局叠一层出胶片颗粒/织物细粒感——玻璃折射穿出细腻微纹理。
+
+/// 698 N56：海报光场数据——多色调色板 + 3×3 网格光影 + 基调。
+class LightField {
+  const LightField({
+    required this.base,
+    required this.palette,
+    required this.grid,
+  });
+
+  /// 基调（下半区 darkMuted——S 曲线打底源）。
+  final Color base;
+
+  /// 多色调色板（4~6 色，thief + palette 合并去重）。
+  final List<Color> palette;
+
+  /// 3×3 网格（9 格：格均色 + 亮度 0~1）。
+  final List<(Color, double)> grid;
+}

@@ -1,19 +1,20 @@
-import 'dart:ui' as ui;
-
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 
-/// 698 N53 背景 = 轮播海报 **dominant 取色渐变遮罩**（同色调暗氛围）：
-/// 海报降采样解码（宽 8px）→ [PosterPalette.computeDominant]（过滤 +
-/// K-means 6 簇最大占比簇）→ [PosterPalette.ambientTrio]（H 保留、
-/// L 压 0.11~0.18、S ×0.75 上限 0.46、深色保底）→ **S 曲线明度渐变**
-/// （顶部缓入 → 中部饱满 → 底部缓沉）+ 双色微流动 + 短色弧过渡。
+/// 698 N56 背景 = **多色海报光场**（与原海报光影一致 + 微随机）：
 ///
-/// 白字自适应压暗：按 dominant 原始亮度动态压暗（亮海报多压/暗海报
-/// 少压，白字对比恒可读）。零分割 = 轮播底部渐隐带 alpha 溶解。
+/// - 底：下半区 darkMuted 同色调派生 **S 曲线明度渐变**（L 压 0.11~0.18
+///   第一道压暗保留；**第二道自适应黑幕已删**——零分割更纯、白字由
+///   派生 L 钳 + 受光球上限保证）
+/// - 光场：3×3 网格光影（每格色+亮度）→ **9 颗大半径径向光球**——
+///   亮格→鲜色受光球（L≤0.26 保白字）、暗格→基调压暗球；位置/半径
+///   微随机抖动（种子=URL hash——同海报稳定、换海报换光场）
+/// - 观感 = 海报光影构图的放大抽象（afusekt 氛围感），每张海报不同
+///
 /// 保持旧场 / 预暖 / 600ms 交叉淡化 / TV 平色（无海报 URL 回退）。
 class PosterBackdrop extends ConsumerStatefulWidget {
   const PosterBackdrop({super.key, required this.base});
@@ -26,14 +27,13 @@ class PosterBackdrop extends ConsumerStatefulWidget {
 }
 
 class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
-  /// 取色渐变缓存（url → (渐变带色, 邻色晕染色)）。
-  static final Map<String, (List<Color>, Color?)> _fieldCache = {};
+  /// 光场缓存（url → LightField）。
+  static final Map<String, LightField> _fieldCache = {};
 
-  /// 当前已就绪的海报 URL（渐变算好才切换——保持旧场）。
+  /// 当前已就绪的海报 URL（光场算好才切换——保持旧场）。
   String? _readyUrl;
 
-  (List<Color>, Color?)? get _field =>
-      _readyUrl == null ? null : _fieldCache[_readyUrl];
+  LightField? get _field => _readyUrl == null ? null : _fieldCache[_readyUrl];
 
   @override
   Widget build(BuildContext context) {
@@ -44,14 +44,14 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
     );
     if (url == null || url.isEmpty) return fallback;
 
-    // 新图就绪检测：解码 → dominant → 渐变算好才切（保持旧场）。
+    // 新图就绪检测：解码 → 光场算好才切（保持旧场）。
     if (url != _readyUrl && !_fieldCache.containsKey(url)) {
       final provider = _ambientProvider(url);
       final stream = provider.resolve(const ImageConfiguration());
       late ImageStreamListener listener;
       listener = ImageStreamListener((info, _) {
         stream.removeListener(listener);
-        _extractField(info.image).then((field) {
+        PosterPalette.extractLightField(info.image).then((field) {
           if (mounted && field != null) {
             setState(() {
               _fieldCache[url] = field;
@@ -73,56 +73,12 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
       duration: const Duration(milliseconds: 600),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
-      child: _FieldMask(
+      child: _LightFieldMask(
         key: ValueKey(_readyUrl),
-        field: field.$1,
-        wash: field.$2,
+        field: field,
+        seedKey: _readyUrl!,
       ),
     );
-  }
-
-  /// dominant 提取 → 同色调派生 → S 曲线渐变带（短色弧展开）+ 邻色晕染色。
-  Future<(List<Color>, Color?)?> _extractField(ui.Image image) async {
-    try {
-      // 698 N55：设计调色板（palette_generator 六 swatch + color_thief
-      // 交叉验证）——基调=下半区 darkMuted（上下协调）、晕染=全图 vibrant。
-      final (dominant, secondary) =
-          await PosterPalette.extractDesignPalette(image);
-      final (top, mid, base) =
-          PosterPalette.ambientTrio(dominant, secondary);
-
-      // S 曲线明度（顶部缓入 → 中部饱满 → 底部缓沉），5 关键停点。
-      final anchorColors = <Color>[top, mid, mid, base, base];
-
-      // 短色弧展开：相邻关键停点间 HSL 短路径插 2 子点 → 11 停点。
-      final out = <Color>[];
-      for (var i = 0; i < anchorColors.length - 1; i++) {
-        final a = HSLColor.fromColor(anchorColors[i]);
-        final b = HSLColor.fromColor(anchorColors[i + 1]);
-        final dh = ((b.hue - a.hue + 540) % 360) - 180;
-        for (var t = 0; t < 3; t++) {
-          final f = t / 3;
-          out.add(HSLColor.fromAHSL(
-            1,
-            (a.hue + dh * f + 360) % 360,
-            a.saturation + (b.saturation - a.saturation) * f,
-            a.lightness + (b.lightness - a.lightness) * f,
-          ).toColor());
-        }
-      }
-      out.add(anchorColors.last);
-      // 698 N55：邻色晕染色 = vibrant 鲜色柔和提亮（L 0.32）混入。
-      final wash = secondary == null
-          ? null
-          : HSLColor.fromColor(secondary)
-              .withLightness(0.32)
-              .withSaturation(
-                  HSLColor.fromColor(secondary).saturation.clamp(0.0, 0.5))
-              .toColor();
-      return (out, wash);
-    } catch (_) {
-      return null;
-    }
   }
 }
 
@@ -134,73 +90,95 @@ void precacheAmbientPoster(String url) {
 /// 测试注入（默认 null = 生产 CachedNetworkImageProvider）。
 ImageProvider Function(String url)? debugAmbientImageProvider;
 
-/// 降采样海报 provider（宽 8px 解码——dominant 取色源）。
+/// 降采样海报 provider（宽 8px 解码——光场取色源）。
 ImageProvider _ambientProvider(String url) => ResizeImage(
       debugAmbientImageProvider?.call(url) ?? CachedNetworkImageProvider(url),
       width: 8,
       allowUpscaling: true,
     );
 
-/// dominant 同色调渐变遮罩场。
-class _FieldMask extends StatelessWidget {
-  const _FieldMask({super.key, required this.field, this.wash});
+/// 多色海报光场渲染：S 曲线底 + 9 颗随机光球。
+class _LightFieldMask extends StatelessWidget {
+  const _LightFieldMask({
+    super.key,
+    required this.field,
+    required this.seedKey,
+  });
 
-  /// S 曲线短色弧渐变带（11 停点）。
-  final List<Color> field;
-
-  /// 698 N54：邻色晕染色（辅簇派生，右上对角小面积柔混）。
-  final Color? wash;
+  final LightField field;
+  final String seedKey;
 
   @override
   Widget build(BuildContext context) {
-    final n = field.length;
-    // 白字自适应压暗：按渐变带（=dominant 派生）亮度动态定压暗强度。
-    final avgL =
-        field.map((c) => HSLColor.fromColor(c).lightness).reduce((a, b) => a + b) /
-            n;
-    // 平均 L≈0.17（spec 压暗区）→ 压暗微弱；若偏亮（保底路径）则多压。
-    final darkAlpha = (0.18 + (avgL - 0.12) * 0.9).clamp(0.08, 0.38);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: field,
-          stops: [for (var i = 0; i < n; i++) i / (n - 1)],
+    final (top, mid, base) = PosterPalette.ambientTrio(field.base, null);
+    // S 曲线三明度档 → 5 停点渐变（缓入/饱满/缓沉）。
+    final n = 5;
+    final curve = <Color>[top, mid, mid, base, base];
+
+    // 随机光球（种子=URL hash——同海报稳定）。
+    final rand = math.Random(seedKey.hashCode);
+    final avgL = field.grid.map((g) => g.$2).reduce((a, b) => a + b) /
+        field.grid.length;
+    final balls = <Widget>[];
+    for (var i = 0; i < field.grid.length; i++) {
+      final (cellColor, luma) = field.grid[i];
+      final gx = i % 3;
+      final gy = i ~/ 3;
+      // 位置：格中心 + 微随机抖动（±12% 屏）。
+      final cx = (gx + 0.5) / 3 + (rand.nextDouble() - 0.5) * 0.24;
+      final cy = (gy + 0.5) / 3 + (rand.nextDouble() - 0.5) * 0.24;
+      // 半径：0.6~1.4 屏宽大柔边（随机）。
+      final radius = 0.6 + rand.nextDouble() * 0.8;
+      final bright = luma > avgL;
+      // 受光球：鲜色派生提明（上限 L≤0.26 保白字）；阴影球：基调压暗。
+      Color ballColor;
+      double alpha;
+      if (bright) {
+        var hsl = HSLColor.fromColor(cellColor);
+        final l = (hsl.lightness * 0.4 + 0.12).clamp(0.0, 0.26); // 提明钳 0.26
+        ballColor = hsl.withLightness(l).withSaturation(hsl.saturation * 0.8).toColor();
+        alpha = 0.10 + rand.nextDouble() * 0.08;
+      } else {
+        var hsl = HSLColor.fromColor(base);
+        ballColor = hsl.withLightness((hsl.lightness * 0.75).clamp(0.0, 0.14)).toColor();
+        alpha = 0.12 + rand.nextDouble() * 0.08;
+      }
+      balls.add(
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(cx * 2 - 1, cy * 2 - 1),
+                radius: radius,
+                colors: [
+                  ballColor.withValues(alpha: alpha),
+                  ballColor.withValues(alpha: 0),
+                ],
+                stops: const [0.0, 1.0],
+              ),
+            ),
+          ),
         ),
-      ),
-      child: DecoratedBox(
-        // 698 N54：邻色晕染（辅簇对角径向柔混，subtle 多色氛围）。
-        decoration: BoxDecoration(
-          gradient: wash == null
-              ? null
-              : RadialGradient(
-                  center: const Alignment(0.95, -1.05),
-                  radius: 1.15,
-                  colors: [
-                    wash!.withValues(alpha: 0.16),
-                    wash!.withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 1.0],
-                ),
-        ),
-        child: DecoratedBox(
-          // 自适应压暗（白字可读）+ 顶部微受光。
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 底：S 曲线同色调暗渐变（第一道压暗）。
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                const Color(0x0AFFFFFF), // 顶部受光微亮
-                Color.fromARGB((darkAlpha * 0.55 * 255).round(), 0, 0, 0),
-                Color.fromARGB((darkAlpha * 255).round(), 0, 0, 0),
-              ],
-              stops: const [0.0, 0.55, 1.0],
+              colors: curve,
+              stops: [for (var i = 0; i < n; i++) i / (n - 1)],
             ),
           ),
-          child: const SizedBox.expand(),
         ),
-      ),
+        // 光场：9 颗随机光球（明暗交错，海报光影抽象）。
+        ...balls,
+      ],
     );
   }
 }
