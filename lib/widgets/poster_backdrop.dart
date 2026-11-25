@@ -4,19 +4,17 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/palette_provider.dart';
+import 'package:himi_syncwatch/services/poster_palette.dart';
 
-/// 698 N51 背景 = 当前轮播图**高斯模糊氛围场**（细节全抹）：
-/// 海报降采样解码（宽 24px——解码级局部像素加权平均）→ 放大铺全屏
-/// （双线性再平均）+ 轻 blur σ10——细节完全抹掉、只剩大色块明暗流动
-/// （afusekt 参考图云雾氛围本源）。
+/// 698 N53 背景 = 轮播海报 **dominant 取色渐变遮罩**（同色调暗氛围）：
+/// 海报降采样解码（宽 8px）→ [PosterPalette.computeDominant]（过滤 +
+/// K-means 6 簇最大占比簇）→ [PosterPalette.ambientTrio]（H 保留、
+/// L 压 0.11~0.18、S ×0.75 上限 0.46、深色保底）→ **S 曲线明度渐变**
+/// （顶部缓入 → 中部饱满 → 底部缓沉）+ 双色微流动 + 短色弧过渡。
 ///
-/// **梯度压暗**（零分割关键）：顶部交界带几乎不压（混黑 ~8%，与轮播
-/// 底缘同明度溶解）→ 往下渐增到底部 ~30%——明暗流动光感（顶部受光/
-/// 底部沉暗）+ 白字可读（中下部 L≤0.45）。
-///
-/// 降饱和 ×0.85（背景退后不抢戏）；同源零分割（与轮播同一张海报 +
-/// 底部渐隐带溶解）；轮播切换 600ms 交叉淡化；新图就绪前保持旧场。
-/// 无海报 URL 回退平色（TV 拍板不变）。
+/// 白字自适应压暗：按 dominant 原始亮度动态压暗（亮海报多压/暗海报
+/// 少压，白字对比恒可读）。零分割 = 轮播底部渐隐带 alpha 溶解。
+/// 保持旧场 / 预暖 / 600ms 交叉淡化 / TV 平色（无海报 URL 回退）。
 class PosterBackdrop extends ConsumerStatefulWidget {
   const PosterBackdrop({super.key, required this.base});
 
@@ -28,8 +26,13 @@ class PosterBackdrop extends ConsumerStatefulWidget {
 }
 
 class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
-  /// 当前已就绪的海报 URL（图片解码完成才切换——保持旧场）。
+  /// 取色渐变缓存（url → 渐变带色）。
+  static final Map<String, List<Color>> _fieldCache = {};
+
+  /// 当前已就绪的海报 URL（渐变算好才切换——保持旧场）。
   String? _readyUrl;
+
+  List<Color>? get _field => _readyUrl == null ? null : _fieldCache[_readyUrl];
 
   @override
   Widget build(BuildContext context) {
@@ -40,28 +43,74 @@ class _PosterBackdropState extends ConsumerState<PosterBackdrop> {
     );
     if (url == null || url.isEmpty) return fallback;
 
-    // 新图就绪检测：ImageStream resolve 出首帧后才切（保持旧场）。
-    if (url != _readyUrl) {
+    // 新图就绪检测：解码 → dominant → 渐变算好才切（保持旧场）。
+    if (url != _readyUrl && !_fieldCache.containsKey(url)) {
       final provider = _ambientProvider(url);
       final stream = provider.resolve(const ImageConfiguration());
       late ImageStreamListener listener;
-      listener = ImageStreamListener((_, __) {
+      listener = ImageStreamListener((info, _) {
         stream.removeListener(listener);
-        if (mounted) setState(() => _readyUrl = url);
+        _extractField(info.image).then((field) {
+          if (mounted && field != null) {
+            setState(() {
+              _fieldCache[url] = field;
+              _readyUrl = url;
+            });
+          }
+        });
       }, onError: (_, __) {
         stream.removeListener(listener);
       });
       stream.addListener(listener);
+    } else if (_fieldCache.containsKey(url) && url != _readyUrl) {
+      _readyUrl = url;
     }
 
-    final shown = _readyUrl;
-    if (shown == null) return fallback;
+    final field = _field;
+    if (field == null) return fallback;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 600),
       switchInCurve: Curves.easeOut,
       switchOutCurve: Curves.easeIn,
-      child: _AmbientField(key: ValueKey(shown), url: shown),
+      child: _FieldMask(key: ValueKey(_readyUrl), field: field),
     );
+  }
+
+  /// dominant 提取 → 同色调派生 → S 曲线 9 停点渐变带（短色弧展开）。
+  Future<List<Color>?> _extractField(ui.Image image) async {
+    try {
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return null;
+      final rgba = data.buffer.asUint8List();
+      final (dominant, secondary) =
+          PosterPalette.computeDominant(rgba, image.width, image.height);
+      final (top, mid, base) =
+          PosterPalette.ambientTrio(dominant, secondary);
+
+      // S 曲线明度（顶部缓入 → 中部饱满 → 底部缓沉），5 关键停点。
+      final anchorColors = <Color>[top, mid, mid, base, base];
+
+      // 短色弧展开：相邻关键停点间 HSL 短路径插 2 子点 → 11 停点。
+      final out = <Color>[];
+      for (var i = 0; i < anchorColors.length - 1; i++) {
+        final a = HSLColor.fromColor(anchorColors[i]);
+        final b = HSLColor.fromColor(anchorColors[i + 1]);
+        final dh = ((b.hue - a.hue + 540) % 360) - 180;
+        for (var t = 0; t < 3; t++) {
+          final f = t / 3;
+          out.add(HSLColor.fromAHSL(
+            1,
+            (a.hue + dh * f + 360) % 360,
+            a.saturation + (b.saturation - a.saturation) * f,
+            a.lightness + (b.lightness - a.lightness) * f,
+          ).toColor());
+        }
+      }
+      out.add(anchorColors.last);
+      return out;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -73,59 +122,54 @@ void precacheAmbientPoster(String url) {
 /// 测试注入（默认 null = 生产 CachedNetworkImageProvider）。
 ImageProvider Function(String url)? debugAmbientImageProvider;
 
-/// 降采样海报 provider（宽 24px 解码——局部像素加权平均抹细节）。
+/// 降采样海报 provider（宽 8px 解码——dominant 取色源）。
 ImageProvider _ambientProvider(String url) => ResizeImage(
       debugAmbientImageProvider?.call(url) ?? CachedNetworkImageProvider(url),
-      width: 24,
+      width: 8,
       allowUpscaling: true,
     );
 
-class _AmbientField extends StatelessWidget {
-  const _AmbientField({super.key, required this.url});
+/// dominant 同色调渐变遮罩场。
+class _FieldMask extends StatelessWidget {
+  const _FieldMask({super.key, required this.field});
 
-  final String url;
+  /// S 曲线短色弧渐变带（11 停点）。
+  final List<Color> field;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 降采样海报放大 + 轻模糊（细节全抹，大色块明暗流动）。
-        ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: ColorFiltered(
-            // 降饱和 ×0.85（背景退后不抢戏）——饱和度矩阵。
-            colorFilter: const ui.ColorFilter.matrix(<double>[
-              0.9275, 0.0725, 0, 0, 0,
-              0.01075, 0.98925, 0, 0, 0,
-              0, 0.0725, 0.9275, 0, 0,
-              0, 0, 0, 1, 0,
-            ]),
-            child: Image(
-              image: _ambientProvider(url),
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ),
+    final n = field.length;
+    // 白字自适应压暗：按渐变带（=dominant 派生）亮度动态定压暗强度。
+    final avgL =
+        field.map((c) => HSLColor.fromColor(c).lightness).reduce((a, b) => a + b) /
+            n;
+    // 平均 L≈0.17（spec 压暗区）→ 压暗微弱；若偏亮（保底路径）则多压。
+    final darkAlpha = (0.18 + (avgL - 0.12) * 0.9).clamp(0.08, 0.38);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: field,
+          stops: [for (var i = 0; i < n; i++) i / (n - 1)],
+        ),
+      ),
+      child: DecoratedBox(
+        // 自适应压暗（白字可读）+ 顶部微受光。
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0x0AFFFFFF), // 顶部受光微亮
+              Color.fromARGB((darkAlpha * 0.55 * 255).round(), 0, 0, 0),
+              Color.fromARGB((darkAlpha * 255).round(), 0, 0, 0),
+            ],
+            stops: const [0.0, 0.55, 1.0],
           ),
         ),
-        // 梯度压暗（零分割 + 明暗流动 + 白字可读）：
-        // 顶部受光微亮 → 中部渐暗 → 底部沉暗（~30%）。
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0x0FFFFFFF), // 顶部受光微亮（白 α0.06）
-                Color(0x00000000),
-                Color(0x24000000), // 中部暗 α0.14
-                Color(0x4D000000), // 底部沉暗 α0.30
-              ],
-              stops: [0.0, 0.18, 0.55, 1.0],
-            ),
-          ),
-        ),
-      ],
+        child: const SizedBox.expand(),
+      ),
     );
   }
 }

@@ -82,6 +82,137 @@ class PosterPalette {
   static final Map<String, Future<List<Color>?>> _inflight =
       <String, Future<List<Color>?>>{};
 
+  /// 698 N53：dominant 取色结果（占比最大簇 + 辅簇）。
+  ///
+  /// 过滤：剔除近白（L>0.88）、近黑（L<0.07）、近灰（S<0.04）像素；
+  /// K-means 6 簇取占比最大簇为 dominant、次大为 secondary。
+  static (Color, Color?) computeDominant(Uint8List rgba, int width, int height) {
+    if (width <= 0 || height <= 0 || rgba.length < width * height * 4) {
+      return (const Color(0xFF808080), null);
+    }
+    // ① 过滤 + 收集。
+    final pts = <HSLColor>[];
+    final total = width * height;
+    var stride = (total / targetSamples).ceil();
+    if (stride < 1) stride = 1;
+    for (var i = 0; i < total; i += stride) {
+      final o = i * 4;
+      if (rgba[o + 3] < 128) continue;
+      final hsl = HSLColor.fromColor(
+          Color.fromARGB(255, rgba[o], rgba[o + 1], rgba[o + 2]));
+      if (hsl.lightness > 0.88) continue; // 近白剔除
+      if (hsl.lightness < 0.07) continue; // 近黑剔除
+      if (hsl.saturation < 0.04) continue; // 近灰剔除
+      pts.add(hsl);
+    }
+    if (pts.isEmpty) return (const Color(0xFF808080), null);
+
+    // ② K-means 6 簇（轻量迭代——像素量小，8 轮收敛足够）。
+    const k = 6;
+    final centers = <HSLColor>[];
+    for (var i = 0; i < k; i++) {
+      centers.add(pts[(i * pts.length) ~/ k]);
+    }
+    var assigns = List<int>.filled(pts.length, 0);
+    for (var iter = 0; iter < 8; iter++) {
+      for (var i = 0; i < pts.length; i++) {
+        var best = 0;
+        var bestD = double.infinity;
+        for (var c = 0; c < k; c++) {
+          final d = _hslDist(pts[i], centers[c]);
+          if (d < bestD) {
+            bestD = d;
+            best = c;
+          }
+        }
+        assigns[i] = best;
+      }
+      // 簇均值更新（H 用圆均值）。
+      final sums = List.generate(k, (_) => <double>[0, 0, 0]);
+      for (var i = 0; i < pts.length; i++) {
+        final c = assigns[i];
+        final hRad = pts[i].hue * 3.1415926535 / 180;
+        sums[c][0] += _cos(hRad);
+        sums[c][1] += _sin(hRad);
+        sums[c][2] += pts[i].lightness;
+      }
+      for (var c = 0; c < k; c++) {
+        var n = 0;
+        for (final a in assigns) {
+          if (a == c) n++;
+        }
+        if (n == 0) continue;
+        final hue = (_atan2(sums[c][1], sums[c][0]) * 180 / 3.1415926535 + 360) % 360;
+        centers[c] =
+            HSLColor.fromAHSL(1, hue, centers[c].saturation, sums[c][2] / n);
+      }
+    }
+
+    // ③ 占比排序 → top2。
+    final counts = List<int>.filled(k, 0);
+    for (final a in assigns) {
+      counts[a]++;
+    }
+    final order = [for (var c = 0; c < k; c++) c]
+      ..sort((a, b) => counts[b].compareTo(counts[a]));
+    final dom = centers[order[0]].toColor();
+    final sec = counts[order[1]] > 0 ? centers[order[1]].toColor() : null;
+    return (dom, sec);
+  }
+
+  static double _cos(double x) {
+    // 8 阶泰勒（x∈[-π,π] 足够准）。
+    final x2 = x * x;
+    return 1 - x2 / 2 * (1 - x2 / 12 * (1 - x2 / 30 * (1 - x2 / 56 * (1 - x2 / 90))));
+  }
+
+  static double _sin(double x) {
+    final x2 = x * x;
+    return x * (1 - x2 / 6 * (1 - x2 / 20 * (1 - x2 / 42 * (1 - x2 / 72))));
+  }
+
+  static double _atan2(double y, double x) {
+    if (x.abs() > y.abs()) {
+      final t = y / x;
+      final a = t * (0.97239411 - 0.19194795 * t * t);
+      return x > 0 ? a : (y >= 0 ? a + 3.14159265 : a - 3.14159265);
+    }
+    final t = x / y;
+    final a = 1.57079633 - t * (0.97239411 - 0.19194795 * t * t);
+    return y > 0 ? a : -a;
+  }
+
+  /// K-means 距离（H 色相圆距 + L/S 加权）。
+  static double _hslDist(HSLColor a, HSLColor b) {
+    final dh = ((a.hue - b.hue + 540) % 360) - 180;
+    final dl = a.lightness - b.lightness;
+    final ds = a.saturation - b.saturation;
+    return dh * dh * 0.5 + dl * dl * 2.0 + ds * ds;
+  }
+
+  /// 698 N53：同色调暗氛围派生（spec）——H 保留、L 压 0.11~0.18、
+  /// S ×0.75 上限 0.46；深色保底（dominant L<0.12 → 提 0.16 防丢色相）。
+  /// 返回 `(top(保底/主调), mid(L0.20), base(L0.14))`；双色流动：色相
+  /// 向辅簇微移（top 15% / mid 8% / base 5%）。
+  static (Color, Color, Color) ambientTrio(Color dominant, Color? secondary) {
+    final src = HSLColor.fromColor(dominant);
+    var s = src.saturation * 0.75;
+    if (s > 0.46) s = 0.46;
+    var l = src.lightness.clamp(0.11, 0.18);
+    if (src.lightness < 0.12) l = 0.16; // 深色保底
+
+    double flowHue(double t) {
+      if (secondary == null) return src.hue;
+      final sh = HSLColor.fromColor(secondary).hue;
+      final dh = ((sh - src.hue + 540) % 360) - 180;
+      return (src.hue + dh * t + 360) % 360;
+    }
+
+    Color at(double t, double lightness) =>
+        HSLColor.fromAHSL(1, flowHue(t), s, lightness).toColor();
+    return (at(0.15, l), at(0.08, 0.20), at(0.05, 0.14));
+  }
+
   /// 清空缓存与调试注入（测试用）。
   static void debugReset() {
     _cache.clear();
