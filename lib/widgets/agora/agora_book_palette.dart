@@ -56,14 +56,8 @@ class AgoraBookPalette {
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
     final src = HSLColor.fromColor(tone ?? defaultAccent);
-    // 皮革：背景色相**柔和**深皮革（698 N49：L 0.14 太黑 → 0.24、
-    // S 钳 0.35——带色相柔皮革，不压死）。
-    final leather = HSLColor.fromAHSL(
-      1,
-      src.hue,
-      src.saturation.clamp(0.15, 0.35),
-      0.24,
-    ).toColor();
+    // 698 N50：皮革 = 背景色调**原色**（去明暗派生——与背景同色更整体）。
+    final leather = src.toColor();
     //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
 
     final palette = AgoraBookPalette(

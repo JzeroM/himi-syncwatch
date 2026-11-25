@@ -445,8 +445,8 @@ void main() {
         reason: 'N38：端帽半径动态 = 盒高/2（活动态 66 高也是真胶囊）');
     expect(effect.backgroundKey, isNotNull,
         reason: 'N40：nav 捕获主源（胶囊+图标微缩进镜片，酷安同款）');
-    expect(effect.lensZoom, closeTo(0.15, 0.001),
-        reason: 'N39：凸透镜剖面（中心放大 + 全域弯折 + 细彩边）');
+    expect(effect.lensZoom, closeTo(0.45, 0.001),
+        reason: 'N50：透镜强度 0.45（酷安对照明显凸透镜 + 轮廓彩虹环）');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 

@@ -279,20 +279,12 @@ void main() {
         contains(AgoraBookPalette.fromTone(otherTone).leather));
   });
 
-  test('N48 书皮 fromTone：烫字/皮革对比 ≥0.35（可读性守卫）', () {
-    for (final tone in const [
-      Color(0xFFEC4899),
-      Color(0xFF10B981),
-      Color(0xFF3B82F6),
-      null,
-    ]) {
-      final p = AgoraBookPalette.fromTone(tone);
-      final foilL = HSLColor.fromColor(p.foil).lightness;
-      final leatherL = HSLColor.fromColor(p.leather).lightness;
-      // N49 文字回归原版固定金——对比锁原版水准 ≥0.30。
-      expect(foilL - leatherL, greaterThanOrEqualTo(0.30),
-          reason: '烫字比皮革亮 ≥0.30（原版金箔水准；tone=$tone）');
-    }
+  test('N50 书皮皮革 = 背景色调原色（去派生）', () {
+    const tone = Color(0xFF10B981);
+    final p = AgoraBookPalette.fromTone(tone);
+    expect(p.leather, tone, reason: '皮革 = tone 原色（与背景同色）');
+    // 文字恒金箔（可读性由浮雕/描边保证，不依赖底色对比）。
+    expect(p.foil, const Color(0xFFC2A064));
   });
 
   test('N49 文字回归原版：固定金箔 + 墨字 + 近白装饰字', () {
@@ -310,11 +302,8 @@ void main() {
     }
   });
 
-  test('N49 书皮柔和 + 书页泛黄纸', () {
+  test('N49 书页泛黄纸（保持）', () {
     final p = AgoraBookPalette.fromTone(const Color(0xFF10B981));
-    // 皮革柔和：L∈[0.20, 0.28]（不压死）。
-    final leatherL = HSLColor.fromColor(p.leather).lightness;
-    expect(leatherL, inInclusiveRange(0.20, 0.28), reason: '皮革柔和');
     // 书页泛黄纸（N46 前原版暖纸）。
     expect(p.paper, const Color(0xFFE4CFA9), reason: '泛黄纸张');
     expect(p.paperLight, const Color(0xFFF0DFBF));

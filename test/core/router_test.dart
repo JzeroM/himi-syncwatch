@@ -490,13 +490,13 @@ void main() {
     expect(find.byType(ShellNavBar), findsNothing); // 顶层路由覆盖导航
   });
 
-  testWidgets('壳层背景回退平色 + 暗角聚光双层（N46）', (
+  testWidgets('壳层背景回退纯平色（N50 极简，无暗角聚光）', (
       tester,
     ) async {
       await _pumpApp(tester);
 
-      // N46：shellBackground = PosterBackdrop（无海报 URL 回退平色基底
-      // + 暗角/聚光双渐变层；织物微粒已移除）。
+      // N50：shellBackground = PosterBackdrop（无海报 URL 回退纯平色，
+      // 无模糊层无暗角聚光）。
       final layers = tester
           .widgetList<DecoratedBox>(find.descendant(
             of: find.byKey(const ValueKey('shellBackground')),
@@ -506,15 +506,8 @@ void main() {
       expect(layers, isNotEmpty, reason: '回退态渲染');
 
       final base = layers.first.decoration! as BoxDecoration;
-      expect(base.color, isNotNull, reason: 'N46 回退平色底');
-      expect(base.gradient, isNull, reason: '织物渐变已移除');
-
-      final gradients = layers
-          .map((l) => (l.decoration! as BoxDecoration).gradient)
-          .whereType<Gradient>()
-          .toList();
-      expect(gradients.length, greaterThanOrEqualTo(2),
-          reason: '暗角 + 聚光双渐变层');
+      expect(base.color, isNotNull, reason: 'N50 回退平色底');
+      expect(base.gradient, isNull, reason: '无渐变（极简）');
     });
 
   testWidgets('主题色写入后壳层背景保持中性平色（N41 主题色退出背景）',
@@ -548,7 +541,7 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
-  testWidgets('TV 模式背景保持平色（N48 拍板）：无海报色场，平色+暗角聚光',
+  testWidgets('TV 模式背景保持平色（N48 拍板）：无海报色场',
       (tester) async {
     await _pumpApp(tester, settings: const AppSettings(tvMode: true));
 
@@ -566,14 +559,9 @@ void main() {
         .whereType<LinearGradient>()
         .length;
     expect(linear, 0, reason: 'N48 拍板：TV 无海报色场（保持平色）');
-    final radial = layers
-        .map((l) => (l.decoration! as BoxDecoration).gradient)
-        .whereType<RadialGradient>()
-        .length;
-    expect(radial, greaterThanOrEqualTo(2), reason: '暗角聚光保留');
   });
 
-  testWidgets('N47 背景全局统一：push 独立路由下色场+暗角聚光仍在（与首页同款）',
+  testWidgets('N47 背景全局统一：push 独立路由下色场仍在（与首页同款）',
       (tester) async {
     final router = await _pumpApp(tester);
 
@@ -583,18 +571,8 @@ void main() {
 
     expect(find.byKey(const ValueKey('shellBackground')), findsOneWidget,
         reason: 'N47 全局背景层覆盖 push 路由');
-    final layers = tester
-        .widgetList<DecoratedBox>(find.descendant(
-          of: find.byKey(const ValueKey('shellBackground')),
-          matching: find.byType(DecoratedBox),
-        ))
-        .toList();
-    final radial = layers
-        .map((l) => (l.decoration! as BoxDecoration).gradient)
-        .whereType<RadialGradient>()
-        .length;
-    expect(radial, greaterThanOrEqualTo(2),
-        reason: '暗角 + 聚光全路由一致（push 页同样叠暗角聚光）');
+    expect(find.byType(PosterBackdrop), findsOneWidget,
+        reason: 'N50 同款 PosterBackdrop（色场/回退语义全路由一致）');
   });
 
   testWidgets('detail 路由解析 server 参数注入 DetailScreen', (tester) async {
