@@ -578,7 +578,9 @@ class _CoverBackLiningPainter extends CustomPainter {
       oldDelegate.palette != palette;
 }
 
-/// 698 N63：顶部金属线圈装订（参考图线圈本）——6 环，每环高光+阴影金属感。
+/// 698 N66：顶部金属线圈——**真实金属丝**（立体反光 + 穿入接触阴影）：
+/// 环体描边 3px 金属灰 + 左上高光弧 + 右下暗弧（金属圆柱反光）+ 环下
+/// 接触阴影（环压在纸上投影）+ 环间明暗交替（金属错落反光）。
 class SpiralRings extends StatelessWidget {
   const SpiralRings({super.key});
 
@@ -595,16 +597,30 @@ class SpiralRings extends StatelessWidget {
               height: 22,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFC8C8CE), width: 3),
-                gradient: RadialGradient(
-                  center: const Alignment(-0.4, -0.5),
-                  radius: 0.9,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.35),
-                    Colors.black.withValues(alpha: 0.18),
-                  ],
-                  stops: const [0.0, 1.0],
+                border: Border.all(
+                  color: (i % 2 == 0)
+                      ? const Color(0xFFD8D8DC)
+                      : const Color(0xFFA8A8B0), // 环间明暗交替
+                  width: 3,
                 ),
+                gradient: const RadialGradient(
+                  center: Alignment(-0.45, -0.55),
+                  radius: 0.95,
+                  colors: [
+                    Color(0xB3FFFFFF), // 左上高光弧
+                    Color(0x1AFFFFFF),
+                    Color(0x66000000), // 右下暗弧
+                  ],
+                  stops: [0.0, 0.55, 1.0],
+                ),
+                boxShadow: [
+                  // 接触阴影（环压在纸上的投影）。
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.30),
+                    blurRadius: 3,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
         ],
@@ -613,8 +629,9 @@ class SpiralRings extends StatelessWidget {
   }
 }
 
-/// 698 N64：线圈穿过的方形装订孔（封顶缘每环位一孔——下陷圆角方孔，
-/// 线圈本真实装订观感）。
+/// 698 N66：线圈穿过的方形装订孔——**真实穿孔**（洞的深度感）：
+/// 内上缘投暗（洞内上壁阴影）+ 内下缘亮（洞底受光）+ 孔内透下层纸
+/// 灰 + 外缘厚度截面描边——「纸被打穿」而非贴色块。
 class PunchHoles extends StatelessWidget {
   const PunchHoles({super.key});
 
@@ -631,14 +648,30 @@ class PunchHoles extends StatelessWidget {
               height: 11,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(3),
-                color: Colors.black.withValues(alpha: 0.30),
+                // 孔内透下层纸（灰白——洞底是下一页纸）。
+                color: const Color(0xFFB9B9BF),
                 border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18), width: 1),
-                boxShadow: [
+                    color: Colors.black.withValues(alpha: 0.28), width: 1),
+                boxShadow: const [
+                  // 孔内上缘投暗（洞内上壁阴影）。
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 3,
-                    offset: const Offset(0, 1),
+                    color: Color(0x8A000000),
+                    blurRadius: 1,
+                    spreadRadius: -1,
+                    offset: Offset(0, 2),
+                  ),
+                  // 孔内下缘亮（洞底受光）。
+                  BoxShadow(
+                    color: Color(0x66FFFFFF),
+                    blurRadius: 1,
+                    spreadRadius: -2,
+                    offset: Offset(0, -2),
+                  ),
+                  // 孔外缘投影（纸面被压出厚度）。
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 2,
+                    offset: Offset(0, 1),
                   ),
                 ],
               ),
