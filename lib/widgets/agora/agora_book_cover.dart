@@ -26,14 +26,6 @@ class AgoraBookCover extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // 698 N64：顶部线圈装订——咬死封面与纸页（环下半被纸层
-            // 盖住、上半露在外——真实线圈装订观感）。
-            Positioned(
-              top: -6,
-              left: 24,
-              right: 24,
-              child: const SpiralRings(),
-            ),
             // 698 N64：整体立体投影（双层——接触阴影 + 环境投影）。
             Positioned.fill(
               top: 4,
@@ -232,12 +224,19 @@ class _CoverBoard extends StatelessWidget {
             Positioned.fill(
               child: child,
             ),
-            // 698 N64：线圈穿过的方形装订孔（顶缘每环位）。
+            // 698 N65：装订孔——与线圈同位（26 内距 spaceEvenly 对齐）。
             Positioned(
-              top: 2,
-              left: 28,
-              right: 28,
+              top: 4,
+              left: 26,
+              right: 26,
               child: const PunchHoles(),
+            ),
+            // 698 N65：线圈环脚压孔之上（穿入装订孔观感）。
+            Positioned(
+              top: -6,
+              left: 26,
+              right: 26,
+              child: const SpiralRings(),
             ),
           ],
         ),
@@ -366,7 +365,7 @@ class _CoverEmblem extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2),
       ),
       child: Icon(
-        Icons.cell_tower,
+        Icons.draw, // 698 N65：钢笔线条（笔记本+羽毛笔主题）
         size: 34,
         color: Colors.white.withValues(alpha: 0.88),
       ),

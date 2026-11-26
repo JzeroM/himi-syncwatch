@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:himi_syncwatch/widgets/agora/agora_book_cover.dart';
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
 
@@ -80,15 +81,19 @@ class AgoraBookPaperPage extends StatelessWidget {
               ),
             ),
           ),
+          //（698 N65：书签飘带删除。）
+          // 698 N65：每页装订——顶缘线圈 + 装订孔（与封面同款同位）。
           Positioned(
-            top: 0,
+            top: -6,
+            left: 26,
             right: 26,
-            child: IgnorePointer(
-              child: _PageBookmark(
-                key: ValueKey('agoraBookBookmark_$index'),
-                palette: palette,
-              ),
-            ),
+            child: const SpiralRings(),
+          ),
+          Positioned(
+            top: 4,
+            left: 26,
+            right: 26,
+            child: const PunchHoles(),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(17, 14, 17, 11),
@@ -309,75 +314,6 @@ class AgoraBookGuidePage extends StatelessWidget {
       ),
     );
   }
-}
-
-class _PageBookmark extends StatelessWidget {
-  const _PageBookmark({
-    super.key,
-    required this.palette,
-  });
-
-  final AgoraBookPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(15, 54),
-      painter: _PageBookmarkPainter(palette),
-    );
-  }
-}
-
-class _PageBookmarkPainter extends CustomPainter {
-  const _PageBookmarkPainter(this.palette);
-
-  final AgoraBookPalette palette;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(size.width / 2, size.height - 8)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(
-      path.shift(const Offset(1, 1.4)),
-      Paint()
-        ..color = palette.ink.withValues(alpha: 0.22)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.4),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            palette.ribbon.withValues(alpha: 0.78),
-            palette.ribbon,
-            palette.ribbon.withValues(alpha: 0.66),
-          ],
-        ).createShader(Offset.zero & size),
-    );
-    canvas.drawLine(
-      const Offset(1, 1),
-      Offset(size.width - 1, 1),
-      Paint()
-        ..color = palette.paperLight.withValues(alpha: 0.25)
-        ..strokeWidth = 0.8,
-    );
-    canvas.drawLine(
-      Offset(size.width / 2, 4),
-      Offset(size.width / 2, size.height - 10),
-      Paint()
-        ..color = palette.ink.withValues(alpha: 0.14)
-        ..strokeWidth = 0.7,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _PageBookmarkPainter oldDelegate) =>
-      oldDelegate.palette != palette;
 }
 
 class _AgedPaperPainter extends CustomPainter {

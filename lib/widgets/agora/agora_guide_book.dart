@@ -280,7 +280,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
                 onSelect: _goToStep,
               ),
               if (widget.extraPageBuilder != null) ...[
-                const SizedBox(height: 10),
+                // 698 N65：羽毛笔区下移（页面留白平衡）。
+                const SizedBox(height: 26),
                 SizedBox(
                   width: math.min(_bookWidth * 0.74, 300),
                   child: AspectRatio(
@@ -661,7 +662,8 @@ class _BookControls extends StatelessWidget {
             iconSize: 18,
             color: HimiText.secondary(context),
             disabledColor: HimiText.t24(context),
-            icon: const Icon(Icons.chevron_left),
+            // 698 N65：左下 ˅（回翻——下拉语义）。
+            icon: const Icon(Icons.keyboard_arrow_down),
           ),
           Expanded(
             child: Row(
@@ -686,7 +688,7 @@ class _BookControls extends StatelessWidget {
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
-                    '左右滑动翻页',
+                    '上滑翻页',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: HimiText.t54(context), fontSize: 11),
                   ),
@@ -701,7 +703,8 @@ class _BookControls extends StatelessWidget {
             iconSize: 18,
             color: HimiText.secondary(context),
             disabledColor: HimiText.t24(context),
-            icon: const Icon(Icons.chevron_right),
+            // 698 N65：右上 ˄（前进——上滑语义）。
+            icon: const Icon(Icons.keyboard_arrow_up),
           ),
         ],
       ),

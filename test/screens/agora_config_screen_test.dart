@@ -290,7 +290,7 @@ void main() {
 
     expect(find.text('步骤 2 / 5'), findsOneWidget);
     expect(find.text('开通体验版套餐包'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_1')), findsNothing); // N65 书签删
     prev = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookPrev')),
     );
@@ -305,7 +305,7 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.text('配置 / 5'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsNothing); // N65 书签删
     final next = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookNext')),
     );

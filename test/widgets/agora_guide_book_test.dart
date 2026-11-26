@@ -88,7 +88,7 @@ void main() {
       find.byKey(const ValueKey('agoraBookOpenPageClip')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('agoraBookBookmark_0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_0')), findsNothing); // N65 书签删
     final prev = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookPrev')),
     );
@@ -121,7 +121,7 @@ void main() {
 
     expect(find.text('步骤 2 / 4'), findsOneWidget);
     expect(find.text('开通体验版套餐包'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_1')), findsNothing); // N65 书签删
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
@@ -130,7 +130,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('步骤 1 / 4'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_0')), findsNothing); // N65 书签删
   });
 
   testWidgets('扩展配置页作为第五页并带书签', (tester) async {
@@ -154,7 +154,7 @@ void main() {
 
     expect(find.text('配置 / 5'), findsOneWidget);
     expect(find.text('配置内容'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsNothing); // N65 书签删
     final next = tester.widget<IconButton>(
       find.byKey(const ValueKey('agoraBookNext')),
     );
@@ -185,7 +185,7 @@ void main() {
 
     expect(find.text('配置 / 5'), findsOneWidget);
     expect(find.text('配置内容'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsNothing); // N65 书签删
     expect(tester.widget<GestureDetector>(quill).onTap, isNull);
   });
 
@@ -212,7 +212,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('配置 / 5'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_4')), findsNothing); // N65 书签删
   });
 
   testWidgets('点击指示点跳转到对应步骤', (tester) async {
@@ -224,7 +224,7 @@ void main() {
 
     expect(find.text('步骤 4 / 4'), findsOneWidget);
     expect(find.text('获取 APP ID 和证书'), findsOneWidget);
-    expect(find.byKey(const ValueKey('agoraBookBookmark_3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('agoraBookBookmark_3')), findsNothing); // N65 书签删
   });
 
   testWidgets('末页下一页按钮禁用', (tester) async {
