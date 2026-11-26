@@ -69,7 +69,10 @@ class AgoraBookPaperPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // 698 N67：中间纸张比玻璃封面/底面小一圈（缩进 8px——夹心层次）。
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Container(
       key: ValueKey('agoraBookPage_$index'),
       decoration: BoxDecoration(gradient: palette.paperGradient),
       child: Stack(
@@ -82,6 +85,14 @@ class AgoraBookPaperPage extends StatelessWidget {
             ),
           ),
           //（698 N65：书签飘带删除。）
+          // 698 N67：步骤箭头标签（参考图弯折箭头样式，每页一个）。
+          Positioned(
+            left: 8,
+            top: 40,
+            child: IgnorePointer(
+              child: _StepArrowLabel(step: index + 1),
+            ),
+          ),
           // 698 N65：每页装订——顶缘线圈 + 装订孔（与封面同款同位）。
           Positioned(
             top: -6,
@@ -190,6 +201,7 @@ class AgoraBookPaperPage extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -382,4 +394,63 @@ class _AgedPaperPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _AgedPaperPainter oldDelegate) =>
       oldDelegate.palette != palette || oldDelegate.seed != seed;
+}
+
+/// 698 N67：步骤箭头标签——参考图弯折箭头样式（细描边折线箭头朝上 +
+/// 步骤号），每页一个。
+class _StepArrowLabel extends StatelessWidget {
+  const _StepArrowLabel({required this.step});
+
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CustomPaint(
+          size: const Size(18, 22),
+          painter: _BendArrowPainter(),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          step.toString().padLeft(2, '0'),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.black.withValues(alpha: 0.55),
+            letterSpacing: 1.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 参考图弯折箭头（细描边折线，向上折拐 + 箭头尖）。
+class _BendArrowPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = Colors.black.withValues(alpha: 0.55);
+    final path = Path()
+      ..moveTo(size.width * 0.15, size.height)
+      ..lineTo(size.width * 0.15, size.height * 0.45)
+      ..lineTo(size.width * 0.75, size.height * 0.45)
+      ..lineTo(size.width * 0.75, size.height * 0.12);
+    canvas.drawPath(path, paint);
+    // 箭头尖（上）。
+    final head = Path()
+      ..moveTo(size.width * 0.55, size.height * 0.20)
+      ..lineTo(size.width * 0.75, size.height * 0.02)
+      ..lineTo(size.width * 0.95, size.height * 0.20);
+    canvas.drawPath(head, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
