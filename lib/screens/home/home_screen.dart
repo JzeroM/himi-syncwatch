@@ -415,7 +415,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 698 N43：hero 主海报首色 → 全页面背景色调（extract 有缓存，幂等）。
     if (_heroItems.isNotEmpty) {
       final toneUrl = _heroItems[heroIndex].imageUrl ?? '';
-      if (toneUrl.isNotEmpty && toneUrl != _lastToneUrl) {
+      // 698 N59 漂移检测：详情页写过别的色源 → 返回首页时自动重写轮播 URL
+      //（背景无缝回到首页海报光场）。
+      final drifted =
+          ref.read(heroPosterUrlProvider) != toneUrl && toneUrl.isNotEmpty;
+      if (toneUrl.isNotEmpty && (toneUrl != _lastToneUrl || drifted)) {
         _lastToneUrl = toneUrl;
         // 698 N44：海报 URL 全局共享（全屏氛围洗图源，同源零分割）。
         // build 中不可同步写 provider——挂到帧末执行。

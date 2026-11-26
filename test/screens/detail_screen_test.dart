@@ -177,9 +177,11 @@ void main() {
   testWidgets('非 TV：正文铺虚化氛围底图 + 压暗罩，顶部海报保持清晰', (tester) async {
     await _pumpDetail(tester);
 
-    // 正文氛围层（低分模糊图 + 压暗罩）存在
-    expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
-    expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
+    // 698 N59：虚化氛围层删——全局光场接管（详情海报色源，
+    // 首页同款取色方案/渲染器）；底色透明透出。
+    expect(find.byKey(const Key('detailAmbientImage')), findsNothing,
+        reason: 'N59 blur 虚化层删（光场接管）');
+    expect(find.byKey(const Key('detailAmbientScrim')), findsNothing);
 
     // 页面背景不再使用纯色渐变（改为底色打底）
     final container = tester
@@ -242,8 +244,9 @@ void main() {
     testWidgets('非 TV 回归：氛围底图在、海报仍在 AppBar 内', (tester) async {
       await _pumpDetail(tester);
 
-      expect(find.byKey(const Key('detailAmbientImage')), findsOneWidget);
-      expect(find.byKey(const Key('detailAmbientScrim')), findsOneWidget);
+      expect(find.byKey(const Key('detailAmbientImage')), findsNothing,
+          reason: 'N59 虚化层删（光场接管）');
+      expect(find.byKey(const Key('detailAmbientScrim')), findsNothing);
       expect(find.byKey(const Key('detailBackdrop')), findsNothing);
       expect(find.byKey(const Key('detailBackdropScrim')), findsNothing);
       expect(

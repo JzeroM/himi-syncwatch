@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:himi_syncwatch/providers/palette_provider.dart';
 import 'package:himi_syncwatch/core/himi_text.dart';
 import 'package:himi_syncwatch/models/emby_playback_settings.dart';
 import 'package:himi_syncwatch/models/hero_rating.dart';
@@ -1554,8 +1555,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
+  String? _lastBgUrl;
+
   @override
   Widget build(BuildContext context) {
+    // 698 N59：详情海报写入全局色源——首页同款光场渲染器（多色调色板 +
+    // 网格光场 + 5 光域）接管下面部分背景；退出后 home 漂移检测自动恢复。
+    final heroUrl = _item?.backdropUrl ?? _item?.posterUrl;
+    if (heroUrl != null && heroUrl.isNotEmpty && heroUrl != _lastBgUrl) {
+      _lastBgUrl = heroUrl;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(heroPosterUrlProvider.notifier).state = heroUrl;
+        }
+      });
+    }
     final base = Theme.of(context).scaffoldBackgroundColor;
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
     // TV 整页背景目标宽度：按显示宽×dpr，夹在 [720,1280]（详见 hdImageUrlFor）
@@ -1599,7 +1613,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         curve: Curves.easeOut,
         // 非 TV：底色打底，正文叠虚化氛围底图（方案 A）；
         // TV：透明底，海报由下方 Stack 做整页固定背景。
-        decoration: BoxDecoration(color: tvMode ? null : base),
+        // 698 N59：非 TV 底色透明——透出全局光场（详情海报色源，
+        // 首页同款取色方案/渲染器）；TV 整页固定海报背景保持。
+        decoration: BoxDecoration(color: tvMode ? null : Colors.transparent),
         child: tvMode
             ? Stack(
                 fit: StackFit.expand,
@@ -1642,9 +1658,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             : Stack(
                 fit: StackFit.expand,
                 children: [
-                  // 虚化氛围底图：颜色取自同一张海报，天然与顶部清晰海报
-                  // 无缝衔接（不再另算纯色渐变，消除色相跳变与硬接缝）。
-                  if (_item != null) _buildAmbientBackdrop(base),
+                  //（698 N59：虚化氛围底图删——全局光场接管[详情海报色源，
+                  // 首页同款取色方案]，零分割天然成立。）
                   content,
                   // 687：Hero 落点——主列表海报飞过来后在这里「落地」，
                   // 随即被 backdrop/氛围底覆盖。尺寸 0 保证不参与布局、
@@ -1672,50 +1687,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 非 TV 正文氛围背景（方案 A）：同一张 backdrop 低分辨率解码 → 高斯模糊
   /// 铺满正文 → 竖向压暗罩。因为颜色直接来自海报本身，正文与顶部清晰海报
   /// 天然同色同调、无色相跳变；模糊尺度大也避免了硬接缝。顶部海报仍用清晰
-  /// 原图（在 SliverAppBar 内），只有正文区虚化。
-  Widget _buildAmbientBackdrop(Color base) {
-    final url = _item?.backdropUrl ?? _item?.posterUrl;
-    if (url == null || url.isEmpty) return const SizedBox.shrink();
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 低分解码 + 放大裁切 + 高斯模糊：开销极低且无边缘透底
-        // （放大 1.35 使模糊采样区完全落在图内，屏幕边缘不会出现透底暗边）
-        ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-          child: Transform.scale(
-            scale: 1.35,
-            child: EmbyImage(
-              key: const Key('detailAmbientImage'),
-              url: url,
-              fit: BoxFit.cover,
-              cacheWidth: 200,
-              placeholder: const SizedBox.shrink(),
-              errorWidget: const SizedBox.shrink(),
-            ),
-          ),
-        ),
-        // 压暗罩：顶部略暗衔接 AppBar 底部蒙层；底部渐入应用底色，保证
-        // 版本/剧集列表等正文可读。
-        DecoratedBox(
-          key: const Key('detailAmbientScrim'),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.30),
-                Colors.black.withValues(alpha: 0.42),
-                base.withValues(alpha: 0.90),
-                base,
-              ],
-              stops: const [0.0, 0.5, 0.85, 1.0],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+
 
   /// 操作区（简介上方）：
   /// - 非 TV：第一行播放/建房主按钮（玻璃质感、各占约半行），第二行
