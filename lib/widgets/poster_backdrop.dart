@@ -111,39 +111,46 @@ class _LightFieldMask extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (top, mid, base) = PosterPalette.ambientTrio(field.base, null);
-    // S 曲线三明度档 → 5 停点渐变（缓入/饱满/缓沉）。
+    // 698 N58 零分割回归：顶带 = 海报底缘带**原色**（轻混基调 15%）——
+    // 与轮播底缘渐隐终点机械同色，根治首页分割感。
+    final edgeTop = Color.lerp(field.edge, top, 0.15)!;
+    // S 曲线三明度档 → 5 停点渐变（顶=衔接原色 → 饱满 → 缓沉）。
     final n = 5;
-    final curve = <Color>[top, mid, mid, base, base];
+    final curve = <Color>[edgeTop, mid, mid, base, base];
 
-    // 随机光球（种子=URL hash——同海报稳定）。
+    // 698 N58 光场质感：5 颗**超大光域**（大块柔和明暗流动，afusekt
+    // 质感——替代 N56 的 9 碎球）；种子=URL hash 同海报稳定。
     final rand = math.Random(seedKey.hashCode);
-    final avgL = field.grid.map((g) => g.$2).reduce((a, b) => a + b) /
-        field.grid.length;
+    // 取明暗最分明的 5 格（3 亮 2 暗——光域明暗交错）。
+    final cells = [...field.grid];
+    cells.sort((a, b) => b.$2.compareTo(a.$2));
+    final brightCells = cells.take(3).toList();
+    final darkCells = cells.reversed.take(2).toList();
     final balls = <Widget>[];
-    for (var i = 0; i < field.grid.length; i++) {
-      final (cellColor, luma) = field.grid[i];
-      final gx = i % 3;
-      final gy = i ~/ 3;
-      // 位置：格中心 + 微随机抖动（±12% 屏）。
-      final cx = (gx + 0.5) / 3 + (rand.nextDouble() - 0.5) * 0.24;
-      final cy = (gy + 0.5) / 3 + (rand.nextDouble() - 0.5) * 0.24;
-      // 半径：0.6~1.4 屏宽大柔边（随机）。
-      final radius = 0.6 + rand.nextDouble() * 0.8;
-      final bright = luma > avgL;
-      // 受光球：鲜色派生提明（上限 L≤0.26 保白字）；阴影球：基调压暗。
+    for (var i = 0; i < 5; i++) {
+      final bright = i < 3;
+      final (cellColor, _) = bright ? brightCells[i] : darkCells[i - 3];
+      // 位置：全屏散布（微随机避开死板对称）。
+      final cx = 0.12 + (i * 0.19) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;
+      final cy = 0.12 + (i * 0.31) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;
+      // 半径：1.0~1.8 屏宽超大柔边。
+      final radius = 1.0 + rand.nextDouble() * 0.8;
       Color ballColor;
       double alpha;
       if (bright) {
         var hsl = HSLColor.fromColor(cellColor);
         // 698 N57 提亮：受光球上限 L≤0.38（白字对比仍安全）。
-        final l = (hsl.lightness * 0.45 + 0.18).clamp(0.0, 0.38);
-        ballColor = hsl.withLightness(l).withSaturation(hsl.saturation * 0.8).toColor();
-        alpha = 0.10 + rand.nextDouble() * 0.08;
+        final l = (hsl.lightness * 0.5 + 0.18).clamp(0.0, 0.38);
+        ballColor = hsl
+            .withLightness(l)
+            .withSaturation(hsl.saturation * 0.8)
+            .toColor();
+        alpha = 0.16 + rand.nextDouble() * 0.08; // 0.16~0.24 明暗对比加强
       } else {
         var hsl = HSLColor.fromColor(base);
         ballColor =
-            hsl.withLightness((hsl.lightness * 0.8).clamp(0.0, 0.22)).toColor();
-        alpha = 0.12 + rand.nextDouble() * 0.08;
+            hsl.withLightness((hsl.lightness * 0.72).clamp(0.0, 0.22)).toColor();
+        alpha = 0.18 + rand.nextDouble() * 0.06;
       }
       balls.add(
         Positioned.fill(

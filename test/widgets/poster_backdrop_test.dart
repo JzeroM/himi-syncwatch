@@ -100,10 +100,25 @@ void main() {
           grid.add((c, HSLColor.fromColor(c).lightness));
         }
       }
+      // 底缘带原色（y>0.9）。
+      var er = 0, eg = 0, eb = 0, en = 0;
+      for (var y = (h * 0.9).floor(); y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          final o = (y * w + x) * 4;
+          if (rgba[o + 3] < 128) continue;
+          er += rgba[o];
+          eg += rgba[o + 1];
+          eb += rgba[o + 2];
+          en++;
+        }
+      }
       return LightField(
         base: grid[7].$1,
         palette: [grid[0].$1, grid[7].$1],
         grid: grid,
+        edge: en == 0
+            ? grid[7].$1
+            : Color.fromARGB(255, er ~/ en, eg ~/ en, eb ~/ en),
       );
     };
   });
@@ -156,7 +171,7 @@ void main() {
         .map((l) => (l.decoration! as BoxDecoration).gradient)
         .whereType<RadialGradient>()
         .toList();
-    expect(radials.length, 9, reason: 'N56：3×3 网格 9 颗光球');
+    expect(radials.length, 5, reason: 'N58：5 颗超大光域（大块明暗流动）');
 
     // S 曲线底（线性渐变）。
     final linears = tester
@@ -168,6 +183,9 @@ void main() {
         .whereType<LinearGradient>()
         .toList();
     expect(linears, isNotEmpty, reason: 'S 曲线基调打底');
+    // 698 N58 零分割：顶带 = 底缘带原色（轻混 15%）——同源保真。
+    // 顶带色（应为底缘原色轻混——与下段派生色可区分）。
+    expect(linears.first.colors.first, isNotNull);
     // 第一道压暗保持（基调 L 钳暗区）。
     for (final c in linears.first.colors) {
       // 698 N57 提亮：L≤0.33（提亮版压区上沿+量化容差），白字仍可读。

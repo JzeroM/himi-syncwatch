@@ -279,26 +279,28 @@ void main() {
         contains(AgoraBookPalette.fromTone(otherTone).leather));
   });
 
-  test('N57 书皮皮革 = 恒定棕褐经典皮革（不随背景色）', () {
+  test('N58 书皮 = 恒定深紫皮革书（用户参考图经典款）', () {
     for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
+      AgoraBookPalette.debugResetMemo(); // 清跨测试 memo 污染
       final p = AgoraBookPalette.fromTone(tone);
-      expect(p.leather, const Color(0xFF6B4E38),
-          reason: '恒定棕褐皮革（怪色违和根治；tone=$tone）');
-      // 文字恒金箔。
-      expect(p.foil, const Color(0xFFC2A064));
+      expect(p.leather, const Color(0xFF4A3B7A),
+          reason: '恒定茄紫皮革（参考图经典款；tone=$tone）');
+      expect(p.foil, const Color(0xFFD4AF37), reason: '亮金线');
+      expect(p.paperLight, const Color(0xFFF5F0E8), reason: '标题米白');
+      expect(p.paperEdge, const Color(0xFFC9A84C), reason: '书页侧边金黄');
     }
   });
 
   test('N49 文字回归原版：固定金箔 + 墨字 + 近白装饰字', () {
     for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
       final p = AgoraBookPalette.fromTone(tone);
-      expect(p.foil, const Color(0xFFC2A064), reason: '烫字原版金（tone=$tone）');
-      expect(p.foilBright, const Color(0xFFE0C58C));
-      expect(p.foilDim, const Color(0xFF8D7447));
+      expect(p.foil, const Color(0xFFD4AF37), reason: '亮金线（参考图）');
+      expect(p.foilBright, const Color(0xFFE8C87A));
+      expect(p.foilDim, const Color(0xFFB9A77E));
       expect(p.ink, const Color(0xFF3B2A1C), reason: '内页墨字');
       expect(p.mutedInk, const Color(0xFF6E5741), reason: '次文字原版棕墨');
-      // 近白装饰字（封面/书页 paperLight 文字源）。
-      expect(p.paperLight, const Color(0xFFF0DFBF), reason: '近白装饰字');
+      // 标题米白（参考图封面标题）。
+      expect(p.paperLight, const Color(0xFFF5F0E8), reason: '标题米白');
       final plL = HSLColor.fromColor(p.paperLight).lightness;
       expect(plL, greaterThan(0.80), reason: '白色字（近白）');
     }
@@ -308,7 +310,7 @@ void main() {
     final p = AgoraBookPalette.fromTone(const Color(0xFF10B981));
     // 书页泛黄纸（N46 前原版暖纸）。
     expect(p.paper, const Color(0xFFE4CFA9), reason: '泛黄纸张');
-    expect(p.paperLight, const Color(0xFFF0DFBF));
+    expect(p.paperLight, const Color(0xFFF5F0E8), reason: 'N58 标题米白');
     expect(p.ink, const Color(0xFF3B2A1C), reason: '暖纸深墨字');
   });
 

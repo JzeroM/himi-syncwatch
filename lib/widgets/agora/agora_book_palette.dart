@@ -33,13 +33,13 @@ class AgoraBookPalette {
       leather: leather,
       leatherDark: _shift(leather, lightness: -0.075, saturation: 0.02),
       leatherWorn: _shift(leather, lightness: 0.17, saturation: -0.18),
-      foil: const Color(0xFFC2A064),
-      foilBright: const Color(0xFFE0C58C),
-      foilDim: const Color(0xFF8D7447),
-      paperLight: const Color(0xFFF0DFBF),
+      foil: const Color(0xFFD4AF37), // 亮金线（参考图）
+      foilBright: const Color(0xFFE8C87A),
+      foilDim: const Color(0xFFB9A77E),
+      paperLight: const Color(0xFFF5F0E8), // 标题米白（参考图）
       paper: const Color(0xFFE4CFA9),
       paperDark: const Color(0xFFCDB183),
-      paperEdge: const Color(0xFFB69566),
+      paperEdge: const Color(0xFFC9A84C), // 书页侧边金黄（参考图）
       pageBack: const Color(0xFFD9C098),
       ink: const Color(0xFF3B2A1C),
       mutedInk: const Color(0xFF6E5741),
@@ -55,9 +55,9 @@ class AgoraBookPalette {
   /// 内页文字米金；丝带酒红点睛。memo 同 tone 不重算（687 防重建）。
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
-    // 698 N57：皮革 = **恒定棕褐经典皮革**（书的固有色）——不再跟随
-    // 背景色调（荧光/粉等怪色违和感根治，任何海报下都和谐）。
-    const leather = Color(0xFF6B4E38);
+    // 698 N58：皮革 = **恒定深紫皮革书**（用户参考图经典款）——茄紫
+    // 皮革 + 亮金箔线 + 米白标题 + 金黄书页边（不跟背景色，恒定和谐）。
+    const leather = Color(0xFF4A3B7A);
     //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
 
     final palette = AgoraBookPalette(
@@ -67,14 +67,14 @@ class AgoraBookPalette {
       leatherWorn: _shift(leather, lightness: 0.17, saturation: -0.18),
       // 698 N49：**文字回归原版固定金/墨/近白**（未改主题色时的经典
       // 文字设计）——烫字恒金箔、内页墨字、装饰近白字，不随背景色调和。
-      foil: const Color(0xFFC2A064),
-      foilBright: const Color(0xFFE0C58C),
-      foilDim: const Color(0xFF8D7447),
+      foil: const Color(0xFFD4AF37), // 亮金线（参考图）
+      foilBright: const Color(0xFFE8C87A),
+      foilDim: const Color(0xFFB9A77E),
       // 698 N49：书页回**泛黄纸张**（与封面分离，N46 前原版暖纸）。
-      paperLight: const Color(0xFFF0DFBF),
+      paperLight: const Color(0xFFF5F0E8), // 标题米白（参考图）
       paper: const Color(0xFFE4CFA9),
       paperDark: const Color(0xFFCDB183),
-      paperEdge: const Color(0xFFB69566),
+      paperEdge: const Color(0xFFC9A84C), // 书页侧边金黄（参考图）
       pageBack: const Color(0xFFD9C098),
       ink: const Color(0xFF3B2A1C), // 内页墨字（暖纸深墨）
       mutedInk: const Color(0xFF6E5741),

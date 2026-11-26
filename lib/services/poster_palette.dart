@@ -412,10 +412,28 @@ class PosterPalette {
       }
 
       if (palette.isEmpty && base != null) palette.add(base);
+      // 698 N58：底缘带原色（y>0.90 像素均色）——渐变顶带直接用它，
+      // 与轮播底缘机械同色（零分割回归，根治首页分割感）。
+      var er = 0, eg = 0, eb = 0, en = 0;
+      final ey0 = (h * 0.90).floor();
+      for (var y = ey0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          final o = (y * w + x) * 4;
+          if (rgba[o + 3] < 128) continue;
+          er += rgba[o];
+          eg += rgba[o + 1];
+          eb += rgba[o + 2];
+          en++;
+        }
+      }
+      final edge = en == 0
+          ? (base ?? palette.first)
+          : Color.fromARGB(255, er ~/ en, eg ~/ en, eb ~/ en);
       return LightField(
         base: base ?? palette.first,
         palette: palette.isEmpty ? [const Color(0xFF808080)] : palette,
         grid: grid,
+        edge: edge,
       );
     } catch (_) {
       return null;
@@ -850,6 +868,7 @@ class LightField {
     required this.base,
     required this.palette,
     required this.grid,
+    required this.edge,
   });
 
   /// 基调（下半区 darkMuted——S 曲线打底源）。
@@ -860,4 +879,7 @@ class LightField {
 
   /// 3×3 网格（9 格：格均色 + 亮度 0~1）。
   final List<(Color, double)> grid;
+
+  /// 698 N58：底缘带原色（渐变顶带零分割衔接色）。
+  final Color edge;
 }
