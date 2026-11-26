@@ -194,16 +194,17 @@ class PosterPalette {
     return dh * dh * 0.5 + dl * dl * 2.0 + ds * ds;
   }
 
-  /// 698 N53：同色调暗氛围派生（spec）——H 保留、L 压 0.11~0.18、
-  /// S ×0.75 上限 0.46；深色保底（dominant L<0.12 → 提 0.16 防丢色相）。
-  /// 返回 `(top(保底/主调), mid(L0.20), base(L0.14))`；双色流动：色相
+  /// 698 N57：同色调派生（提亮版）——H 保留、L 压 0.22~0.32（N53 的
+  /// 0.11~0.18 太暗，用户反馈提亮）、S ×0.75 上限 0.54；深色保底
+  ///（dominant L<0.20 → 提 0.28 防丢色相）。
+  /// 返回 `(top(保底/主调), mid(L0.30), base(L0.22))`；双色流动：色相
   /// 向辅簇微移（top 15% / mid 8% / base 5%）。
   static (Color, Color, Color) ambientTrio(Color dominant, Color? secondary) {
     final src = HSLColor.fromColor(dominant);
     var s = src.saturation * 0.75;
-    if (s > 0.46) s = 0.46;
-    var l = src.lightness.clamp(0.11, 0.18);
-    if (src.lightness < 0.12) l = 0.16; // 深色保底
+    if (s > 0.54) s = 0.54;
+    var l = src.lightness.clamp(0.22, 0.32);
+    if (src.lightness < 0.20) l = 0.28; // 深色保底
 
     double flowHue(double t) {
       if (secondary == null) return src.hue;
@@ -214,7 +215,7 @@ class PosterPalette {
 
     Color at(double t, double lightness) =>
         HSLColor.fromAHSL(1, flowHue(t), s, lightness).toColor();
-    return (at(0.15, l), at(0.08, 0.20), at(0.05, 0.14));
+    return (at(0.15, l), at(0.08, 0.30), at(0.05, 0.22));
   }
 
   /// 698 N55：设计调色板——**palette_generator（Vibrant.js 同源六 swatch

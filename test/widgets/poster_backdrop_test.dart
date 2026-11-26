@@ -170,8 +170,9 @@ void main() {
     expect(linears, isNotEmpty, reason: 'S 曲线基调打底');
     // 第一道压暗保持（基调 L 钳暗区）。
     for (final c in linears.first.colors) {
-      expect(HSLColor.fromColor(c).lightness, lessThanOrEqualTo(0.25),
-          reason: '同色调压暗（白字可读）');
+      // 698 N57 提亮：L≤0.33（提亮版压区上沿+量化容差），白字仍可读。
+      expect(HSLColor.fromColor(c).lightness, lessThanOrEqualTo(0.33),
+          reason: 'N57 提亮版压区（白字可读）');
     }
     debugAmbientImageProvider = null;
   });

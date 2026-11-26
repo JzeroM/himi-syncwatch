@@ -135,12 +135,14 @@ class _LightFieldMask extends StatelessWidget {
       double alpha;
       if (bright) {
         var hsl = HSLColor.fromColor(cellColor);
-        final l = (hsl.lightness * 0.4 + 0.12).clamp(0.0, 0.26); // 提明钳 0.26
+        // 698 N57 提亮：受光球上限 L≤0.38（白字对比仍安全）。
+        final l = (hsl.lightness * 0.45 + 0.18).clamp(0.0, 0.38);
         ballColor = hsl.withLightness(l).withSaturation(hsl.saturation * 0.8).toColor();
         alpha = 0.10 + rand.nextDouble() * 0.08;
       } else {
         var hsl = HSLColor.fromColor(base);
-        ballColor = hsl.withLightness((hsl.lightness * 0.75).clamp(0.0, 0.14)).toColor();
+        ballColor =
+            hsl.withLightness((hsl.lightness * 0.8).clamp(0.0, 0.22)).toColor();
         alpha = 0.12 + rand.nextDouble() * 0.08;
       }
       balls.add(

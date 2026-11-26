@@ -279,12 +279,14 @@ void main() {
         contains(AgoraBookPalette.fromTone(otherTone).leather));
   });
 
-  test('N50 书皮皮革 = 背景色调原色（去派生）', () {
-    const tone = Color(0xFF10B981);
-    final p = AgoraBookPalette.fromTone(tone);
-    expect(p.leather, tone, reason: '皮革 = tone 原色（与背景同色）');
-    // 文字恒金箔（可读性由浮雕/描边保证，不依赖底色对比）。
-    expect(p.foil, const Color(0xFFC2A064));
+  test('N57 书皮皮革 = 恒定棕褐经典皮革（不随背景色）', () {
+    for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
+      final p = AgoraBookPalette.fromTone(tone);
+      expect(p.leather, const Color(0xFF6B4E38),
+          reason: '恒定棕褐皮革（怪色违和根治；tone=$tone）');
+      // 文字恒金箔。
+      expect(p.foil, const Color(0xFFC2A064));
+    }
   });
 
   test('N49 文字回归原版：固定金箔 + 墨字 + 近白装饰字', () {

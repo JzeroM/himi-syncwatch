@@ -55,9 +55,9 @@ class AgoraBookPalette {
   /// 内页文字米金；丝带酒红点睛。memo 同 tone 不重算（687 防重建）。
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
-    final src = HSLColor.fromColor(tone ?? defaultAccent);
-    // 698 N50：皮革 = 背景色调**原色**（去明暗派生——与背景同色更整体）。
-    final leather = src.toColor();
+    // 698 N57：皮革 = **恒定棕褐经典皮革**（书的固有色）——不再跟随
+    // 背景色调（荧光/粉等怪色违和感根治，任何海报下都和谐）。
+    const leather = Color(0xFF6B4E38);
     //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
 
     final palette = AgoraBookPalette(
