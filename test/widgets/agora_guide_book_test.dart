@@ -69,7 +69,7 @@ void main() {
     expect(find.text('声网接入指南'), findsOneWidget);
     expect(find.text('四步完成声网配置'), findsOneWidget);
     expect(find.text('步骤 1 / 4'), findsNothing);
-    expect(find.text('共 4 步 · 左右滑动阅读'), findsOneWidget);
+    expect(find.text('共 4 步 · 上滑翻阅'), findsOneWidget);
     expect(find.byKey(const ValueKey('agoraQuillButton')), findsNothing);
   });
 
@@ -103,19 +103,19 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(280, 0),
+      const Offset(0, 280),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
   });
 
-  testWidgets('左右滑动翻页，页码同步更新', (tester) async {
+  testWidgets('上滑翻页，页码同步更新（N64 垂直手势）', (tester) async {
     await _pumpBook(tester);
     await _openBook(tester);
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(-280, 0),
+      const Offset(0, -280),
     );
     await tester.pumpAndSettle();
 
@@ -125,7 +125,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(280, 0),
+      const Offset(0, 280),
     );
     await tester.pumpAndSettle();
 

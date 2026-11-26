@@ -251,7 +251,7 @@ void main() {
     expect(find.text('声网接入指南'), findsOneWidget);
     expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
     expect(find.text('步骤 1 / 5'), findsNothing);
-    expect(find.text('共 5 步 · 左右滑动阅读'), findsOneWidget);
+    expect(find.text('共 5 步 · 上滑翻阅'), findsOneWidget);
     expect(find.text('配置说明'), findsNothing);
     expect(find.byTooltip('配置说明'), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);

@@ -185,7 +185,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
 
   void _handleDragUpdate(DragUpdateDetails details) {
     if (_busy && _dragTarget == null) return;
-    _dragDx += details.delta.dx;
+    // 698 N64：上刮翻页（垂直语义）——上滑 dy<0 前进、下拉 dy>0 回翻。
+    _dragDx += details.delta.dy;
 
     if (_dragTarget == null) {
       if (_dragDx < -10 && _index < _pageCount - 1) {
@@ -203,18 +204,19 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       });
     }
 
-    final width = math.max(_bookWidth, 1);
+    // 归一用页高（开本 0.92 → 高 = 宽/0.92）。
+    final extent = math.max(_bookWidth / 0.92, 1);
     if (_forward) {
-      _flip.value = (-_dragDx / width).clamp(0.0, 1.0);
+      _flip.value = (-_dragDx / extent).clamp(0.0, 1.0);
     } else {
-      _flip.value = 1 - (_dragDx / width).clamp(0.0, 1.0);
+      _flip.value = 1 - (_dragDx / extent).clamp(0.0, 1.0);
     }
   }
 
   void _handleDragEnd(DragEndDetails details) {
     final target = _dragTarget;
     if (target == null) return;
-    final velocity = details.velocity.pixelsPerSecond.dx;
+    final velocity = details.velocity.pixelsPerSecond.dy;
     final complete = _forward
         ? (_flip.value > 0.28 || velocity < -460)
         : (_flip.value < 0.72 || velocity > 460);
@@ -246,17 +248,19 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
             mainAxisSize: MainAxisSize.min,
             children: [
               AspectRatio(
-                aspectRatio: 0.72,
+                // 698 N64：方形拍纸簿开本（替代竖长书 0.72）。
+                aspectRatio: 0.92,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     _bookWidth = constraints.maxWidth;
                     return GestureDetector(
                       key: const ValueKey('agoraBookViewport'),
                       behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: _handleDragStart,
-                      onHorizontalDragUpdate: _handleDragUpdate,
-                      onHorizontalDragEnd: _handleDragEnd,
-                      onHorizontalDragCancel: _handleDragCancel,
+                      // 698 N64：上刮翻页（垂直手势——上滑翻页/下拉回翻）。
+                      onVerticalDragStart: _handleDragStart,
+                      onVerticalDragUpdate: _handleDragUpdate,
+                      onVerticalDragEnd: _handleDragEnd,
+                      onVerticalDragCancel: _handleDragCancel,
                       child: IgnorePointer(
                         ignoring: _busy,
                         child: _buildBook(palette),
@@ -468,7 +472,8 @@ class _TurnedSurface extends StatelessWidget {
           child: Opacity(
             opacity: fade,
             child: Transform(
-              alignment: Alignment.centerLeft,
+              // 698 N64：绕顶部装订线轴翻页（pivot=顶边）。
+              alignment: Alignment.topCenter,
               transform: agoraPageTurnTransform(p),
               child: content,
             ),
@@ -638,7 +643,7 @@ class _BookControls extends StatelessWidget {
         height: 38,
         child: Center(
           child: Text(
-            '共 $total 步 · 左右滑动阅读',
+            '共 $total 步 · 上滑翻阅',
             style: TextStyle(color: HimiText.t62(context), fontSize: 11),
           ),
         ),

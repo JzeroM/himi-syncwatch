@@ -26,13 +26,15 @@ class AgoraBookCover extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // 698 N63：顶部线圈装订（参考图线圈本）。
+            // 698 N64：顶部线圈装订——咬死封面与纸页（环下半被纸层
+            // 盖住、上半露在外——真实线圈装订观感）。
             Positioned(
-              top: -8,
-              left: 20,
-              right: 20,
+              top: -6,
+              left: 24,
+              right: 24,
               child: const SpiralRings(),
             ),
+            // 698 N64：整体立体投影（双层——接触阴影 + 环境投影）。
             Positioned.fill(
               top: 4,
               left: 4,
@@ -40,13 +42,18 @@ class AgoraBookCover extends StatelessWidget {
               bottom: 1,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.52),
-                      blurRadius: 30,
-                      spreadRadius: 2,
-                      offset: const Offset(0, 14),
+                      color: Colors.black.withValues(alpha: 0.42),
+                      blurRadius: 34,
+                      spreadRadius: 3,
+                      offset: const Offset(0, 16),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.30),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
@@ -143,13 +150,7 @@ class AgoraBookShell extends StatelessWidget {
             child: child,
           ),
         ),
-        Positioned(
-          left: 0,
-          top: 5,
-          bottom: 6,
-          width: 24,
-          child: IgnorePointer(child: _Spine(palette: palette)),
-        ),
+
       ],
     );
   }
@@ -229,15 +230,14 @@ class _CoverBoard extends StatelessWidget {
               ),
             ),
             Positioned.fill(
-              left: 25,
               child: child,
             ),
+            // 698 N64：线圈穿过的方形装订孔（顶缘每环位）。
             Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 22,
-              child: _Spine(palette: palette),
+              top: 2,
+              left: 28,
+              right: 28,
+              child: const PunchHoles(),
             ),
           ],
         ),
@@ -262,7 +262,7 @@ class _CoverContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'HIMI · FIELD NOTES',
+                'AGORA · SETUP NOTE',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: palette.foilDim,
@@ -331,7 +331,7 @@ class _CoverContent extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '轻触封面翻开',
+                        '上滑翻开',
                         style: TextStyle(
                           color: palette.foil,
                           fontSize: 11,
@@ -357,46 +357,18 @@ class _CoverEmblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 698 N64：简洁线性「连接」图标（声网语义，白描线——替代徽章）。
     return Container(
-      width: 76,
-      height: 76,
+      width: 72,
+      height: 72,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            palette.leatherLight.withValues(alpha: 0.65),
-            palette.leatherDark.withValues(alpha: 0.55),
-          ],
-        ),
-        border: Border.all(color: palette.foilDim, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2),
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: palette.foil.withValues(alpha: 0.50),
-                width: 0.8,
-              ),
-            ),
-          ),
-          Icon(
-            Icons.auto_stories_outlined,
-            size: 30,
-            color: palette.foil,
-          ),
-        ],
+      child: Icon(
+        Icons.cell_tower,
+        size: 34,
+        color: Colors.white.withValues(alpha: 0.88),
       ),
     );
   }
@@ -433,112 +405,6 @@ class _FoilDivider extends StatelessWidget {
           color: palette.foilDim.withValues(alpha: 0.70),
         ),
       ],
-    );
-  }
-}
-
-class _Spine extends StatelessWidget {
-  const _Spine({required this.palette});
-
-  final AgoraBookPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.horizontal(
-          left: Radius.circular(17),
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: [
-            palette.leatherDark,
-            palette.leatherLight,
-            palette.leatherDark,
-          ],
-          stops: const [0, 0.42, 1],
-        ),
-        border: Border(
-          right: BorderSide(
-            color: palette.leatherDark.withValues(alpha: 0.9),
-          ),
-        ),
-      ),
-      child: Stack(
-        children: [
-          for (final top in const [0.16, 0.48, 0.80])
-            Positioned.fill(
-              left: 2,
-              right: 2,
-              child: Align(
-                alignment: Alignment(0, top * 2 - 1),
-                child: Container(
-                  height: 3,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: palette.leatherDark.withValues(alpha: 0.72),
-                    border: Border(
-                      top: BorderSide(
-                        color: palette.leatherWorn.withValues(alpha: 0.28),
-                        width: 0.7,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          Positioned(
-            top: 4,
-            left: 0,
-            right: 0,
-            height: 4,
-            child: _HeadBand(palette: palette),
-          ),
-          Positioned(
-            bottom: 4,
-            left: 0,
-            right: 0,
-            height: 4,
-            child: _HeadBand(palette: palette),
-          ),
-          Center(
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: Text(
-                'HIMI',
-                style: TextStyle(
-                  color: palette.foilDim,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2.6,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeadBand extends StatelessWidget {
-  const _HeadBand({required this.palette});
-
-  final AgoraBookPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            palette.paperEdge,
-            palette.foilDim,
-            palette.paperEdge,
-          ],
-        ),
-      ),
     );
   }
 }
@@ -740,6 +606,42 @@ class SpiralRings extends StatelessWidget {
                   ],
                   stops: const [0.0, 1.0],
                 ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 698 N64：线圈穿过的方形装订孔（封顶缘每环位一孔——下陷圆角方孔，
+/// 线圈本真实装订观感）。
+class PunchHoles extends StatelessWidget {
+  const PunchHoles({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 14,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (var i = 0; i < 6; i++)
+            Container(
+              width: 13,
+              height: 11,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(3),
+                color: Colors.black.withValues(alpha: 0.30),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
             ),
         ],
