@@ -257,8 +257,8 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('指南书封面跟随背景色调（N48 fromTone）', (tester) async {
-    // N48：书皮跟随背景色——tone 源 heroToneProvider（未设走默认派生）。
+  testWidgets('指南书封面 = 磨砂玻璃笔记本（恒定，不跟色源）', (tester) async {
+    // N63：磨砂玻璃封面恒定中性。
     await _pumpScreen(
       tester,
       settings: const AppSettings(themeColor: 0xFFEC4899),
@@ -267,14 +267,10 @@ void main() {
     final container = tester.widget<Container>(
       find.byKey(const ValueKey('agoraBookCoverSurface')),
     );
-    final gradient =
-        (container.decoration! as BoxDecoration).gradient! as LinearGradient;
-
-    expect(
-      gradient.colors,
-      contains(AgoraBookPalette.fromTone(null).leather),
-      reason: 'N48 书皮跟随背景色调（默认色派生，不跟主题色）',
-    );
+    final box = container.decoration! as BoxDecoration;
+    // 磨砂玻璃：圆角 14 + 白描边（无皮革渐变）。
+    expect(box.gradient, isNull, reason: 'N63 皮革渐变删除（磨砂玻璃）');
+    expect(box.borderRadius, BorderRadius.circular(14));
   });
 
   testWidgets('指南书可通过箭头翻页，第五页为配置页', (tester) async {

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
@@ -25,6 +26,13 @@ class AgoraBookCover extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            // 698 N63：顶部线圈装订（参考图线圈本）。
+            Positioned(
+              top: -8,
+              left: 20,
+              right: 20,
+              child: const SpiralRings(),
+            ),
             Positioned.fill(
               top: 4,
               left: 4,
@@ -158,43 +166,68 @@ class _CoverBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 698 N63：磨砂玻璃封面（恒定中性）——三层立体：
+    // BackdropFilter 玻璃 + 左上柔光 + 右下内阴影 + 双描边（玻璃厚度感）。
     return Container(
       key: const ValueKey('agoraBookCoverSurface'),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: palette.coverGradient,
-        border: Border.all(
-          color: palette.leatherDark,
-          width: 1.4,
-        ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.42),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-          BoxShadow(
-            color: palette.leatherWorn.withValues(alpha: 0.20),
-            blurRadius: 1,
-            offset: const Offset(1, 1),
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(13),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const DecoratedBox(
+            // 磨砂玻璃底（透出背景光场）。
+            BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: ColoredBox(
+                color: Colors.white.withValues(alpha: 0.10),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // 左上柔光高光（受光面）。
+            DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0x16FFFFFF), Color(0x00000000)],
+                gradient: RadialGradient(
+                  center: const Alignment(-0.7, -0.8),
+                  radius: 1.1,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.12),
+                    Colors.white.withValues(alpha: 0),
+                  ],
                 ),
               ),
             ),
-            CustomPaint(painter: _AgedCoverPainter(palette)),
+            // 右下内阴影弧（鼓面感）。
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.7, 0.9),
+                  radius: 1.2,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.12),
+                    Colors.black.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+            // 内描边（玻璃厚度第二线）。
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.06), width: 3),
+              ),
+            ),
             Positioned.fill(
               left: 25,
               child: child,
@@ -203,7 +236,7 @@ class _CoverBoard extends StatelessWidget {
               left: 0,
               top: 0,
               bottom: 0,
-              width: 26,
+              width: 22,
               child: _Spine(palette: palette),
             ),
           ],
@@ -615,158 +648,6 @@ class _PageBlockPainter extends CustomPainter {
       oldDelegate.palette != palette || oldDelegate.closed != closed;
 }
 
-class _AgedCoverPainter extends CustomPainter {
-  const _AgedCoverPainter(this.palette);
-
-  final AgoraBookPalette palette;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final wear = _PaletteWear(size, palette);
-    wear.paintMottles(canvas, count: 26);
-    wear.paintGrain(canvas, count: 96);
-    wear.paintCornerScuffs(canvas);
-
-    final borderRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(8, 8, size.width - 16, size.height - 16),
-      const Radius.circular(12),
-    );
-    canvas.drawRRect(
-      borderRect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            palette.foilDim.withValues(alpha: 0.78),
-            palette.foil.withValues(alpha: 0.42),
-            palette.foilDim.withValues(alpha: 0.72),
-          ],
-        ).createShader(borderRect.outerRect),
-    );
-    canvas.drawRRect(
-      borderRect.deflate(3),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.55
-        ..color = palette.foilDim.withValues(alpha: 0.34),
-    );
-
-    final cornerPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = palette.foil.withValues(alpha: 0.50);
-    const corner = 18.0;
-    final corners = <Offset>[
-      Offset(14, 14),
-      Offset(size.width - 14, 14),
-      Offset(14, size.height - 14),
-      Offset(size.width - 14, size.height - 14),
-    ];
-    for (var i = 0; i < corners.length; i++) {
-      final c = corners[i];
-      final sx = i.isEven ? 1.0 : -1.0;
-      final sy = i < 2 ? 1.0 : -1.0;
-      canvas.drawLine(c, c + Offset(corner * sx, 0), cornerPaint);
-      canvas.drawLine(c, c + Offset(0, corner * sy), cornerPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _AgedCoverPainter oldDelegate) =>
-      oldDelegate.palette != palette;
-}
-
-class _PaletteWear {
-  _PaletteWear(this.size, this.palette);
-
-  final Size size;
-  final AgoraBookPalette palette;
-
-  void paintMottles(Canvas canvas, {required int count}) {
-    final random = math.Random(0x51A7 + count);
-    for (var i = 0; i < count; i++) {
-      final dx = random.nextDouble() * size.width;
-      final dy = random.nextDouble() * size.height;
-      final radius = 10 + random.nextDouble() * 46;
-      final dark = random.nextBool();
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(dx, dy),
-          width: radius * (1.1 + random.nextDouble()),
-          height: radius * (0.5 + random.nextDouble()),
-        ),
-        Paint()
-          ..color = (dark ? palette.leatherDark : palette.leatherWorn)
-              .withValues(alpha: 0.018 + random.nextDouble() * 0.035),
-      );
-    }
-  }
-
-  void paintGrain(Canvas canvas, {required int count}) {
-    final random = math.Random(0xA6E3);
-    final paint = Paint()..strokeWidth = 0.55;
-    for (var i = 0; i < count; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height;
-      final length = 0.7 + random.nextDouble() * 2.8;
-      paint.color =
-          (random.nextBool() ? palette.leatherWorn : palette.leatherDark)
-              .withValues(alpha: 0.03 + random.nextDouble() * 0.05);
-      canvas.drawLine(
-        Offset(x, y),
-        Offset(x + length, y + (random.nextDouble() - 0.5)),
-        paint,
-      );
-    }
-  }
-
-  void paintCornerScuffs(Canvas canvas) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1
-      ..strokeCap = StrokeCap.round
-      ..color = palette.leatherWorn.withValues(alpha: 0.22);
-    const points = <Offset>[
-      Offset(6, 12),
-      Offset(12, 6),
-      Offset(6, 20),
-      Offset(20, 6),
-      Offset(-6, 12),
-      Offset(-12, 6),
-      Offset(-6, 20),
-      Offset(-20, 6),
-      Offset(6, -12),
-      Offset(12, -6),
-      Offset(6, -20),
-      Offset(20, -6),
-      Offset(-6, -12),
-      Offset(-12, -6),
-      Offset(-6, -20),
-      Offset(-20, -6),
-    ];
-    final anchors = <Offset>[
-      Offset(0, 0),
-      Offset(size.width, 0),
-      Offset(0, size.height),
-      Offset(size.width, size.height),
-    ];
-    for (var i = 0; i < anchors.length; i++) {
-      final anchor = anchors[i];
-      for (var j = 0; j < 4; j++) {
-        final p = points[i * 4 + j];
-        canvas.drawLine(
-          anchor + p,
-          anchor + p + Offset(i.isEven ? 4 : -4, i < 2 ? 3 : -3),
-          paint,
-        );
-      }
-    }
-  }
-}
-
 class AgoraBookCoverBack extends StatelessWidget {
   const AgoraBookCoverBack({
     super.key,
@@ -830,4 +711,39 @@ class _CoverBackLiningPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CoverBackLiningPainter oldDelegate) =>
       oldDelegate.palette != palette;
+}
+
+/// 698 N63：顶部金属线圈装订（参考图线圈本）——6 环，每环高光+阴影金属感。
+class SpiralRings extends StatelessWidget {
+  const SpiralRings({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 22,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (var i = 0; i < 6; i++)
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFC8C8CE), width: 3),
+                gradient: RadialGradient(
+                  center: const Alignment(-0.4, -0.5),
+                  radius: 0.9,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.35),
+                    Colors.black.withValues(alpha: 0.18),
+                  ],
+                  stops: const [0.0, 1.0],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

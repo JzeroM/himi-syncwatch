@@ -263,60 +263,47 @@ void main() {
     expect(tapped, 'assets/images/agora_step1.png');
   });
 
-  testWidgets('封面书皮跟随背景色调（N48 fromTone）', (tester) async {
-    // N48：书皮跟随背景色（暗基调 + 背景色相派生 + 金点缀）。
+  testWidgets('封面 = 磨砂玻璃笔记本（恒定，不跟色源）', (tester) async {
+    // N63：磨砂玻璃封面恒定中性——不随 tone 变。
     const tone = Color(0xFFEC4899);
-    await _pumpBook(tester, themeColor: tone);
-
-    expect(_coverGradient(tester).colors,
-        contains(AgoraBookPalette.fromTone(tone).leather));
-
-    // 换背景色调封面跟随变化。
-    const otherTone = Color(0xFF10B981);
-    await _pumpBook(tester, themeColor: otherTone);
-
-    expect(_coverGradient(tester).colors,
-        contains(AgoraBookPalette.fromTone(otherTone).leather));
+    AgoraBookPalette.debugResetMemo();
+    final p1 = AgoraBookPalette.fromTone(tone);
+    AgoraBookPalette.debugResetMemo();
+    final p2 = AgoraBookPalette.fromTone(const Color(0xFF10B981));
+    expect(p1.leather, p2.leather, reason: '玻璃中性恒定（不跟色源）');
+    // 白纸内页（与步骤图片一致）。
+    expect(p1.paper, const Color(0xFFFFFFFF), reason: '白纸');
+    expect(p1.ink, const Color(0xFF2A2A2E), reason: '白纸深灰字');
   });
 
-  test('N60 书皮 = 同色系深压沉浸（L≈0.16）', () {
-    for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
-      AgoraBookPalette.debugResetMemo(); // 清跨测试 memo 污染
+  test('N63 书皮 = 磨砂玻璃 + 白纸（恒定）', () {
+    for (final tone in const [Color(0xFF10B981), null]) {
+      AgoraBookPalette.debugResetMemo();
       final p = AgoraBookPalette.fromTone(tone);
-      final src = HSLColor.fromColor(tone ?? const Color(0xFF6366F1));
-      final l = HSLColor.fromColor(p.leather);
-      // H 跟随背景色调。
-      expect(((l.hue - src.hue + 540) % 360) - 180, closeTo(0, 2), // 8bit 量化容差
-          reason: '色相跟随背景（tone=$tone）');
-      // 698 N60 同色系深压沉浸：L≈0.16（±0.03 + 量化容差）。
-      expect(l.lightness, inInclusiveRange(0.13, 0.19), reason: 'L≈0.16 深压');
-      expect(l.saturation, inInclusiveRange(0.16, 0.40), reason: 'S 跟背景');
-      expect(p.foil, const Color(0xFFD4AF37), reason: '亮金线保持');
-      expect(p.paperLight, const Color(0xFFF5F0E8), reason: '标题米白保持');
+      expect(p.paper, const Color(0xFFFFFFFF), reason: '白纸');
+      expect(p.ink, const Color(0xFF2A2A2E), reason: '白纸深灰字');
+      expect(p.paperEdge, const Color(0xFFD8D8DC), reason: '灰页边');
+      // 玻璃中性（恒定不随 tone）。
+      expect(p.leather, const Color(0xFFE4E4E8));
     }
   });
 
-  test('N49 文字回归原版：固定金箔 + 墨字 + 近白装饰字', () {
-    for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
+  test('N63 文字 = 白纸深灰字 + 白装饰线', () {
+    for (final tone in const [Color(0xFF10B981), null]) {
+      AgoraBookPalette.debugResetMemo();
       final p = AgoraBookPalette.fromTone(tone);
-      expect(p.foil, const Color(0xFFD4AF37), reason: '亮金线（参考图）');
-      expect(p.foilBright, const Color(0xFFE8C87A));
-      expect(p.foilDim, const Color(0xFFB9A77E));
-      expect(p.ink, const Color(0xFF3B2A1C), reason: '内页墨字');
-      expect(p.mutedInk, const Color(0xFF6E5741), reason: '次文字原版棕墨');
-      // 标题米白（参考图封面标题）。
-      expect(p.paperLight, const Color(0xFFF5F0E8), reason: '标题米白');
-      final plL = HSLColor.fromColor(p.paperLight).lightness;
-      expect(plL, greaterThan(0.80), reason: '白色字（近白）');
+      expect(p.foil, const Color(0xFFF2F2F4), reason: '白装饰线');
+      expect(p.ink, const Color(0xFF2A2A2E), reason: '白纸深灰字');
+      expect(p.mutedInk, const Color(0xFF6E6E74));
+      expect(p.paperLight, const Color(0xFFFFFFFF), reason: '白纸');
     }
   });
 
-  test('N49 书页泛黄纸（保持）', () {
+  test('N63 书页白纸（替代泛黄纸）', () {
     final p = AgoraBookPalette.fromTone(const Color(0xFF10B981));
-    // 书页泛黄纸（N46 前原版暖纸）。
-    expect(p.paper, const Color(0xFFE4CFA9), reason: '泛黄纸张');
-    expect(p.paperLight, const Color(0xFFF5F0E8), reason: 'N58 标题米白');
-    expect(p.ink, const Color(0xFF3B2A1C), reason: '暖纸深墨字');
+    expect(p.paper, const Color(0xFFFFFFFF), reason: '白纸');
+    expect(p.paperDark, const Color(0xFFF2F2F4), reason: '冷白暗部');
+    expect(p.ink, const Color(0xFF2A2A2E), reason: '深灰字');
   });
 
   testWidgets('做旧纸张与书页纹理可渲染', (tester) async {
@@ -328,11 +315,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('翻页矩阵方向锁定为外翻', (tester) async {
+  testWidgets('翻页矩阵方向锁定为上翻（N63 rotateX）', (tester) async {
     final transform = agoraPageTurnTransform(0.5);
 
-    expect(transform.entry(2, 0), lessThan(0));
-    expect(transform.entry(0, 0), lessThan(1));
+    // 上翻（rotateX）：绕 X 轴——m21/m12 正弦元非零、主对角余弦收缩。
+    expect(transform.entry(1, 2).abs(), greaterThan(0.1),
+        reason: 'rotateX 正弦元（上翻）');
+    expect(transform.entry(2, 2), lessThan(1), reason: '余弦收缩');
   });
 
   testWidgets('窄屏下合上/翻开均不溢出', (tester) async {

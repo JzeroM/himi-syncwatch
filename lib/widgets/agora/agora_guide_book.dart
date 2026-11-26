@@ -17,7 +17,7 @@ Matrix4 agoraPageTurnTransform(double progress) {
   final lift = math.sin(math.pi * p);
   return Matrix4.identity()
     ..setEntry(3, 2, 0.00055)
-    ..rotateY(angle)
+    ..rotateX(-angle) // 698 N63：上翻（绕顶部线圈）
     ..rotateZ(-0.012 * lift);
 }
 

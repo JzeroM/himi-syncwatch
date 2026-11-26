@@ -55,35 +55,32 @@ class AgoraBookPalette {
   /// 内页文字米金；丝带酒红点睛。memo 同 tone 不重算（687 防重建）。
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
-    // 698 N60：皮革 = **同色系深压沉浸**（用户拍板）——H/S 跟背景、
-    // L≈0.16 深压（书「浸」在背景色系里，如参考图紫书紫底；亮金线/
-    // 米白标题/金黄书页边恒定点缀）。
-    final src = HSLColor.fromColor(tone ?? defaultAccent);
-    var leatherS = src.saturation.clamp(0.22, 0.38);
-    if (leatherS < 0.18) leatherS = 0.18; // 深色保底（防灰皮）
-    final leather =
-        HSLColor.fromAHSL(1, src.hue, leatherS, 0.16).toColor();
-    //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
+    // 698 N63：**磨砂玻璃笔记本**（恒定中性，不跟任何色源）——封面
+    // 磨砂玻璃三层立体 + 顶部线圈 + 白纸内页（与步骤图片一致）。
+    // 皮革系字段重映射为玻璃中性系（书脊/页边立体用）。
+    const glassLight = Color(0xFFF2F2F4); // 玻璃亮
+    const glassMid = Color(0xFFE4E4E8); // 玻璃中（tint 基）
+    const glassDark = Color(0xFFC8C8CE); // 玻璃暗（书脊/金属线圈）
+    const glassWorn = Color(0xFFD8D8DC); // 玻璃做旧（页边）
 
     final palette = AgoraBookPalette(
-      leatherLight: _shift(leather, lightness: 0.07, saturation: -0.02),
-      leather: leather,
-      leatherDark: _shift(leather, lightness: -0.075, saturation: 0.02),
-      leatherWorn: _shift(leather, lightness: 0.17, saturation: -0.18),
-      // 698 N49：**文字回归原版固定金/墨/近白**（未改主题色时的经典
-      // 文字设计）——烫字恒金箔、内页墨字、装饰近白字，不随背景色调和。
-      foil: const Color(0xFFD4AF37), // 亮金线（参考图）
-      foilBright: const Color(0xFFE8C87A),
-      foilDim: const Color(0xFFB9A77E),
-      // 698 N49：书页回**泛黄纸张**（与封面分离，N46 前原版暖纸）。
-      paperLight: const Color(0xFFF5F0E8), // 标题米白（参考图）
-      paper: const Color(0xFFE4CFA9),
-      paperDark: const Color(0xFFCDB183),
-      paperEdge: const Color(0xFFC9A84C), // 书页侧边金黄（参考图）
-      pageBack: const Color(0xFFD9C098),
-      ink: const Color(0xFF3B2A1C), // 内页墨字（暖纸深墨）
-      mutedInk: const Color(0xFF6E5741),
-      ribbon: const Color(0xFF8E3F37), // 丝带酒红点睛
+      leatherLight: glassLight,
+      leather: glassMid,
+      leatherDark: glassDark,
+      leatherWorn: glassWorn,
+      // 装饰线（白系，替代金箔——磨砂玻璃风格）。
+      foil: const Color(0xFFF2F2F4),
+      foilBright: const Color(0xFFFFFFFF),
+      foilDim: Color(0x8CF2F2F4),
+      // 698 N63：白纸内页（与步骤图片一致，替代泛黄纸）。
+      paperLight: const Color(0xFFFFFFFF),
+      paper: const Color(0xFFFFFFFF),
+      paperDark: const Color(0xFFF2F2F4),
+      paperEdge: const Color(0xFFD8D8DC),
+      pageBack: const Color(0xFFEFEFF1),
+      ink: const Color(0xFF2A2A2E), // 白纸深灰字（步骤图片同源）
+      mutedInk: const Color(0xFF6E6E74),
+      ribbon: const Color(0xFFB08A4A), // 装订扣黄铜点睛
     );
     _memoTone = tone;
     _memoPalette = palette;
