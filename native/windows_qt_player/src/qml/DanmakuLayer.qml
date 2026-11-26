@@ -55,6 +55,9 @@ import QtQuick.Controls.Basic
 /// - 30fps 帧驱动（与鸿蒙 `DanmakuLayer` 一致）。
 Item {
     id: root
+    // 698 N62：关闭弹幕即整层隐藏（飞行中弹幕一并消失——「关了还在
+    // 显示」修复：running 冻结会把弹幕留在原地）。
+    visible: danmakuEnabled
 
     /// 弹幕数据（`playerState.danmakuItems`）。
     property var danmakuItems: []

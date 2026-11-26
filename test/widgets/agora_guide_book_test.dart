@@ -279,19 +279,18 @@ void main() {
         contains(AgoraBookPalette.fromTone(otherTone).leather));
   });
 
-  test('N59 书皮 = 背景色相派生（L/S 锁现状水平）', () {
+  test('N60 书皮 = 同色系深压沉浸（L≈0.16）', () {
     for (final tone in const [Color(0xFF10B981), Color(0xFFEC4899), null]) {
       AgoraBookPalette.debugResetMemo(); // 清跨测试 memo 污染
       final p = AgoraBookPalette.fromTone(tone);
       final src = HSLColor.fromColor(tone ?? const Color(0xFF6366F1));
       final l = HSLColor.fromColor(p.leather);
       // H 跟随背景色调。
-      expect(((l.hue - src.hue + 540) % 360) - 180, closeTo(0, 1),
+      expect(((l.hue - src.hue + 540) % 360) - 180, closeTo(0, 2), // 8bit 量化容差
           reason: '色相跟随背景（tone=$tone）');
-      // L 锁现状水平（0.35±0.03 + 量化容差）。
-      expect(l.lightness, inInclusiveRange(0.314, 0.386), reason: 'L≈0.35');
-      // S 锁现状水平（0.34±0.05）。
-      expect(l.saturation, inInclusiveRange(0.28, 0.40), reason: 'S≈0.34');
+      // 698 N60 同色系深压沉浸：L≈0.16（±0.03 + 量化容差）。
+      expect(l.lightness, inInclusiveRange(0.13, 0.19), reason: 'L≈0.16 深压');
+      expect(l.saturation, inInclusiveRange(0.16, 0.40), reason: 'S 跟背景');
       expect(p.foil, const Color(0xFFD4AF37), reason: '亮金线保持');
       expect(p.paperLight, const Color(0xFFF5F0E8), reason: '标题米白保持');
     }

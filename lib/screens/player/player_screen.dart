@@ -645,7 +645,21 @@ class PlayerScreen extends ConsumerStatefulWidget {
     bool seekCooldownActive = false,
   }) {
     if (engineEmitsEnd || seekCooldownActive) return false;
-    return playing && durationMs > 0 && positionMs >= durationMs - 500;
+    if (!playing || durationMs <= 0) return false;
+    // 698 N62 三重防误判（「播到中途自动跳下一集」根治）：
+    // ① duration 合理（>5s——元数据 0/1s 异常不触发）
+    if (durationMs < 5000) return false;
+    // ② 尾部窗口判定（≥ duration-500）
+    if (positionMs < durationMs - 500) return false;
+    // ③ 位置突变过滤：从 <80% 直接跳 ≥99% 视为 seek/异常不触发
+    //（由调用方传 prevPositionMs 时校验——见 _autoNextTick）。
+    return true;
+  }
+
+  /// 698 N62：位置突变检测（<80% → ≥99% 突跳 = seek/异常，不跳集）。
+  static bool isPositionJumpSuspect(int prevMs, int curMs, int durationMs) {
+    if (durationMs <= 0 || prevMs <= 0) return false;
+    return prevMs < durationMs * 0.8 && curMs >= durationMs * 0.99;
   }
 
   /// 跳过片尾后是否直接进入下一集（纯函数，供测试）。
@@ -1233,6 +1247,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 仅当期间播放位置停滞（无推进）才判为真卡死；position 持续推进说明
   /// 只是高码率/弱网下的降速播放，不得重载（否则反复清缓冲加剧卡顿）。
   Timer? _stallWatchdogTimer;
+
+  /// 698 N62：STRM 直链回退代理（一次性降级）。
+  bool _strmDirectActive = false;
+  bool _strmProxyRetried = false;
+
+  /// 698 N62：playing 静默检测（位置不动超时 → 重载）。
+  int _silentWatchPosMs = -1;
+  DateTime? _silentSince;
+  int _lastTickPosMs = 0;
 
   /// watchdog 武装时的播放位置（ms）；用于采样时判断是否仍有推进。
   int? _stallWatchdogStartPosMs;
@@ -4633,6 +4656,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// + QML 清缓存（旧集弹幕不串场）；回跳 seek → 只清已推集合并重发
   /// （QML 飞行缓存保留，行号不跳）。
   void _pushQtDanmakuTick() {
+    // 698 N62：弹幕开关门控——关闭时不推（Windows「关了弹幕还在显示」
+    // 根因：tick 无门控，QML 收到推送就渲染）。
+    if (!_danmakuOn) return;
     final mpv = _player;
     final qt = MpvSessionPlatform.activeQtAdapter;
     if (mpv is! MpvPlayerAdapter || qt == null || qt.isDisposed || _disposed) {
@@ -5086,9 +5112,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (sourceRuntimeMs > 0) {
         _fallbackDurationMs = sourceRuntimeMs;
       }
-      final streamUrl = strmEnabled
+      // 698 N62：回退重试时跳过直链（_strmProxyRetried → 强制代理）。
+      final streamUrl = (strmEnabled && !_strmProxyRetried)
           ? resolveStrmDirectUrl(source: source, proxyUrl: proxyUrl)
           : proxyUrl;
+      _strmDirectActive = strmEnabled && streamUrl != proxyUrl;
       if (strmEnabled && streamUrl != proxyUrl) {
         LogService().log('Player', 'STRM 直链播放: $streamUrl');
       }
@@ -5116,6 +5144,23 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       if (!mounted) return false;
       if (token.isNotEmpty) {
         _player.setHttpHeaders({'X-Emby-Token': token});
+      }
+      // 698 N62：STRM 直链补 UA/referer（网盘 CDN 拒非浏览器 UA 的 403
+      // 根治）——直链与代理链都带（代理忽略无害）。
+      if (strmEnabled && streamUrl != proxyUrl) {
+        _player.setHttpHeaders({
+          if (token.isNotEmpty) 'X-Emby-Token': token,
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+          'Referer': Uri.parse(streamUrl).origin,
+        });
+      }
+      // 698 N62：字幕互斥提示（开关开但本次内嵌字幕请求禁用了直链）。
+      if ((config?.strmDirectPlay ?? false) &&
+          subtitleStreamIndex != null &&
+          mounted) {
+        showAppToast(context, '内嵌字幕播放走服务器代理（直链不支持内嵌字幕）');
       }
 
       // HDR image=0 实验（1.1.190 官方 setDecoders 方式）：Emby 元数据
@@ -5298,10 +5343,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       // 加载成功：复位同线路重载预算（v1.1.245）
       _streamReload.reset();
+      _strmProxyRetried = false;
 
       return _videoOutputReady();
     } catch (e) {
       LogService().log('Player', '加载流失败: $e');
+      // 698 N62：STRM 直链失败自动回退代理（403/超时无感降级重试一次
+      // ——递归重载：_strmProxyRetried 标记让取流强制走代理）。
+      if (_strmDirectActive && !_strmProxyRetried) {
+        _strmProxyRetried = true;
+        LogService().log('Player', 'STRM 直链失败 → 回退代理重试');
+        _isSwitchingMedia = false;
+        _abandonQtTakeover();
+        return _loadStream(
+          itemId: itemId,
+          subtitleStreamIndex: subtitleStreamIndex,
+          mediaSourceId: mediaSourceId,
+          serverId: serverId,
+          startMs: startMs,
+        );
+      }
       // 669 B4：Qt 接管落空（未走到交接）——恢复 Flutter 播放页 UI。
       _abandonQtTakeover();
       _isSwitchingMedia = false;
@@ -5787,6 +5848,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // mdk 有 MediaStatus.end，走兜底会把拖进度条到结尾误判为播完切集。
       // seek 冷却期内同样忽略。
       final seekAt = _lastSeekCompletedAt;
+      // 698 N62：位置突变过滤（<80% → ≥99% 突跳 = seek/异常，不跳集）。
+      final jumpSuspect = PlayerScreen.isPositionJumpSuspect(
+          _lastTickPosMs, pos, _duration.inMilliseconds);
+      _lastTickPosMs = pos;
       if (PlayerScreen.shouldAutoNextEpisode(
         positionMs: pos,
         durationMs: _duration.inMilliseconds,
@@ -5794,14 +5859,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         playing: _reportEngine.state == AdapterPlaybackState.playing,
         engineEmitsEnd: _currentEngine == PlayerEngine.mdk ||
             _currentEngine == PlayerEngine.mpv,
-        seekCooldownActive: seekAt != null &&
-            DateTime.now().difference(seekAt) <
-                PlayerScreen.autoNextSeekCooldown,
+        seekCooldownActive: jumpSuspect ||
+            (seekAt != null &&
+                DateTime.now().difference(seekAt) <
+                    PlayerScreen.autoNextSeekCooldown),
       )) {
         unawaited(_handleEpisodeFinished(
           completedAtMs:
               _duration.inMilliseconds > 0 ? _duration.inMilliseconds : null,
         ));
+      }
+      // 698 N62：playing 静默检测（watchdog 盲区——state=playing 但位置
+      // 15s 不动 → 同线路重载；「卡住不动也不重试」根治）。
+      final enginePlaying =
+          _reportEngine.state == AdapterPlaybackState.playing;
+      if (enginePlaying) {
+        if (_silentWatchPosMs == pos && pos > 0) {
+          if (_silentSince == null) _silentSince = DateTime.now();
+          if (DateTime.now().difference(_silentSince!) >
+              const Duration(seconds: 15)) {
+            _silentSince = null;
+            LogService().log('Player', 'playing 但位置 15s 静默 → 重载');
+            _maybeStreamReload('播放静默');
+          }
+        } else {
+          _silentWatchPosMs = pos;
+          _silentSince = null;
+        }
+      } else {
+        _silentSince = null;
       }
     });
 
@@ -11050,6 +11136,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       _loadDanmaku();
     } else {
       _cancelDanmakuRetry();
+      // 698 N62：关闭即清屏（Windows「关了还在显示」修复）——Qt 推送层
+      // 清缓存 + 推空窗；下次开启 reset 全量重发。
+      _qtDanmakuPushedKeys.clear();
+      _qtDanmakuGen = -1;
+      _qtDanmakuLastPosMs = 0;
     }
     // Erika 档：开关直接下发引擎原生弹幕
     if (_currentEngine == PlayerEngine.erika) {

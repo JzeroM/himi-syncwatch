@@ -1276,12 +1276,11 @@ void main() {
       isTrue,
       reason: '698 N1：顶部轮播使用电影封面（Primary 海报）',
     );
-    // 698 N49：HomeHeroBackground 收敛——模糊海报氛围层由全局
-    // PosterBackdrop 统一渲染（首页与其他页背景完全一致，防双糊）。
-    expect(find.byKey(const Key('homeAmbientImage')), findsNothing,
-        reason: 'N49 局部氛围层已收敛（全局氛围层接管）');
-    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsNothing,
-        reason: 'N49 接缝层随局部氛围层收敛（全局层天然无缝）');
+    // 698 N60：恢复 v1.6.14 同源海报氛围（局部氛围层+接缝层回归；
+    // 全局光场垫底无模糊 → 无双糊）。
+    expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
+        reason: 'N60 同源模糊氛围恢复');
+    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsOneWidget);
     expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
 
     // 698 N43：消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending

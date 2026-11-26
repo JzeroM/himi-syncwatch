@@ -1557,6 +1557,48 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   String? _lastBgUrl;
 
+  /// 698 N60：正文虚化氛围层恢复（v1.6.14 同源海报氛围）——详情海报
+  /// blur σ36 + 放大 1.35 + 压暗渐隐到基调，与顶部清晰 hero 图无缝衔接。
+  Widget _buildAmbientBackdrop(Color base) {
+    final url = _item?.backdropUrl ?? _item?.posterUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+          child: Transform.scale(
+            scale: 1.35,
+            child: EmbyImage(
+              key: const Key('detailAmbientImage'),
+              url: url,
+              fit: BoxFit.cover,
+              cacheWidth: 200,
+              placeholder: const SizedBox.shrink(),
+              errorWidget: const SizedBox.shrink(),
+            ),
+          ),
+        ),
+        DecoratedBox(
+          key: const Key('detailAmbientScrim'),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.30),
+                Colors.black.withValues(alpha: 0.42),
+                base.withValues(alpha: 0.90),
+                base,
+              ],
+              stops: const [0.0, 0.5, 0.85, 1.0],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // 698 N59：详情海报写入全局色源——首页同款光场渲染器（多色调色板 +
@@ -1658,8 +1700,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             : Stack(
                 fit: StackFit.expand,
                 children: [
-                  //（698 N59：虚化氛围底图删——全局光场接管[详情海报色源，
-                  // 首页同款取色方案]，零分割天然成立。）
+                  // 698 N60：恢复 v1.6.14 同源海报氛围（详情海报 blur +
+                  // 渐隐——正文氛围与首页同款；全局光场垫底）。
+                  if (_item != null) _buildAmbientBackdrop(base),
                   content,
                   // 687：Hero 落点——主列表海报飞过来后在这里「落地」，
                   // 随即被 backdrop/氛围底覆盖。尺寸 0 保证不参与布局、

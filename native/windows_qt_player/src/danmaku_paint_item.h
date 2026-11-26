@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QFont>
+#include <QFontMetrics>
 #include <QColor>
 #include <QQuickPaintedItem>
 #include <QVariantList>
@@ -51,6 +53,16 @@ class DanmakuPaintItem : public QQuickPaintedItem {
     Q_PROPERTY(QColor outlineColor READ outlineColor WRITE setOutlineColor
                    NOTIFY outlineColorChanged)
 public:
+    /// 698 N62：QFont/字体度量缓存（paint 每帧新建 QFont 是卡顿源——
+    /// 高密度弹幕 × 高 DPI 设备性能差异主因之一）。
+    QFont cachedFont_{"Microsoft YaHei"};
+    qreal cachedAscent_ = 0;
+    void refreshFontCache() {
+        cachedFont_.setPixelSize(fontSize_);
+        cachedFont_.setWeight(QFont::Medium);
+        cachedAscent_ = QFontMetrics(cachedFont_).ascent();
+    }
+
     explicit DanmakuPaintItem(QQuickItem* parent = nullptr);
 
     void paint(QPainter* painter) override;

@@ -737,8 +737,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: Colors.transparent,
             ),
           ),
-          //（698 N49：HomeHeroBackground 收敛——全局 PosterBackdrop 的
-          // 模糊氛围层同公式接管，防双糊；首页与其他页背景完全统一。）
+          // 698 N60：恢复 v1.6.14 同源海报氛围（hero 海报 blur σ36 +
+          // 渐隐——大图向下溶解的氛围延伸；全局光场垫底[其它页用]，
+          // 此局部氛围层叠于首页，无双糊[全局层无模糊]）。
+          if (showHero)
+            HomeHeroBackground(
+              imageUrl: _heroItems[heroIndex].imageUrl,
+              heroHeight: heroHeight,
+            ),
           content,
         ],
       ),

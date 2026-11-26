@@ -55,15 +55,14 @@ class AgoraBookPalette {
   /// 内页文字米金；丝带酒红点睛。memo 同 tone 不重算（687 防重建）。
   static AgoraBookPalette fromTone(Color? tone) {
     if (tone == _memoTone && _memoPalette != null) return _memoPalette!;
-    // 698 N59：皮革 = **背景色相派生**（用户拍板：跟背景色、明度饱和
-    // 锁现状深紫书水平）——H 跟随背景色调、L 锁 0.35±0.03、S 锁
-    // 0.34±0.05；低饱和 tone 提 S≥0.25（防灰皮）；亮金线/米白标题/
-    // 金黄书页边保持。
+    // 698 N60：皮革 = **同色系深压沉浸**（用户拍板）——H/S 跟背景、
+    // L≈0.16 深压（书「浸」在背景色系里，如参考图紫书紫底；亮金线/
+    // 米白标题/金黄书页边恒定点缀）。
     final src = HSLColor.fromColor(tone ?? defaultAccent);
-    var leatherS = src.saturation.clamp(0.29, 0.39);
-    if (leatherS < 0.25) leatherS = 0.25; // 深色保底（防灰皮）
+    var leatherS = src.saturation.clamp(0.22, 0.38);
+    if (leatherS < 0.18) leatherS = 0.18; // 深色保底（防灰皮）
     final leather =
-        HSLColor.fromAHSL(1, src.hue, leatherS, 0.35).toColor();
+        HSLColor.fromAHSL(1, src.hue, leatherS, 0.16).toColor();
     //（698 N49：文字回归原版固定金/墨/近白——goldMix 调和已移除。）
 
     final palette = AgoraBookPalette(

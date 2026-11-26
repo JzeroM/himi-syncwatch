@@ -3,6 +3,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
+#include <QQuickWindow>
 #include <QPen>
 
 namespace {
@@ -13,6 +14,7 @@ constexpr double kFixedMs = 4000.0;
 DanmakuPaintItem::DanmakuPaintItem(QQuickItem* parent)
     : QQuickPaintedItem(parent)
 {
+    refreshFontCache(); // 698 N62：字体缓存初始化
     // 弹幕层是透明悬浮绘制（不透明填充会盖视频）。
     setOpaquePainting(false);
     setAntialiasing(true);
@@ -78,6 +80,7 @@ void DanmakuPaintItem::setFontSize(int v)
 {
     if (fontSize_ == v) return;
     fontSize_ = v;
+    refreshFontCache();
     emit fontSizeChanged();
     update();
 }
@@ -108,13 +111,12 @@ double DanmakuPaintItem::fixedFade(double progress)
 void DanmakuPaintItem::paint(QPainter* painter)
 {
     if (items_.isEmpty()) return;
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    QFont font(QStringLiteral("Microsoft YaHei"));
-    font.setPixelSize(fontSize_);
-    font.setWeight(QFont::Medium);
-    painter->setFont(font);
-    // QML Text 的 y 是顶边；QPainter drawText 用基线 → +ascent 对齐。
-    const qreal ascent = QFontMetrics(font).ascent();
+    // 698 N62：QFont 缓存（成员化，不再每帧新建）+ 高 dpr 自适应
+    // （高缩放屏字体光栅已平滑，全抗锯齿是多余开销——设备卡顿差异）。
+    const qreal dpr = window() ? window()->devicePixelRatio() : 1.0;
+    painter->setRenderHint(QPainter::TextAntialiasing, dpr < 1.5);
+    painter->setFont(cachedFont_);
+    const qreal ascent = cachedAscent_;
     const qreal w = width();
     const qreal h = height();
 
