@@ -49,7 +49,7 @@ LinearGradient _coverGradient(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('首屏显示合上的做旧封面', (tester) async {
+  testWidgets('首屏显示合上的塑料磨砂书皮', (tester) async {
     await _pumpBook(tester);
 
     expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
@@ -69,7 +69,7 @@ void main() {
     expect(find.text('声网接入指南'), findsOneWidget);
     expect(find.text('四步完成声网配置'), findsOneWidget);
     expect(find.text('步骤 1 / 4'), findsNothing);
-    expect(find.text('共 4 步 · 上滑翻阅'), findsOneWidget);
+    expect(find.text('共 4 步 · 左右滑动阅读'), findsOneWidget);
     expect(find.byKey(const ValueKey('agoraQuillButton')), findsNothing);
   });
 
@@ -103,19 +103,19 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(0, 280),
+      const Offset(280, 0),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
   });
 
-  testWidgets('上滑翻页，页码同步更新（N64 垂直手势）', (tester) async {
+  testWidgets('左右滑动翻页，页码同步更新（N69 书形态）', (tester) async {
     await _pumpBook(tester);
     await _openBook(tester);
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(0, -280),
+      const Offset(-280, 0),
     );
     await tester.pumpAndSettle();
 
@@ -125,7 +125,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('agoraBookViewport')),
-      const Offset(0, 280),
+      const Offset(280, 0),
     );
     await tester.pumpAndSettle();
 
@@ -315,13 +315,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('翻页矩阵方向锁定为上翻（N63 rotateX）', (tester) async {
+  testWidgets('翻页矩阵方向锁定为外翻（N69 rotateY）', (tester) async {
     final transform = agoraPageTurnTransform(0.5);
 
-    // 上翻（rotateX）：绕 X 轴——m21/m12 正弦元非零、主对角余弦收缩。
-    expect(transform.entry(1, 2).abs(), greaterThan(0.1),
-        reason: 'rotateX 正弦元（上翻）');
-    expect(transform.entry(2, 2), lessThan(1), reason: '余弦收缩');
+    // 外翻（rotateY）：绕 X 轴——m21/m12 正弦元非零、主对角余弦收缩。
+    expect(transform.entry(2, 0).abs(), greaterThan(0.1),
+        reason: 'rotateY 正弦元（上翻）');
+    expect(transform.entry(0, 0), lessThan(1), reason: '余弦收缩');
   });
 
   testWidgets('窄屏下合上/翻开均不溢出', (tester) async {

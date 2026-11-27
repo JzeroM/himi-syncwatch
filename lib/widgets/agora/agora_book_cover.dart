@@ -159,13 +159,14 @@ class _CoverBoard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 698 N63：磨砂玻璃封面（恒定中性）——三层立体：
-    // BackdropFilter 玻璃 + 左上柔光 + 右下内阴影 + 双描边（玻璃厚度感）。
+    // 698 N69：塑料磨砂书皮——磨砂底 + 顶部大弧高光带（塑料反光）+
+    // 亮描边（塑料清晰边）+ 右下微反射弧。
     return Container(
       key: const ValueKey('agoraBookCoverSurface'),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 1),
+        borderRadius: BorderRadius.circular(18),
+        border:
+            Border.all(color: Colors.white.withValues(alpha: 0.20), width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.30),
@@ -175,61 +176,47 @@ class _CoverBoard extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(17),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 磨砂玻璃底（透出背景光场）。
+            // 磨砂玻璃底。
             BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: ColoredBox(
-                color: Colors.white.withValues(alpha: 0.10),
+                color: Colors.white.withValues(alpha: 0.12),
                 child: const SizedBox.expand(),
               ),
             ),
-            // 左上柔光高光（受光面）。
+            // 顶部大弧高光带（塑料反光）。
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.center,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.22),
+                    Colors.white.withValues(alpha: 0),
+                  ],
+                  stops: const [0.0, 0.45],
+                ),
+              ),
+            ),
+            // 右下微反射弧。
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: const Alignment(-0.7, -0.8),
+                  center: const Alignment(0.8, 0.9),
                   radius: 1.1,
                   colors: [
-                    Colors.white.withValues(alpha: 0.12),
+                    Colors.white.withValues(alpha: 0.08),
                     Colors.white.withValues(alpha: 0),
                   ],
                 ),
               ),
             ),
-            // 右下内阴影弧（鼓面感）。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0.7, 0.9),
-                  radius: 1.2,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.12),
-                    Colors.black.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-            // 内描边（玻璃厚度第二线）。
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.06), width: 3),
-              ),
-            ),
             Positioned.fill(
               child: child,
-            ),
-            // 698 N68：装订（参考图 1:1）——双丝环穿孔单 painter 严格对位。
-            Positioned(
-              top: -6,
-              left: 26,
-              right: 26,
-              child: const BindingRings(),
             ),
           ],
         ),
@@ -254,7 +241,7 @@ class _CoverContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'AGORA · SETUP NOTE',
+                'AGORA · FIELD GUIDE',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: palette.foilDim,
@@ -323,7 +310,7 @@ class _CoverContent extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '上滑翻开',
+                        '轻触封面翻开',
                         style: TextStyle(
                           color: palette.foil,
                           fontSize: 11,
@@ -358,7 +345,7 @@ class _CoverEmblem extends StatelessWidget {
         border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2),
       ),
       child: Icon(
-        Icons.draw, // 698 N65：钢笔线条（笔记本+羽毛笔主题）
+        Icons.forum_outlined, // 698 N69：双对话气泡（声网通讯语义）
         size: 34,
         color: Colors.white.withValues(alpha: 0.88),
       ),
@@ -571,7 +558,6 @@ class _CoverBackLiningPainter extends CustomPainter {
       oldDelegate.palette != palette;
 }
 
-/// 698 N68：装订（参考图 1:1）——**双股细丝圆拱穿圆孔**，单 painter
 /// 严格对位（环心=孔心）：丝从孔穿出绕拱穿回相邻孔（螺旋连续）、
 /// 受光/背光分段、孔口接触阴影+口缘高光+孔内丝截面。
 class BindingRings extends StatelessWidget {

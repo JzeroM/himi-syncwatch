@@ -244,20 +244,20 @@ void main() {
     await _settleSnackbars(tester);
   });
 
-  testWidgets('页面内嵌声网指南书，首次显示做旧封面', (tester) async {
+  testWidgets('页面内嵌声网指南书，首次显示塑料磨砂书皮', (tester) async {
     await _pumpScreen(tester);
 
     expect(find.byKey(const ValueKey('agoraGuideBook')), findsOneWidget);
     expect(find.text('声网接入指南'), findsOneWidget);
     expect(find.byKey(const ValueKey('agoraBookCover')), findsOneWidget);
     expect(find.text('步骤 1 / 5'), findsNothing);
-    expect(find.text('共 5 步 · 上滑翻阅'), findsOneWidget);
+    expect(find.text('共 5 步 · 左右滑动阅读'), findsOneWidget);
     expect(find.text('配置说明'), findsNothing);
     expect(find.byTooltip('配置说明'), findsNothing);
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('指南书封面 = 磨砂玻璃笔记本（恒定，不跟色源）', (tester) async {
+  testWidgets('指南书封面 = 塑料磨砂书皮（恒定，不跟色源）', (tester) async {
     // N63：磨砂玻璃封面恒定中性。
     await _pumpScreen(
       tester,
@@ -268,9 +268,9 @@ void main() {
       find.byKey(const ValueKey('agoraBookCoverSurface')),
     );
     final box = container.decoration! as BoxDecoration;
-    // 磨砂玻璃：圆角 14 + 白描边（无皮革渐变）。
-    expect(box.gradient, isNull, reason: 'N63 皮革渐变删除（磨砂玻璃）');
-    expect(box.borderRadius, BorderRadius.circular(14));
+    // N69 塑料磨砂书皮：圆角 18 + 亮描边（无皮革渐变）。
+    expect(box.gradient, isNull, reason: '皮革渐变删除（塑料磨砂）');
+    expect(box.borderRadius, BorderRadius.circular(18));
   });
 
   testWidgets('指南书可通过箭头翻页，第五页为配置页', (tester) async {

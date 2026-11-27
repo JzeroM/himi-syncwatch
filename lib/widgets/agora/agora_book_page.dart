@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 
-import 'package:himi_syncwatch/widgets/agora/agora_book_cover.dart';
 import 'package:himi_syncwatch/utils/asset_image.dart';
 import 'package:himi_syncwatch/widgets/agora/agora_book_palette.dart';
 
@@ -74,7 +73,7 @@ class AgoraBookPaperPage extends StatelessWidget {
       child: Container(
       key: ValueKey('agoraBookPage_$index'),
       // 698 N68：白纸（参考图 1:1——横线格由 painter 画）。
-      decoration: const BoxDecoration(color: Color(0xFFFAFAFA)),
+      decoration: const BoxDecoration(color: Color(0xFFFFFFFF)),
       child: Stack(
         children: [
           Positioned.fill(
@@ -85,21 +84,6 @@ class AgoraBookPaperPage extends StatelessWidget {
             ),
           ),
           //（698 N65：书签飘带删除。）
-          // 698 N68：燕尾箭头标签（参考图 1:1，每页一色）。
-          Positioned(
-            left: -22,
-            top: 56,
-            child: IgnorePointer(
-              child: _RibbonTag(step: index + 1),
-            ),
-          ),
-          // 698 N65：每页装订——顶缘线圈 + 装订孔（与封面同款同位）。
-          Positioned(
-            top: -6,
-            left: 26,
-            right: 26,
-            child: const BindingRings(),
-          ),
 
           Padding(
             padding: const EdgeInsets.fromLTRB(17, 14, 17, 11),
@@ -323,8 +307,7 @@ class AgoraBookGuidePage extends StatelessWidget {
   }
 }
 
-/// 698 N68：横线格纸（参考图 1:1）——白纸 + 浅蓝灰横线格 + 右侧橙色
-/// margin 竖线（替代做旧纸纹）。
+/// 698 N69：纯白纸页 painter。
 class _AgedPaperPainter extends CustomPainter {
   const _AgedPaperPainter(this.palette, {required this.seed});
 
@@ -333,24 +316,8 @@ class _AgedPaperPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 白纸底。
-    canvas.drawRect(
-        Offset.zero & size, Paint()..color = const Color(0xFFFAFAFA));
-    // 浅蓝灰横线格（行距 24，全页横贯）。
-    final linePaint = Paint()
-      ..strokeWidth = 1
-      ..color = const Color(0xFFC8D4E0);
-    for (var y = 40.0; y < size.height - 10; y += 24) {
-      canvas.drawLine(Offset(12, y), Offset(size.width - 12, y), linePaint);
-    }
-    // 右侧橙色 margin 竖线（距右 22%）。
-    canvas.drawLine(
-      Offset(size.width * 0.78, 24),
-      Offset(size.width * 0.78, size.height - 12),
-      Paint()
-        ..strokeWidth = 1.5
-        ..color = const Color(0xFFE8A838),
-    );
+    // 698 N69：纯白纸页（干净白纸）。
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFFFFFFF));
   }
 
   @override
@@ -358,115 +325,3 @@ class _AgedPaperPainter extends CustomPainter {
       oldDelegate.seed != seed;
 }
 
-class _RibbonTag extends StatelessWidget {
-  const _RibbonTag({required this.step});
-
-  final int step;
-
-  static const _colors = [
-    Color(0xFF1CA5B8), // 01 蓝绿
-    Color(0xFFF0A020), // 02 橙
-    Color(0xFFE8604C), // 03 珊瑚红
-    Color(0xFF6C63C8), // 04 蓝紫
-    Color(0xFF4CAF6E), // 05 绿
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _colors[(step - 1).clamp(0, 4)];
-    return SizedBox(
-      width: 86,
-      height: 56,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 左侧丝带扣环（小矩形环）。
-          Positioned(
-            left: -8,
-            top: 16,
-            child: Container(
-              width: 14,
-              height: 22,
-              decoration: BoxDecoration(
-                border: Border.all(color: color, width: 4),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-          // 主体（圆角 + 右端箭头尖）。
-          CustomPaint(
-            size: const Size(86, 56),
-            painter: _RibbonPainter(color),
-          ),
-          // 文字。
-          Positioned.fill(
-            left: 18,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  step.toString().padLeft(2, '0'),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.0,
-                  ),
-                ),
-                const Text(
-                  'STEP',
-                  style: TextStyle(
-                    fontSize: 8,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 燕尾形状（圆角主体 + 右端箭头尖）。
-class _RibbonPainter extends CustomPainter {
-  _RibbonPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(8, 4)
-      ..lineTo(size.width - 18, 4)
-      ..lineTo(size.width - 2, size.height / 2) // 右尖
-      ..lineTo(size.width - 18, size.height - 4)
-      ..lineTo(8, size.height - 4)
-      ..quadraticBezierTo(0, size.height - 4, 0, size.height - 12)
-      ..lineTo(0, 12)
-      ..quadraticBezierTo(0, 4, 8, 4);
-    canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.fill
-          ..shader = LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [color, Color.lerp(color, Colors.black, 0.12)!],
-          ).createShader(Offset.zero & size));
-    // 下方微阴影。
-    canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = Colors.black.withValues(alpha: 0.18));
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

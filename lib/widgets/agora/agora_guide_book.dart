@@ -17,7 +17,7 @@ Matrix4 agoraPageTurnTransform(double progress) {
   final lift = math.sin(math.pi * p);
   return Matrix4.identity()
     ..setEntry(3, 2, 0.00055)
-    ..rotateX(-angle) // 698 N63：上翻（绕顶部线圈）
+    ..rotateY(angle)
     ..rotateZ(-0.012 * lift);
 }
 
@@ -185,8 +185,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
 
   void _handleDragUpdate(DragUpdateDetails details) {
     if (_busy && _dragTarget == null) return;
-    // 698 N64：上刮翻页（垂直语义）——上滑 dy<0 前进、下拉 dy>0 回翻。
-    _dragDx += details.delta.dy;
+    // 698 N69：左右滑动翻页（水平语义）——左滑 dx<0 前进、右滑回翻。
+    _dragDx += details.delta.dx;
 
     if (_dragTarget == null) {
       if (_dragDx < -10 && _index < _pageCount - 1) {
@@ -204,8 +204,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
       });
     }
 
-    // 归一用页高（开本 0.92 → 高 = 宽/0.92）。
-    final extent = math.max(_bookWidth / 0.92, 1);
+    // 归一用页宽。
+    final extent = math.max(_bookWidth, 1);
     if (_forward) {
       _flip.value = (-_dragDx / extent).clamp(0.0, 1.0);
     } else {
@@ -216,7 +216,7 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
   void _handleDragEnd(DragEndDetails details) {
     final target = _dragTarget;
     if (target == null) return;
-    final velocity = details.velocity.pixelsPerSecond.dy;
+    final velocity = details.velocity.pixelsPerSecond.dx;
     final complete = _forward
         ? (_flip.value > 0.28 || velocity < -460)
         : (_flip.value < 0.72 || velocity > 460);
@@ -248,19 +248,19 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
             mainAxisSize: MainAxisSize.min,
             children: [
               AspectRatio(
-                // 698 N68：页面加长（0.92→0.88，容纳步骤内容）。
-                aspectRatio: 0.88,
+                // 698 N69：回归竖长书形态。
+                aspectRatio: 0.72,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     _bookWidth = constraints.maxWidth;
                     return GestureDetector(
                       key: const ValueKey('agoraBookViewport'),
                       behavior: HitTestBehavior.opaque,
-                      // 698 N64：上刮翻页（垂直手势——上滑翻页/下拉回翻）。
-                      onVerticalDragStart: _handleDragStart,
-                      onVerticalDragUpdate: _handleDragUpdate,
-                      onVerticalDragEnd: _handleDragEnd,
-                      onVerticalDragCancel: _handleDragCancel,
+                      // 698 N69：回归左右滑动翻页。
+                      onHorizontalDragStart: _handleDragStart,
+                      onHorizontalDragUpdate: _handleDragUpdate,
+                      onHorizontalDragEnd: _handleDragEnd,
+                      onHorizontalDragCancel: _handleDragCancel,
                       child: IgnorePointer(
                         ignoring: _busy,
                         child: _buildBook(palette),
@@ -473,8 +473,8 @@ class _TurnedSurface extends StatelessWidget {
           child: Opacity(
             opacity: fade,
             child: Transform(
-              // 698 N64：绕顶部装订线轴翻页（pivot=顶边）。
-              alignment: Alignment.topCenter,
+              // 698 N69：回归书外翻（左缘轴 rotateY）。
+              alignment: Alignment.centerLeft,
               transform: agoraPageTurnTransform(p),
               child: content,
             ),
@@ -644,7 +644,7 @@ class _BookControls extends StatelessWidget {
         height: 38,
         child: Center(
           child: Text(
-            '共 $total 步 · 上滑翻阅',
+            '共 $total 步 · 左右滑动阅读',
             style: TextStyle(color: HimiText.t62(context), fontSize: 11),
           ),
         ),
@@ -662,8 +662,7 @@ class _BookControls extends StatelessWidget {
             iconSize: 18,
             color: HimiText.secondary(context),
             disabledColor: HimiText.t24(context),
-            // 698 N65：左下 ˅（回翻——下拉语义）。
-            icon: const Icon(Icons.keyboard_arrow_down),
+            icon: const Icon(Icons.chevron_left),
           ),
           Expanded(
             child: Row(
@@ -688,7 +687,7 @@ class _BookControls extends StatelessWidget {
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
-                    '上滑翻页',
+                    '左右滑动翻页',
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: HimiText.t54(context), fontSize: 11),
                   ),
@@ -703,8 +702,7 @@ class _BookControls extends StatelessWidget {
             iconSize: 18,
             color: HimiText.secondary(context),
             disabledColor: HimiText.t24(context),
-            // 698 N65：右上 ˄（前进——上滑语义）。
-            icon: const Icon(Icons.keyboard_arrow_up),
+            icon: const Icon(Icons.chevron_right),
           ),
         ],
       ),
