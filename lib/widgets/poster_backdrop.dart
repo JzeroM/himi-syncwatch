@@ -197,3 +197,7 @@ class _LightFieldMask extends StatelessWidget {
     );
   }
 }
+
+/// 698 N74b：全局背景层 GlobalKey——玻璃折射（水滴/浮块/标签）采样此
+/// 边界 → 透视显示真实背景色（非黑）。
+final GlobalKey posterBackdropKey = GlobalKey(debugLabel: 'posterBackdrop');

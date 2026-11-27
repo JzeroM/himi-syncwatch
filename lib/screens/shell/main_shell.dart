@@ -12,7 +12,6 @@ import 'package:himi_syncwatch/widgets/room_menu_button.dart';
 import 'package:himi_syncwatch/screens/shell/shell_nav_visibility.dart';
 import 'package:himi_syncwatch/screens/shell/shell_side_drawer.dart';
 import 'package:himi_syncwatch/screens/shell/tv_top_nav_bar.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:himi_syncwatch/widgets/app_toast.dart';
 
 /// 697：是否**真桌面平台**（Windows / macOS / Linux）。
@@ -291,9 +290,9 @@ class _MainShellState extends ConsumerState<MainShell> {
       extendBody: true,
       // 698 N47：透明透出全局背景层。
       backgroundColor: Colors.transparent,
-      // 标记页面内容为玻璃采样面（LiquidGlassScope 兜底，包内 GlassEffect
-      // 在 Skia/Web 上采样此 RepaintBoundary；Impeller 不需要）。
-      body: lg.GlassBackgroundSource(child: content),
+      //（698 N74b：玻璃采样面由 app builder 全局 GlassBackgroundSource
+      // 提供[PosterBackdrop 背景层]，此处不再重复挂[GlobalKey 冲突]。）
+      body: content,
       bottomNavigationBar: AnimatedSlide(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInCubic,

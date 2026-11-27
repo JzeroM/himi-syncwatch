@@ -57,11 +57,15 @@ class HimiSyncApp extends ConsumerWidget {
                 child: Stack(
                   fit: StackFit.passthrough,
                   children: [
+                    // 698 N74b：背景层纳入玻璃采样 scope——水滴/浮块/标签
+                    // 折射透视到真实背景色（非黑）。
                     Positioned.fill(
-                      child: KeyedSubtree(
-                        key: const ValueKey('shellBackground'),
-                        child: PosterBackdrop(
-                          base: Theme.of(context).scaffoldBackgroundColor,
+                      child: GlassBackgroundSource(
+                        child: KeyedSubtree(
+                          key: posterBackdropKey,
+                          child: PosterBackdrop(
+                            base: Theme.of(context).scaffoldBackgroundColor,
+                          ),
                         ),
                       ),
                     ),
