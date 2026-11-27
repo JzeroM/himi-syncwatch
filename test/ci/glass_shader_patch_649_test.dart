@@ -33,9 +33,9 @@ void main() {
         reason: 'N51：边缘同为折射替换');
   });
 
-  test('N71 透镜清透 0.32（图2 对齐）', () {
+  test('N73 透镜纯弯折（lensZoom=0，1:1 不缩放）', () {
     final lens = File('lib/widgets/glass/blob_lens.dart').readAsStringSync();
-    expect(lens, contains('lensZoom: 0.32'),
-        reason: 'N71：清透微放大（图2 各 app 对齐）');
+    expect(lens, contains('lensZoom: 0'),
+        reason: 'N73：1:1 纯弯折（图2 对齐）');
   });
 }

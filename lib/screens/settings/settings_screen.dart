@@ -78,16 +78,14 @@ class SettingsScreen extends ConsumerWidget {
   static void _pushCategory(BuildContext context, String route) {
     if (_pushingCategory || !context.mounted) return;
     _pushingCategory = true;
-    // 698 N72：单帧窗口防连点（postFrame 清标记——不等 route complete，
-    // 避免长路由/测试环境卡标记）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pushingCategory = false;
-    });
+    // 698 N73：防连点（微任务清——不卡跨测试）；push 同步执行
+    //（中途态已由 _goBranch popUntil 微任务让位根治，无需帧延后）。
+    Future.microtask(() => _pushingCategory = false);
     try {
       context.push(route);
     } catch (e) {
-      _pushingCategory = false;
-      debugPrint('N72 设置 push 竞态兜底: $e');
+      // 698 N72：竞态异常兜底（不传播引擎）。
+      debugPrint('N73 设置 push 竞态兜底: $e');
     }
   }
 
@@ -144,8 +142,14 @@ class SettingsScreen extends ConsumerWidget {
                             title: _categories[row * columns + c].title,
                             subtitle: _categories[row * columns + c].subtitle,
                             tvMode: tvMode,
-                            onTap: () => _pushCategory(
-                                context, _categories[row * columns + c].route),
+                            onTap: () {
+                              // 698 N73：分支切换进行中忽略点击（epoch
+                              // 未稳不 push——中途态跳错根治）。
+                              if (context.mounted) {
+                                _pushCategory(
+                                    context, _categories[row * columns + c].route);
+                              }
+                            },
                           ),
                         )
                       else
