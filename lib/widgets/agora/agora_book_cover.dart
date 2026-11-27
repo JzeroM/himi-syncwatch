@@ -224,19 +224,12 @@ class _CoverBoard extends StatelessWidget {
             Positioned.fill(
               child: child,
             ),
-            // 698 N65：装订孔——与线圈同位（26 内距 spaceEvenly 对齐）。
-            Positioned(
-              top: 4,
-              left: 26,
-              right: 26,
-              child: const PunchHoles(),
-            ),
-            // 698 N65：线圈环脚压孔之上（穿入装订孔观感）。
+            // 698 N68：装订（参考图 1:1）——双丝环穿孔单 painter 严格对位。
             Positioned(
               top: -6,
               left: 26,
               right: 26,
-              child: const SpiralRings(),
+              child: const BindingRings(),
             ),
           ],
         ),
@@ -578,53 +571,90 @@ class _CoverBackLiningPainter extends CustomPainter {
       oldDelegate.palette != palette;
 }
 
-/// 698 N67：顶部金属线圈——**细丝 C 形圆环**（参考图线圈本）：
-/// CustomPainter 线宽 2.5px 金属丝，环顶上拱浮出纸面、环脚下探穿入
-/// 竖孔；每环上段受光亮、下段背光暗（金属明暗分段）。
-class SpiralRings extends StatelessWidget {
-  const SpiralRings({super.key});
+/// 698 N68：装订（参考图 1:1）——**双股细丝圆拱穿圆孔**，单 painter
+/// 严格对位（环心=孔心）：丝从孔穿出绕拱穿回相邻孔（螺旋连续）、
+/// 受光/背光分段、孔口接触阴影+口缘高光+孔内丝截面。
+class BindingRings extends StatelessWidget {
+  const BindingRings({super.key});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 24,
+      height: 26,
       child: CustomPaint(
-        size: const Size(double.infinity, 24),
-        painter: _SpiralWirePainter(),
+        size: const Size(double.infinity, 26),
+        painter: _BindingPainter(),
       ),
     );
   }
 }
 
-class _SpiralWirePainter extends CustomPainter {
+class _BindingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const count = 6;
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
     final step = size.width / count;
+    const holeR = 3.2; // 孔半径
+    const archY = 11.0; // 孔心 y
+    // ① 孔（深色圆孔 + 口缘高光 + 接触阴影）。
     for (var i = 0; i < count; i++) {
       final cx = step * (i + 0.5);
-      const r = 9.0;
-      final cy = 12.0;
-      // 受光段（左上弧）。
-      paint.color = const Color(0xFFF2F2F4);
+      final c = Offset(cx, archY);
+      canvas.drawCircle(
+          c,
+          holeR,
+          Paint()
+            ..color = const Color(0xFF8A8A90)
+            ..style = PaintingStyle.fill);
+      // 口缘高光（左上环口）。
       canvas.drawArc(
-          Rect.fromCircle(center: Offset(cx, cy), radius: r),
-          -2.4,
-          1.7,
+          Rect.fromCircle(center: c, radius: holeR),
+          -2.2,
+          1.6,
           false,
-          paint);
-      // 背光段（右下弧）。
-      paint.color = const Color(0xFF9A9AA2);
-      canvas.drawArc(
-          Rect.fromCircle(center: Offset(cx, cy), radius: r),
-          -0.7,
-          1.7,
-          false,
-          paint);
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = const Color(0x66FFFFFF));
+    }
+    // ② 双股丝拱（每股 2px，间距 2.5px；受光/背光分段）。
+    for (var i = 0; i < count; i++) {
+      final cx = step * (i + 0.5);
+      for (var wire = 0; wire < 2; wire++) {
+        final r = 8.5 + wire * 2.8;
+        final cy = archY;
+        // 受光段（左上）。
+        canvas.drawArc(
+            Rect.fromCircle(center: Offset(cx, cy), radius: r),
+            -2.6,
+            1.9,
+            false,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2
+              ..strokeCap = StrokeCap.round
+              ..color = const Color(0xFFF4F4F6));
+        // 背光段（右下）。
+        canvas.drawArc(
+            Rect.fromCircle(center: Offset(cx, cy), radius: r),
+            -0.7,
+            1.9,
+            false,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 2
+              ..strokeCap = StrokeCap.round
+              ..color = const Color(0xFF8E8E96));
+      }
+      // 孔内丝截面（脚端小亮点——丝穿进孔）。
+      canvas.drawCircle(
+          Offset(cx - 2.2, archY + 1),
+          1.1,
+          Paint()..color = const Color(0xFFE8E8EC));
+      canvas.drawCircle(
+          Offset(cx + 2.2, archY + 1),
+          1.1,
+          Paint()..color = const Color(0xFFB0B0B8));
     }
   }
 
@@ -632,40 +662,3 @@ class _SpiralWirePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// 环体描边 3px 金属灰 + 左上高光弧 + 右下暗弧（金属圆柱反光）+ 环下
-/// 接触阴影（环压在纸上投影）+ 环间明暗交替（金属错落反光）。
-/// 698 N67：竖小装订孔（参考图线圈本——环丝穿入的竖圆角矩形孔）。
-class PunchHoles extends StatelessWidget {
-  const PunchHoles({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 12,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (var i = 0; i < 6; i++)
-            Container(
-              width: 6,
-              height: 11,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(3),
-                color: const Color(0xFFB0B0B6), // 孔内透下层纸
-                border: Border.all(
-                    color: Colors.black.withValues(alpha: 0.30), width: 1),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x8A000000),
-                    blurRadius: 1,
-                    spreadRadius: -1,
-                    offset: Offset(0, 1),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}

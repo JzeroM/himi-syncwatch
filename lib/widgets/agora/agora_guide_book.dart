@@ -248,8 +248,8 @@ class _AgoraGuideBookState extends State<AgoraGuideBook>
             mainAxisSize: MainAxisSize.min,
             children: [
               AspectRatio(
-                // 698 N64：方形拍纸簿开本（替代竖长书 0.72）。
-                aspectRatio: 0.92,
+                // 698 N68：页面加长（0.92→0.88，容纳步骤内容）。
+                aspectRatio: 0.88,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     _bookWidth = constraints.maxWidth;

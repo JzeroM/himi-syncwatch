@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -74,7 +73,8 @@ class AgoraBookPaperPage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Container(
       key: ValueKey('agoraBookPage_$index'),
-      decoration: BoxDecoration(gradient: palette.paperGradient),
+      // 698 N68：白纸（参考图 1:1——横线格由 painter 画）。
+      decoration: const BoxDecoration(color: Color(0xFFFAFAFA)),
       child: Stack(
         children: [
           Positioned.fill(
@@ -85,12 +85,12 @@ class AgoraBookPaperPage extends StatelessWidget {
             ),
           ),
           //（698 N65：书签飘带删除。）
-          // 698 N67：步骤箭头标签（参考图弯折箭头样式，每页一个）。
+          // 698 N68：燕尾箭头标签（参考图 1:1，每页一色）。
           Positioned(
-            left: 8,
-            top: 40,
+            left: -22,
+            top: 56,
             child: IgnorePointer(
-              child: _StepArrowLabel(step: index + 1),
+              child: _RibbonTag(step: index + 1),
             ),
           ),
           // 698 N65：每页装订——顶缘线圈 + 装订孔（与封面同款同位）。
@@ -98,14 +98,9 @@ class AgoraBookPaperPage extends StatelessWidget {
             top: -6,
             left: 26,
             right: 26,
-            child: const SpiralRings(),
+            child: const BindingRings(),
           ),
-          Positioned(
-            top: 4,
-            left: 26,
-            right: 26,
-            child: const PunchHoles(),
-          ),
+
           Padding(
             padding: const EdgeInsets.fromLTRB(17, 14, 17, 11),
             child: Column(
@@ -328,6 +323,8 @@ class AgoraBookGuidePage extends StatelessWidget {
   }
 }
 
+/// 698 N68：横线格纸（参考图 1:1）——白纸 + 浅蓝灰横线格 + 右侧橙色
+/// margin 竖线（替代做旧纸纹）。
 class _AgedPaperPainter extends CustomPainter {
   const _AgedPaperPainter(this.palette, {required this.seed});
 
@@ -336,119 +333,138 @@ class _AgedPaperPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final random = math.Random(0x9E37 + seed * 7919);
-
-    final fiber = Paint()
-      ..strokeWidth = 0.5
-      ..color = palette.ink.withValues(alpha: 0.035);
-    for (var y = 10.0; y < size.height; y += 8.5) {
-      final x2 = size.width * (0.55 + random.nextDouble() * 0.45);
-      canvas.drawLine(Offset(0, y), Offset(x2, y), fiber);
+    // 白纸底。
+    canvas.drawRect(
+        Offset.zero & size, Paint()..color = const Color(0xFFFAFAFA));
+    // 浅蓝灰横线格（行距 24，全页横贯）。
+    final linePaint = Paint()
+      ..strokeWidth = 1
+      ..color = const Color(0xFFC8D4E0);
+    for (var y = 40.0; y < size.height - 10; y += 24) {
+      canvas.drawLine(Offset(12, y), Offset(size.width - 12, y), linePaint);
     }
-
-    for (var i = 0; i < 7; i++) {
-      final center = Offset(
-        10 + random.nextDouble() * (size.width - 20),
-        12 + random.nextDouble() * (size.height - 24),
-      );
-      canvas.drawCircle(
-        center,
-        0.6 + random.nextDouble() * 2.1,
-        Paint()
-          ..color = palette.mutedInk
-              .withValues(alpha: 0.025 + random.nextDouble() * 0.035),
-      );
-    }
-
-    final stain = Paint()
-      ..color = palette.paperEdge.withValues(alpha: 0.10)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    final stainCenter = Offset(
-      size.width * (0.62 + random.nextDouble() * 0.22),
-      size.height * (0.16 + random.nextDouble() * 0.24),
+    // 右侧橙色 margin 竖线（距右 22%）。
+    canvas.drawLine(
+      Offset(size.width * 0.78, 24),
+      Offset(size.width * 0.78, size.height - 12),
+      Paint()
+        ..strokeWidth = 1.5
+        ..color = const Color(0xFFE8A838),
     );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: stainCenter,
-        width: 18 + random.nextDouble() * 26,
-        height: 8 + random.nextDouble() * 14,
-      ),
-      stain,
-    );
-
-    final edge = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: [
-          palette.paperDark.withValues(alpha: 0.22),
-          Colors.transparent,
-          palette.paperDark.withValues(alpha: 0.14),
-        ],
-        stops: const [0, 0.18, 1],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, edge);
   }
 
   @override
   bool shouldRepaint(covariant _AgedPaperPainter oldDelegate) =>
-      oldDelegate.palette != palette || oldDelegate.seed != seed;
+      oldDelegate.seed != seed;
 }
 
-/// 698 N67：步骤箭头标签——参考图弯折箭头样式（细描边折线箭头朝上 +
-/// 步骤号），每页一个。
-class _StepArrowLabel extends StatelessWidget {
-  const _StepArrowLabel({required this.step});
+class _RibbonTag extends StatelessWidget {
+  const _RibbonTag({required this.step});
 
   final int step;
 
+  static const _colors = [
+    Color(0xFF1CA5B8), // 01 蓝绿
+    Color(0xFFF0A020), // 02 橙
+    Color(0xFFE8604C), // 03 珊瑚红
+    Color(0xFF6C63C8), // 04 蓝紫
+    Color(0xFF4CAF6E), // 05 绿
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CustomPaint(
-          size: const Size(18, 22),
-          painter: _BendArrowPainter(),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          step.toString().padLeft(2, '0'),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Colors.black.withValues(alpha: 0.55),
-            letterSpacing: 1.2,
+    final color = _colors[(step - 1).clamp(0, 4)];
+    return SizedBox(
+      width: 86,
+      height: 56,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 左侧丝带扣环（小矩形环）。
+          Positioned(
+            left: -8,
+            top: 16,
+            child: Container(
+              width: 14,
+              height: 22,
+              decoration: BoxDecoration(
+                border: Border.all(color: color, width: 4),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
           ),
-        ),
-      ],
+          // 主体（圆角 + 右端箭头尖）。
+          CustomPaint(
+            size: const Size(86, 56),
+            painter: _RibbonPainter(color),
+          ),
+          // 文字。
+          Positioned.fill(
+            left: 18,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  step.toString().padLeft(2, '0'),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.0,
+                  ),
+                ),
+                const Text(
+                  'STEP',
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// 参考图弯折箭头（细描边折线，向上折拐 + 箭头尖）。
-class _BendArrowPainter extends CustomPainter {
+/// 燕尾形状（圆角主体 + 右端箭头尖）。
+class _RibbonPainter extends CustomPainter {
+  _RibbonPainter(this.color);
+
+  final Color color;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = Colors.black.withValues(alpha: 0.55);
     final path = Path()
-      ..moveTo(size.width * 0.15, size.height)
-      ..lineTo(size.width * 0.15, size.height * 0.45)
-      ..lineTo(size.width * 0.75, size.height * 0.45)
-      ..lineTo(size.width * 0.75, size.height * 0.12);
-    canvas.drawPath(path, paint);
-    // 箭头尖（上）。
-    final head = Path()
-      ..moveTo(size.width * 0.55, size.height * 0.20)
-      ..lineTo(size.width * 0.75, size.height * 0.02)
-      ..lineTo(size.width * 0.95, size.height * 0.20);
-    canvas.drawPath(head, paint);
+      ..moveTo(8, 4)
+      ..lineTo(size.width - 18, 4)
+      ..lineTo(size.width - 2, size.height / 2) // 右尖
+      ..lineTo(size.width - 18, size.height - 4)
+      ..lineTo(8, size.height - 4)
+      ..quadraticBezierTo(0, size.height - 4, 0, size.height - 12)
+      ..lineTo(0, 12)
+      ..quadraticBezierTo(0, 4, 8, 4);
+    canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.fill
+          ..shader = LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [color, Color.lerp(color, Colors.black, 0.12)!],
+          ).createShader(Offset.zero & size));
+    // 下方微阴影。
+    canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = Colors.black.withValues(alpha: 0.18));
   }
 
   @override
