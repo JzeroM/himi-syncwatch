@@ -101,9 +101,13 @@ class _MainShellState extends ConsumerState<MainShell> {
     return false;
   }
 
-  void _goBranch(int index) {
+  void _goBranch(int index) async {
     // 切到其他 tab 时：源分支退回其首页（分支根路由），
     // 丢弃子页/弹层/未保存表单，保证下次切回落在该 tab 首页。
+    //
+    // 698 N72：popUntil 后微任务让位——popUntil 的 route complete 是
+    // 异步排队，与 goBranch 内部退栈同帧竞争会「同一路由 complete 两次」
+    // → Bad state（Windows 偶发设置项无反应/闪退根因）。
     if (index != widget.shell.currentIndex) {
       final source = widget.shell.route.branches[widget.shell.currentIndex];
       final nav = source.navigatorKey.currentState;
@@ -123,6 +127,9 @@ class _MainShellState extends ConsumerState<MainShell> {
       if (nav != null && nav.canPop()) {
         nav.popUntil((r) => r.isFirst);
       }
+      // 698 N72：微任务让位——pending complete 先走完再继续。
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
       ref.read(shellBranchEpochProvider.notifier).bump(widget.shell.currentIndex);
     }
     widget.shell.goBranch(

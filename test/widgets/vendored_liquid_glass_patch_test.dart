@@ -33,9 +33,9 @@ void main() {
     final frag = File(fragPath).readAsStringSync();
 
     expect(
-      frag.contains('float dispersion = uChromaticAberration * 0.35;'),
+      frag.contains('float dispersion = uChromaticAberration * 0.12;'),
       isTrue,
-      reason: 'N70 柯西色散系数锁（三通道各自折射偏移）',
+      reason: 'N71 清透色散（柯西 0.12 极细微，图2 对齐）',
     );
     expect(
       frag.contains('vec2 offR = edgeOffsetLogical * (1.0 - dispersion);') &&
@@ -44,14 +44,14 @@ void main() {
       reason: '柯西波长折射率：红 n 小弯弱、蓝 n 大弯强（内蓝外红）',
     );
     expect(
-      frag.contains('uLensZoom * (0.92 + 0.30 * lensProfile)'),
+      frag.contains('uLensZoom * (0.95 + 0.08 * lensProfile)'),
       isTrue,
-      reason: 'N70 凸透镜剖面（中心均匀放大 + 边缘窄带弯）',
+      reason: 'N71 清透剖面（均匀微放大，内容平滑）',
     );
     expect(
-      frag.contains('rimBandT * 0.25'),
+      frag.contains('rimBandT * 0.10'),
       isTrue,
-      reason: 'N70 透镜厚度环（Fresnel 亮环）',
+      reason: 'N71 厚度环收敛（柔和一圈亮边）',
     );
   });
 

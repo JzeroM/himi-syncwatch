@@ -129,7 +129,11 @@ class _LightFieldMask extends StatelessWidget {
     final balls = <Widget>[];
     for (var i = 0; i < 5; i++) {
       final bright = i < 3;
-      final (cellColor, _) = bright ? brightCells[i] : darkCells[i - 3];
+      // 698 N71：首球色贴海报底缘色（hero 渐隐终点连续——过渡分割感）。
+      final (rawColor, _) = bright ? brightCells[i] : darkCells[i - 3];
+      // 698 N71：顶光域色向 hero 底缘色靠（溶解终点连续）。
+      final cellColor =
+          i == 0 ? Color.lerp(field.edge, rawColor, 0.5)! : rawColor;
       // 位置：全屏散布（微随机避开死板对称）。
       final cx = 0.12 + (i * 0.19) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;
       final cy = 0.12 + (i * 0.31) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;

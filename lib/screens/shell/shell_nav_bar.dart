@@ -315,11 +315,10 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
       blur: 0.01,
       // 结构参数：N48 酷安对照修正——弱化水滴自身边缘亮线（「两道杠」
       // 主因）与边缘暗带挤压感，折弯更平滑连续。
-      // 698 N52：圆润液态玻璃（参考图柔亮环/通透明亮）——两端统一
-      //（iOS 与安卓同源）：柔亮环 0.22、菲涅尔光晕 1.1、体内提亮 0.55。
-      ambientRim: 0.22,
-      glowIntensity: 1.1,
-      ambientStrength: 0.55,
+      // 698 N71：清透玻璃（图2 对齐）——柔和一圈亮边，收白雾。
+      ambientRim: 0.12,
+      glowIntensity: 0.7,
+      ambientStrength: 0.40,
       edgeAbsorption: 0.06,
       // 光源相位随水珠位置扫动：key/kick 亮瓣绕环流动
       lightAngle: math.pi / 2 + (_blobT - 0.5) * math.pi,

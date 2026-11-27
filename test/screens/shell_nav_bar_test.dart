@@ -315,10 +315,10 @@ void main() {
         reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
     // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动中性白微光；
     // glow/ambient 收低弱化白色边框感；edgeAbsorption 收低淡化边缘暗带
-    expect(lens.settings.ambientRim, 0.22,
-        reason: 'N52：圆润柔亮环（参考图柔和渐变亮环）');
-    expect(lens.settings.glowIntensity, 1.1, reason: 'N52：菲涅尔光晕圆润包裹');
-    expect(lens.settings.ambientStrength, 0.55, reason: 'N52：体内通透明亮');
+    expect(lens.settings.ambientRim, 0.12,
+        reason: 'N71：柔和亮边收敛');
+    expect(lens.settings.glowIntensity, 0.7, reason: 'N71：光晕收敛（清透）');
+    expect(lens.settings.ambientStrength, 0.40, reason: 'N71：清透');
     expect(lens.settings.edgeAbsorption, 0.06, reason: 'N48：边缘暗带再淡化');
     expect(lens.edgeZone, 20, reason: '折射范围默认 20（设置滑杆 20~24，round-7）');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
@@ -445,8 +445,8 @@ void main() {
         reason: 'N38：端帽半径动态 = 盒高/2（活动态 66 高也是真胶囊）');
     expect(effect.backgroundKey, isNotNull,
         reason: 'N40：nav 捕获主源（胶囊+图标微缩进镜片，酷安同款）');
-    expect(effect.lensZoom, closeTo(0.45, 0.001),
-        reason: 'N50：透镜强度 0.45（酷安对照明显凸透镜 + 轮廓彩虹环）');
+    expect(effect.lensZoom, closeTo(0.32, 0.001),
+        reason: 'N71：清透微放大（图2 对齐）');
     expect(effect.quality, lg.GlassQuality.standard,
         reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 

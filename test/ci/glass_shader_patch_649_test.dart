@@ -33,9 +33,9 @@ void main() {
         reason: 'N51：边缘同为折射替换');
   });
 
-  test('N50 透镜强度 0.45（酷安对照：明显凸透镜感）', () {
+  test('N71 透镜清透 0.32（图2 对齐）', () {
     final lens = File('lib/widgets/glass/blob_lens.dart').readAsStringSync();
-    expect(lens, contains('lensZoom: 0.45'),
-        reason: 'N50：透镜强度 0.15→0.45（放大+轮廓彩虹环替代边缘推挤）');
+    expect(lens, contains('lensZoom: 0.32'),
+        reason: 'N71：清透微放大（图2 各 app 对齐）');
   });
 }

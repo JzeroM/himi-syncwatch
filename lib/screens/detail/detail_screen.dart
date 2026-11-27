@@ -592,7 +592,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   /// 从指定集开播：整部序列化进 [pendingRoomEpisodesProvider] 后跳播放器。
   /// [resume] 为真且该集有进度时携带 `startMs` 续播；否则从头播放并乐观清
   /// 本地续播态。返回详情页后静默刷新，读取最新进度/已观看。
+  /// 698 N72：Qt 双窗口单人态「同资源播放中」判定——同资源详情按钮禁用。
+  bool get _qtPlayingThis {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive || !qt.hasMedia) return false;
+    final playingId = ref.read(currentPlayingItemIdProvider);
+    return playingId != null && playingId == _item?.id;
+  }
+
   Future<void> _playEpisode(MediaItem ep, {bool resume = false}) async {
+    // 698 N72：Qt 双窗口单人——同资源播放中禁用（异资源正常换源播放）。
+    if (_qtPlayingThis) {
+      if (mounted) {
+        showAppToast(context, '该资源正在播放中（可在播放窗控制）');
+      }
+      return;
+    }
     // 该集的预选轨写入全局槽（播放器 _autoSelectDefaultTracks 消费一次）；
     // 无选择时显式置 null，防止残留上一次的电影/他集预选
     final selection = _episodeSelections[ep.id];
@@ -1114,6 +1129,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _createRoom() async {
+    // 698 N72：Qt 双窗口单人——同资源播放中开房禁用（会中断当前播放）。
+    if (_qtPlayingThis) {
+      if (mounted) {
+        showAppToast(context, '该资源正在播放中，无法开房');
+      }
+      return;
+    }
     if (_item == null) return;
 
     final agoraConfig = ref.read(agoraConfigProvider);

@@ -5123,6 +5123,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
       _currentPlayUrl = streamUrl;
       _currentToken = token;
+      // 698 N72：当前播放资源 id 写入（详情页同资源按钮禁用消费）。
+      ref.read(currentPlayingItemIdProvider.notifier).state = targetItemId;
 
       // 重置进度（与首次播放状态一致）；续播目标先占位，避免 UI 跳 0。
       _position = Duration(milliseconds: startMs > 0 ? startMs : 0);

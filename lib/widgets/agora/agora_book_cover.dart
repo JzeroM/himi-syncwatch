@@ -166,7 +166,7 @@ class _CoverBoard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         border:
-            Border.all(color: Colors.white.withValues(alpha: 0.20), width: 1.5),
+            Border.all(color: Colors.white.withValues(alpha: 0.16), width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.30),
@@ -180,11 +180,11 @@ class _CoverBoard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 磨砂玻璃底。
+            // 磨砂玻璃底（698 N71 减透：σ20→10、tint 0.12→0.05）。
             BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: ColoredBox(
-                color: Colors.white.withValues(alpha: 0.12),
+                color: Colors.white.withValues(alpha: 0.05),
                 child: const SizedBox.expand(),
               ),
             ),
@@ -195,7 +195,7 @@ class _CoverBoard extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.center,
                   colors: [
-                    Colors.white.withValues(alpha: 0.22),
+                    Colors.white.withValues(alpha: 0.12),
                     Colors.white.withValues(alpha: 0),
                   ],
                   stops: const [0.0, 0.45],

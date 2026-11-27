@@ -164,6 +164,7 @@ class HomeHeroCarousel extends StatefulWidget {
 
   /// 清晰图底部渐隐（v1.2.15）：底部渐隐到透明，露出下层同源虚化海报，
   /// 消除「清晰图 → 虚化图」的内容硬切（详情页 SliverAppBar 同款处理）。
+  /// 698 N71：渐隐带加宽（0.62→0.52）——过渡分割感消除（更长溶解带）。
   /// 698 N11：回退到 Releases v1.6.14 原版观感（0.62 起长渐隐柔和溶解，
   /// 撤 N7/N9 的收窄与模糊坡——三层混叠发闷，不如原版自然）。
   @visibleForTesting
@@ -171,7 +172,7 @@ class HomeHeroCarousel extends StatefulWidget {
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [Colors.white, Colors.white, Colors.transparent],
-    stops: [0.0, 0.62, 1.0],
+    stops: [0.0, 0.52, 1.0],
   );
 
   /// 可读性压暗罩（v1.2.17）：文字区维持 0x99（60%）可读性，但**底边必须

@@ -319,7 +319,7 @@ void main() {
     // 收拢变密（酷安透镜边缘放大效应）。
     // [PATCH himi] 698 N70：凸透镜剖面——中心**均匀放大**（0.92 基量）
     // + 边缘窄带强弯（0.30 rim 卷曲）——真凸透镜光学。
-    lensOffset = -toCenter * (uLensZoom * (0.92 + 0.30 * lensProfile));
+    lensOffset = -toCenter * (uLensZoom * (0.95 + 0.08 * lensProfile)); // [PATCH himi] 698 N71 清透：均匀微放大
     // 四缘轻微卷曲（沿法线的小弯折，酷安同款收边）。
     lensOffset += surfaceNormal * edgeInfluence * uSize.y * 0.08;
     edgeOffsetLogical = lensOffset;
@@ -358,11 +358,11 @@ void main() {
   // [PATCH himi] 698 N42 轮廓色散环：色散峰值贴镜片轮廓（沿轮廓一圈
   // 红绿蓝分离，酷安同款）+ 全域弯折细彩边保持。
   float ringWeight = smoothstep(0.45, 0.95, radialDist);
-  vec2 ringShift = surfaceNormal * ringWeight * uChromaticAberration * 3.0;
+  vec2 ringShift = surfaceNormal * ringWeight * uChromaticAberration * 1.0;
   // [PATCH himi] 698 N70：**真实物理色散**（柯西波长折射率）——蓝光
   // n 大弯折强、红光 n 小弯折弱：三通道各自折射偏移，色散量 ∝ 折射
   // 梯度，弯折处「内蓝外红」彩虹环。
-  float dispersion = uChromaticAberration * 0.35;
+  float dispersion = uChromaticAberration * 0.12; // [PATCH himi] 698 N71 清透：极细微色散（图2 对齐）
   vec2 offR = edgeOffsetLogical * (1.0 - dispersion);
   vec2 offG = edgeOffsetLogical;
   vec2 offB = edgeOffsetLogical * (1.0 + dispersion);
@@ -446,7 +446,7 @@ vec3 bg;
   // 反射——N37 去镜面保持，这是玻璃「厚度」菲涅尔弧，酷安凸包观感）。
   float topArc = max(-surfaceNormal.y, 0.0);
   float botArc = max(surfaceNormal.y, 0.0);
-  float bumpGlow = (topArc * 1.0 + botArc * 0.55) * 0.24 // [PATCH himi] 698 N52 立体高光 0.16→0.24（圆润鼓感）
+  float bumpGlow = (topArc * 1.0 + botArc * 0.55) * 0.12 // [PATCH himi] 698 N71 清透
       * (0.35 + 0.65 * (radialDist * radialDist));
   
   // ==========================================================================
@@ -506,8 +506,8 @@ vec3 bg;
   float rimBandT = smoothstep(0.82, 0.97, radialDist);
   float innerDark = smoothstep(0.68, 0.82, radialDist) *
                    (1.0 - smoothstep(0.82, 0.97, radialDist));
-  finalColor += vec3(1.0) * rimBandT * 0.25;
-  finalColor -= vec3(1.0) * innerDark * 0.10;
+  finalColor += vec3(1.0) * rimBandT * 0.10; // [PATCH himi] 698 N71 清透
+  finalColor -= vec3(1.0) * innerDark * 0.05;
   // Add fresnel glow — uGlowIntensity controls how visible the glass-edge luminosity is.
   finalColor += vec3(1.0) * fresnel * uGlowIntensity;
   // [PATCH himi] 698 N42 凸包弧光并入。

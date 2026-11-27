@@ -96,14 +96,14 @@ void main() {
       expect(g.stops, isNotNull);
       expect(g.stops!.last, 1.0);
       expect(g.stops![0], 0.0);
-      expect(g.stops, orderedEquals(<double>[0.0, 0.62, 1.0]),
+      expect(g.stops, orderedEquals(<double>[0.0, 0.52, 1.0]),
           reason: '698 N11：过渡回退 Releases v1.6.14 原版观感——'
-              '0.62 起长渐隐柔和溶解进同源虚化底');
+              '0.52 起长渐隐（N71 加宽溶解带）柔和溶解进同源虚化底');
     });
 
-    test('过渡 = v1.6.14 原版（防跑偏）：渐隐/接缝/压暗罩三参数锁原样', () {
+    test('过渡 = 渐隐带 N71 加宽（0.52）/接缝/压暗罩锁', () {
       expect(HomeHeroCarousel.imageFadeGradient.stops,
-          orderedEquals(<double>[0.0, 0.62, 1.0]));
+          orderedEquals(<double>[0.0, 0.52, 1.0]));
       expect(HomeHeroBackground.seamFadeGradient.stops,
           orderedEquals(<double>[0.0, 0.5, 0.73, 1.0]),
           reason: '接缝镜像层渐隐（v1.2.16）保持原样');

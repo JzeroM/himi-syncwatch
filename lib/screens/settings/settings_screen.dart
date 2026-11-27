@@ -71,6 +71,26 @@ class SettingsScreen extends ConsumerWidget {
     ),
   ];
 
+  /// 698 N72：设置子页 push——防重入（静态进行中标记）+ 崩溃兜底
+  ///（Bad state 竞态捕获，防 Windows 闪退）。
+  static bool _pushingCategory = false;
+
+  static void _pushCategory(BuildContext context, String route) {
+    if (_pushingCategory || !context.mounted) return;
+    _pushingCategory = true;
+    // 698 N72：单帧窗口防连点（postFrame 清标记——不等 route complete，
+    // 避免长路由/测试环境卡标记）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pushingCategory = false;
+    });
+    try {
+      context.push(route);
+    } catch (e) {
+      _pushingCategory = false;
+      debugPrint('N72 设置 push 竞态兜底: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tvMode = ref.watch(settingsProvider.select((s) => s.tvMode));
@@ -124,8 +144,8 @@ class SettingsScreen extends ConsumerWidget {
                             title: _categories[row * columns + c].title,
                             subtitle: _categories[row * columns + c].subtitle,
                             tvMode: tvMode,
-                            onTap: () => context.push(
-                                _categories[row * columns + c].route),
+                            onTap: () => _pushCategory(
+                                context, _categories[row * columns + c].route),
                           ),
                         )
                       else
