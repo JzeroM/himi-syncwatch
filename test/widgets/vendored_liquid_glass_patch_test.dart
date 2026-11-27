@@ -29,34 +29,29 @@ void main() {
     );
   });
 
-  test('vendored frag 保留第一轮补丁（真色散 ×4.0 + 中性 rim）', () {
+  test('vendored frag 保留真色散（N70 柯西波长折射率）', () {
     final frag = File(fragPath).readAsStringSync();
 
     expect(
-      frag.contains('[PATCH himi] 0.12 → 4.0'),
+      frag.contains('float dispersion = uChromaticAberration * 0.35;'),
       isTrue,
-      reason: '真色散补丁被移除：upstream ×0.12 为亚像素（0.06px）不可见',
+      reason: 'N70 柯西色散系数锁（三通道各自折射偏移）',
     );
     expect(
-      frag.contains('distort * 4.0') &&
-          frag.contains('lensOffset * uChromaticAberration * 0.22'),
+      frag.contains('vec2 offR = edgeOffsetLogical * (1.0 - dispersion);') &&
+          frag.contains('vec2 offB = edgeOffsetLogical * (1.0 + dispersion);'),
       isTrue,
-      reason: '色散系数必须为 4.0（0.5 输入 → 边缘 ~2px/侧物理彩虹）',
+      reason: '柯西波长折射率：红 n 小弯弱、蓝 n 大弯强（内蓝外红）',
     );
     expect(
-      frag.contains('vec3 rimSpectrum'),
-      isFalse,
-      reason: '人造光谱色环已撤销（设备反馈：要物理光晕不要发光色晕）',
-    );
-    expect(
-      frag.contains('float haloBand'),
-      isFalse,
-      reason: '自发光宽软光晕带已撤销，彩虹必须来自捕获内容的真色散',
-    );
-    expect(
-      frag.contains('vec3 rimColor = vec3(1.0) * modifiedRimBrightness'),
+      frag.contains('uLensZoom * (0.92 + 0.30 * lensProfile)'),
       isTrue,
-      reason: 'rim 必须是中性白微光（非光谱色）',
+      reason: 'N70 凸透镜剖面（中心均匀放大 + 边缘窄带弯）',
+    );
+    expect(
+      frag.contains('rimBandT * 0.25'),
+      isTrue,
+      reason: 'N70 透镜厚度环（Fresnel 亮环）',
     );
   });
 

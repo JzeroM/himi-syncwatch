@@ -737,14 +737,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   color: Colors.transparent,
             ),
           ),
-          // 698 N60：恢复 v1.6.14 同源海报氛围（hero 海报 blur σ36 +
-          // 渐隐——大图向下溶解的氛围延伸；全局光场垫底[其它页用]，
-          // 此局部氛围层叠于首页，无双糊[全局层无模糊]）。
-          if (showHero)
-            HomeHeroBackground(
-              imageUrl: _heroItems[heroIndex].imageUrl,
-              heroHeight: heroHeight,
-            ),
+          //（698 N70：blur 氛围层删——黑块根治；超大光域云雾光场
+          // 接管氛围，hero 大图直接溶解进云雾。）
           content,
         ],
       ),

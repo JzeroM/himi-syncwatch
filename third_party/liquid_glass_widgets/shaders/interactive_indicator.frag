@@ -317,7 +317,9 @@ void main() {
     float lensProfile = radialDist * radialDist; // 698 N42：边缘 1 → 中心 0
     // [PATCH himi] 698 N42 边缘收拢：透镜端部采样点外移更多 → 内容
     // 收拢变密（酷安透镜边缘放大效应）。
-    lensOffset = -toCenter * (uLensZoom * (0.35 + 0.65 * lensProfile));
+    // [PATCH himi] 698 N70：凸透镜剖面——中心**均匀放大**（0.92 基量）
+    // + 边缘窄带强弯（0.30 rim 卷曲）——真凸透镜光学。
+    lensOffset = -toCenter * (uLensZoom * (0.92 + 0.30 * lensProfile));
     // 四缘轻微卷曲（沿法线的小弯折，酷安同款收边）。
     lensOffset += surfaceNormal * edgeInfluence * uSize.y * 0.08;
     edgeOffsetLogical = lensOffset;
@@ -357,9 +359,14 @@ void main() {
   // 红绿蓝分离，酷安同款）+ 全域弯折细彩边保持。
   float ringWeight = smoothstep(0.45, 0.95, radialDist);
   vec2 ringShift = surfaceNormal * ringWeight * uChromaticAberration * 3.0;
-  vec2 chromaticShift = (uLensZoom > 0.001)
-      ? lensOffset * uChromaticAberration * 0.22 + ringShift
-      : distort * 4.0; 
+  // [PATCH himi] 698 N70：**真实物理色散**（柯西波长折射率）——蓝光
+  // n 大弯折强、红光 n 小弯折弱：三通道各自折射偏移，色散量 ∝ 折射
+  // 梯度，弯折处「内蓝外红」彩虹环。
+  float dispersion = uChromaticAberration * 0.35;
+  vec2 offR = edgeOffsetLogical * (1.0 - dispersion);
+  vec2 offG = edgeOffsetLogical;
+  vec2 offB = edgeOffsetLogical * (1.0 + dispersion);
+  vec2 chromaticShift = ringShift;
   
 vec3 bg;
   if (uHasBackground > 0.5) {
@@ -376,17 +383,21 @@ vec3 bg;
           uBackgroundSize, vec2(uBg2OriginX, uBg2OriginY),
           vec2(uBg2SizeX, uBg2SizeY), uDpr, uHasBg2);
     } else {
-      // Chromatic aberration: separate RGB channels with bilinear filtering.
+      // [PATCH himi] 698 N70：柯西真实色散——各波长按自身折射偏移
+      // （蓝 n 大弯折强、红 n 小弯折弱），弯折处「内蓝外红」。
       vec2 pixelNavPos = uBackgroundOrigin + localLogical;
-      vec3 colR = compositeFetch(localRefracted + chromaticShift, pixelNavPos,
+      vec2 refR = localRefracted + chromaticShift - (offG - offR);
+      vec2 refG = localRefracted;
+      vec2 refB = localRefracted - chromaticShift - (offG - offB);
+      vec3 colR = compositeFetch(refR, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
-      vec3 colG = compositeFetch(localRefracted, pixelNavPos,
+      vec3 colG = compositeFetch(refG, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
-      vec3 colB = compositeFetch(localRefracted - chromaticShift, pixelNavPos,
+      vec3 colB = compositeFetch(refB, pixelNavPos,
           uBackgroundOrigin, uBackgroundSize,
           vec2(uBg2OriginX, uBg2OriginY), vec2(uBg2SizeX, uBg2SizeY),
           uDpr, uHasBg2);
@@ -490,6 +501,13 @@ vec3 bg;
   // ×4.0 —— 光晕随捕获内容的对比自然出现（物理色散光晕）。
   finalColor += rimColor * borderMask * 1.2;
 
+  // [PATCH himi] 698 N70：透镜厚度环——边缘 Fresnel 亮环 + 内侧暗带
+  //（玻璃透镜边缘立体感）。
+  float rimBandT = smoothstep(0.82, 0.97, radialDist);
+  float innerDark = smoothstep(0.68, 0.82, radialDist) *
+                   (1.0 - smoothstep(0.82, 0.97, radialDist));
+  finalColor += vec3(1.0) * rimBandT * 0.25;
+  finalColor -= vec3(1.0) * innerDark * 0.10;
   // Add fresnel glow — uGlowIntensity controls how visible the glass-edge luminosity is.
   finalColor += vec3(1.0) * fresnel * uGlowIntensity;
   // [PATCH himi] 698 N42 凸包弧光并入。

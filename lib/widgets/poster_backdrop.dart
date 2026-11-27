@@ -133,24 +133,26 @@ class _LightFieldMask extends StatelessWidget {
       // 位置：全屏散布（微随机避开死板对称）。
       final cx = 0.12 + (i * 0.19) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;
       final cy = 0.12 + (i * 0.31) % 0.76 + (rand.nextDouble() - 0.5) * 0.18;
-      // 半径：1.0~1.8 屏宽超大柔边。
-      final radius = 1.0 + rand.nextDouble() * 0.8;
+      // 698 N70：超大光域云雾（afusekt 氛围）——1.5~2.2 屏宽超大柔边。
+      final radius = 1.5 + rand.nextDouble() * 0.7;
       Color ballColor;
       double alpha;
       if (bright) {
         var hsl = HSLColor.fromColor(cellColor);
-        // 698 N57 提亮：受光球上限 L≤0.38（白字对比仍安全）。
-        final l = (hsl.lightness * 0.5 + 0.18).clamp(0.0, 0.38);
+        // 698 N70 云雾：饱和加深 S×1.2、受光更亮（钳 0.42 保白字）。
+        final l = (hsl.lightness * 0.55 + 0.20).clamp(0.0, 0.42);
         ballColor = hsl
             .withLightness(l)
-            .withSaturation(hsl.saturation * 0.8)
+            .withSaturation((hsl.saturation * 1.2).clamp(0.0, 0.85))
             .toColor();
-        alpha = 0.16 + rand.nextDouble() * 0.08; // 0.16~0.24 明暗对比加强
+        alpha = 0.22 + rand.nextDouble() * 0.10; // 明暗对比加强
       } else {
         var hsl = HSLColor.fromColor(base);
-        ballColor =
-            hsl.withLightness((hsl.lightness * 0.72).clamp(0.0, 0.22)).toColor();
-        alpha = 0.18 + rand.nextDouble() * 0.06;
+        ballColor = hsl
+            .withLightness((hsl.lightness * 0.62).clamp(0.0, 0.20))
+            .withSaturation((hsl.saturation * 1.1).clamp(0.0, 0.75))
+            .toColor();
+        alpha = 0.24 + rand.nextDouble() * 0.08; // 阴影更深
       }
       balls.add(
         Positioned.fill(

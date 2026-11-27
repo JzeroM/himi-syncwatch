@@ -1276,11 +1276,10 @@ void main() {
       isTrue,
       reason: '698 N1：顶部轮播使用电影封面（Primary 海报）',
     );
-    // 698 N60：恢复 v1.6.14 同源海报氛围（局部氛围层+接缝层回归；
-    // 全局光场垫底无模糊 → 无双糊）。
-    expect(find.byKey(const Key('homeAmbientImage')), findsOneWidget,
-        reason: 'N60 同源模糊氛围恢复');
-    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsOneWidget);
+    // 698 N70：blur 氛围层删（黑块根治）——超大光域云雾光场接管。
+    expect(find.byKey(const Key('homeAmbientImage')), findsNothing,
+        reason: 'N70 blur 层删（云雾光场接管）');
+    expect(find.byKey(const Key('homeAmbientSeamLayer')), findsNothing);
     expect(emby.lastGetItemsFields, contains('BackdropImageTags'));
 
     // 698 N43：消化 hero tone 提取的 2.5s 超时 Timer（fakeAsync pending
