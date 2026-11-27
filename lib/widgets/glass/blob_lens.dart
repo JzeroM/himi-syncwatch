@@ -189,9 +189,9 @@ class LiquidBlobLens extends StatelessWidget {
                               edgeZone: edgeZone,
                               // 698 N39：凸透镜剖面（中心放大 ~1.15×、
                               // 全域平滑弯折、边缘细彩边——酷安同款）。
-                              // 698 N73：1:1 纯弯折（图2 对齐）——内容
-                              // 不缩放，仅边缘带折弯（lensZoom=0 关透镜缩放）。
-                              lensZoom: 0,
+                              // 698 N74：回退 N71 清透微放大（N73 1:1 纯
+                              // 弯折观感不佳，用户拍板回退）。
+                              lensZoom: 0.32,
                               clipExpansion: const EdgeInsets.symmetric(
                                 horizontal: 20,
                                 vertical: 15,

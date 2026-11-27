@@ -305,7 +305,7 @@ void main() {
   //   Increase for more dramatic effect, decrease for subtler
   // [PATCH himi] 0.35 → 0.45: 配合 bendStrength 1.25，边缘峰值弯折
   // ≈ 1.79×（0.9×0.35 → 1.25×0.45），内容被明显卷入镜片（参考图强度）。
-  vec2 edgeOffsetLogical = surfaceNormal * edgeInfluence * bendStrength * uSize.y * 0.62; // [PATCH himi] 698 N73 折弯加强
+  vec2 edgeOffsetLogical = surfaceNormal * edgeInfluence * bendStrength * uSize.y * 0.45; // [PATCH himi] 698 N74 回退 N71
   // [PATCH himi] 698 N39: 凸透镜剖面（uLensZoom > 0）——采样点向中心
   // 收缩 = 内容放大；径向二次剖面（中心放大最强、四缘平滑收束并轻
   // 微卷曲）。lensZoom=0 走原边缘带剖面（零回归）。
@@ -359,13 +359,12 @@ void main() {
   // 红绿蓝分离，酷安同款）+ 全域弯折细彩边保持。
   float ringWeight = smoothstep(0.45, 0.95, radialDist);
   vec2 ringShift = surfaceNormal * ringWeight * uChromaticAberration * 1.0;
-  // [PATCH himi] 698 N73：柯西真实色散**无条件**（基于 edgeOffsetLogical
-  // ——1:1 纯弯折模式也生效）：蓝 n 大弯折强、红 n 小弯折弱。
+  // [PATCH himi] 698 N74：柯西色散回 lensZoom 分支（N71 观感）。
   float dispersion = uChromaticAberration * 0.12;
   vec2 offR = edgeOffsetLogical * (1.0 - dispersion);
   vec2 offG = edgeOffsetLogical;
   vec2 offB = edgeOffsetLogical * (1.0 + dispersion);
-  vec2 chromaticShift = ringShift;
+  vec2 chromaticShift = (uLensZoom > 0.001) ? ringShift : vec2(0.0);
   
 vec3 bg;
   if (uHasBackground > 0.5) {

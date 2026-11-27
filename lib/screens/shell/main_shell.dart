@@ -132,9 +132,12 @@ class _MainShellState extends ConsumerState<MainShell> {
       if (!mounted) return;
       ref.read(shellBranchEpochProvider.notifier).bump(widget.shell.currentIndex);
     }
+    // 698 N74：**切回任意分支必回其首页**——initialLocation 恒 true
+    //（重载分支根路由），根治「子页残留 → 跳错/没反应」（设置子页切出
+    // 再切回，重置回设置主页重新开始）。
     widget.shell.goBranch(
       index,
-      initialLocation: index == widget.shell.currentIndex,
+      initialLocation: true,
     );
     _backAt = null;
     ref.read(shellNavVisibilityProvider.notifier).reset();
