@@ -54,13 +54,13 @@ class HimiSyncApp extends ConsumerWidget {
             // 首页与非首页同款；shellBackground key 保留（测试/回退定位）。
             return TraktDeepLinkListener(
               child: WindowsGlobalHotkeys(
-                child: Stack(
-                  fit: StackFit.passthrough,
-                  children: [
-                    // 698 N74b：背景层纳入玻璃采样 scope——水滴/浮块/标签
-                    // 折射透视到真实背景色（非黑）。
-                    Positioned.fill(
-                      child: GlassBackgroundSource(
+                // 698 N74c：玻璃采样源扩到**全层**（背景 + 内容）——水滴/
+                // 浮块/标签折射透视到所有层画面（海报/卡片/正文，非只背景）。
+                child: GlassBackgroundSource(
+                  child: Stack(
+                    fit: StackFit.passthrough,
+                    children: [
+                      Positioned.fill(
                         child: KeyedSubtree(
                           key: posterBackdropKey,
                           child: PosterBackdrop(
@@ -68,9 +68,9 @@ class HimiSyncApp extends ConsumerWidget {
                           ),
                         ),
                       ),
-                    ),
-                    modeSubtree,
-                  ],
+                      modeSubtree,
+                    ],
+                  ),
                 ),
               ),
             );
