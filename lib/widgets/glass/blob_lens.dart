@@ -1,3 +1,6 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
@@ -91,7 +94,13 @@ class LiquidBlobLens extends StatelessWidget {
   /// 不按引擎分流：iOS 虽为 Impeller，但 premium 的 `liquid_glass_render.frag`
   /// 多通道几何管线会忽略结构参数、且 capture/UV 映射导致水珠放大外溢与玻璃面
   /// 发灰；standard 与渲染引擎无关（Impeller 亦可运行），观感与安卓对齐。
-  static lg.GlassQuality get quality => lg.GlassQuality.standard;
+  /// 698 N74d：分平台玻璃——Impeller（安卓/iOS/鸿蒙）用 premium 真透底
+  ///（BackdropFilter，零截帧、透视全内容、无 shader 白圈）；Windows/Web
+  ///（Skia）回 standard 截帧（采样只包背景层，不卡）。
+  static lg.GlassQuality get quality =>
+      (!kIsWeb && ui.ImageFilter.isShaderFilterSupported)
+          ? lg.GlassQuality.premium
+          : lg.GlassQuality.standard;
 
   @override
   Widget build(BuildContext context) {

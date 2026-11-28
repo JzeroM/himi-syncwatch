@@ -340,7 +340,7 @@ class _GlassEffectState extends State<GlassEffect>
   void _captureBody(
       RenderRepaintBoundary boundary, Size size, Offset? pos) {
     try {
-      final image = boundary.toImageSync(pixelRatio: _devicePixelRatio);
+      final image = boundary.toImageSync(pixelRatio: 1.0);
       if (!mounted) {
         image.dispose();
         return;
@@ -434,7 +434,7 @@ class _GlassEffectState extends State<GlassEffect>
       // Web: async at full DPR. Still a 1-frame lag during drag but now
       // provides full-resolution texels for the bilinear filter.
       final image = await boundary.toImage(
-          pixelRatio: _devicePixelRatio); // coverage:ignore-line
+          pixelRatio: 1.0); // coverage:ignore-line
       if (mounted) {
         setState(() {
           _backgroundImage?.dispose();
@@ -1178,7 +1178,7 @@ class _RenderInteractiveIndicator extends RenderProxyBox {
         // Keep in LOGICAL pixels (don't multiply by DPR)
         bgRelativeOffset = indGlobalPos - bgGlobalPos;
 
-        // Image is now captured at pixelRatio: _devicePixelRatio.
+        // Image is now captured at pixelRatio: 1.0.
         // Divide by DPR to convert physical pixel dimensions back to logical
         // pixels, keeping uBackgroundSize in the same coordinate space as
         // localLogical/posInBg in the shader. The bilinear function in GLSL

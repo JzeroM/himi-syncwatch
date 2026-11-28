@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/himi_text.dart';
@@ -24,6 +26,13 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 ///   高光斑 + 底部内阴影弧 + 菲涅尔缘；玻璃关平涂同步；
 /// - **点击/拖动双交互**：点击切换；横向拖动浮块跟手平移（凹口实时
 ///   跟随、经过槽点亮预览），松手吸附最近槽触发接力动效。
+
+/// 698 N74d：分平台玻璃 quality（Impeller premium 真透底 / Skia standard）。
+lg.GlassQuality get _navGlassQuality =>
+    (!kIsWeb && ui.ImageFilter.isShaderFilterSupported)
+        ? lg.GlassQuality.premium
+        : lg.GlassQuality.standard;
+
 class SquircleNavBar extends ConsumerStatefulWidget {
   const SquircleNavBar({
     super.key,
@@ -552,7 +561,7 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
               borderRadius: SquircleNavBar.blockRadius,
             ),
             settings: SquircleNavBar.lensSettings(),
-            quality: lg.GlassQuality.standard,
+            quality: _navGlassQuality,
             interactionIntensity: 1.0,
             // N36：边缘区收敛（44×44 上 edgeZone 20 占半高 → 收 10）。
             edgeZone: 10,
@@ -605,7 +614,7 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
               borderRadius: SquircleNavBar.labelHalfHeight,
             ),
             settings: SquircleNavBar.lensSettings(),
-            quality: lg.GlassQuality.standard,
+            quality: _navGlassQuality,
             interactionIntensity: 1.0,
             // N36：参数按小尺寸收敛（edgeZone 20≥胶囊高 → 玻璃糊满
             // 全形体 =「空心框/贴到条上」根因）。
@@ -631,7 +640,7 @@ class _SquircleNavBarState extends ConsumerState<SquircleNavBar>
       height: SquircleNavBar.labelHeight,
       child: lg.InheritedLiquidGlass(
         settings: SquircleNavBar.lensSettings(),
-        quality: lg.GlassQuality.standard,
+        quality: _navGlassQuality,
         avoidsRefraction: false,
         child: ClipRRect(
           borderRadius:
