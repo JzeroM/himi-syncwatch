@@ -3989,9 +3989,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   Future<void> _raisePanelWithQt() async {
     if (!mounted || _disposed) return;
     if (defaultTargetPlatform != TargetPlatform.windows) return;
-    if (widget.roomCode == null) return;
+    // 698 N75：单人模式也抬面板（原 roomCode==null 拦截导致单人点 Qt
+    // 窗面板不跟着抬、被 Qt 窗挡无法操作）。show(inactive) 不抢焦点。
     try {
-      // 已可见时 `show()` 仍会抬 z-order；`inactive: true` 保证不抢焦点。
       await windowManager.show(inactive: true);
     } catch (e) {
       LogService().log('Room', '面板联动抬升失败: $e');
