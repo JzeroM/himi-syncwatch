@@ -206,22 +206,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- 698 N76：全端启用 Impeller（手机 + TV）。
-             引擎与 fvp 插件**都读这一处 meta-data**（单一事实源）：
-             FlutterLoader 把它转成 enable-impeller 启动参数；
-             FvpPlugin.java 据此注册 SurfaceProducer（Impeller 通道）。
-             两边永远成对，不会出现「引擎 Impeller + 插件 SurfaceTexture」
-             的黑屏错配。
-             玻璃 premium 真透底（BackdropFilter，零截帧、透视全内容、
-             流畅不卡、无 shader 白圈）在手机端三端 + TV 同管线观感一致。
-             历史：v1.1.61 在 RK3528/Mali（Android 13）盒子实测 Impeller
-             外部纹理黑屏有声（纹理 0 | 3840x1598，硬解正常），随后回退；
-             现版引擎已跨大版本，按决策「TV 也开，仍坏再改」。
-             【回退】只把本值改回 false → 引擎 Skia + 插件 SurfaceTexture
-             自动成对（参考 fvp#235、flutter#159503/#145531/#141636）。 -->
+        <!-- Impeller 显式关闭（不可删除本 meta-data）。
+             fvp 插件 FvpPlugin.java 读取本 meta-data 判断渲染后端，缺省
+             按 false（SurfaceTexture）注册，而引擎缺省开启 Impeller，
+             删除会重新错配。v1.1.61 曾显式 true（引擎与插件均 Impeller/
+             SurfaceProducer），盒子（RK3528/Mali, Android 13）实测仍黑屏
+             有声：纹理 0 | 3840x1598、c2.rk 硬解正常，即纹理已建、解码
+             正常但 Impeller 外部纹理合不出帧。改为显式 false → 引擎走
+             Skia + 插件走 SurfaceTexture（经典组合）。
+             698 N77：三端（安卓/iOS/鸿蒙）玻璃统一回 standard 着色器，
+             安卓保持 Skia，与 v1.6.17 一致；fvp 同源读本 meta-data 成对。
+             参考 fvp#235、flutter#159503/#145531/#141636。 -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="true" />
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

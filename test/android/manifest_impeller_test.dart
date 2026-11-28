@@ -2,19 +2,16 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 698 N76：Android 渲染后端守卫。
+/// 698 N77：Android 渲染后端守卫。
 ///
-/// 需求：**全端 Impeller**（手机 + TV），玻璃 premium 真透底
-/// （BackdropFilter）观感一致。
+/// 需求：三端（安卓/iOS/鸿蒙）玻璃统一回 standard 着色器（v1.6.17 架构），
+/// 安卓引擎关闭 Impeller（Skia）。
 ///
 /// 落地：Manifest meta-data 是**单一事实源**——
-/// - 引擎 `FlutterLoader` 读到 `true` → `--enable-impeller=true`；
-/// - fvp 插件 `FvpPlugin` 读同一 meta-data → `SurfaceProducer`（Impeller）
-///   而不是 `SurfaceTexture`（Skia）。
+/// - 引擎 `FlutterLoader` 读到 `false` → Skia；
+/// - fvp 插件 `FvpPlugin` 读同一 meta-data → `SurfaceTexture`（Skia）。
 /// 两边同源，杜绝「引擎 Impeller + 插件 SurfaceTexture」的黑屏错配
 /// （v1.1.61 RK3528 盒子回归的根因）。
-///
-/// 回退：只把 meta-data 改回 false，引擎与插件自动成对回到 Skia。
 void main() {
   const manifestPath = 'android/app/src/main/AndroidManifest.xml';
   const fvpPluginPath = 'third_party/fvp/android/src/main/java/'
@@ -38,8 +35,9 @@ void main() {
       );
       expect(
         match!.group(1),
-        'true',
-        reason: '698 N76：全端（手机 + TV）启用 Impeller，玻璃 premium 一致',
+        'false',
+        reason: '698 N77：回到 v1.6.17——安卓关闭 Impeller（Skia），'
+            '三端玻璃统一 standard；fvp 读同一键走 SurfaceTexture，成对',
       );
     });
 

@@ -1,6 +1,3 @@
-import 'dart:ui' as ui;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as lg;
 import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
@@ -88,17 +85,13 @@ class LiquidBlobLens extends StatelessWidget {
   /// 活动态矩形外扩量（相对静止矩形上下各扩，11 → 超出胶囊各 6px）。
   final double expansionV;
 
-  /// 画质：Impeller 可用 → `premium`（真透底 BackdropFilter，透视全内容、
-  /// 零 shader 白圈）；否则 `standard`（截帧采样，含 [PATCH himi] 调校）。
+  /// 画质：全平台固定 `standard`（单通道 `interactive_indicator.frag` +
+  /// RepaintBoundary 截帧采样，含 [PATCH himi] 调校）。
   ///
-  /// 698 N76：**全端 Impeller**——安卓由 Manifest meta-data
-  /// `EnableImpeller=true` 统一开启（iOS/鸿蒙引擎本身 Impeller），
-  /// 因此手机三端 + TV 的 `isShaderFilterSupported` 均为 true → 同走
-  /// premium 管线，观感一致；Windows/Web（Skia）走 standard。
-  static lg.GlassQuality get quality =>
-      (!kIsWeb && ui.ImageFilter.isShaderFilterSupported)
-          ? lg.GlassQuality.premium
-          : lg.GlassQuality.standard;
+  /// 698 N77：回到 v1.6.17 架构——premium 在 Impeller 上会把捕获的图标
+  /// 放大约 2×/外溢（水滴变形，真机截图）。standard 与渲染引擎无关
+  /// （Impeller 同样运行），三端观感一致。
+  static lg.GlassQuality get quality => lg.GlassQuality.standard;
 
   @override
   Widget build(BuildContext context) {

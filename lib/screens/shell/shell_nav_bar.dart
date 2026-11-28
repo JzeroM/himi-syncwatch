@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/providers/settings_provider.dart';
@@ -294,10 +296,11 @@ class _ShellNavBarState extends ConsumerState<ShellNavBar>
     // 拖动/点击飞行中 1（镜片淡入 + 整体放大 + 背景胶囊淡出）。
     final activity = (_dragging || _controller.isAnimating) ? 1.0 : 0.0;
 
-    // 698 N76：手机端三端（安卓/iOS/鸿蒙）观感全对齐——glassColor 统一
-    //（premium 真透底下白纱影响小，旧 iOS 偏白微调移除）。
+    // 全平台统一 standard（interactive_indicator.frag）路径；iOS(Impeller)
+    // 下同参数偏白发糊，故对镜片白纱/微边/光晕做一组更透亮的微调。
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
     final settings = lg.AnimatedGlassIndicator.baseIndicatorSettings.copyWith(
-      glassColor: Colors.white.withValues(alpha: 0.12),
+      glassColor: Colors.white.withValues(alpha: isIOS ? 0.05 : 0.14),
       thickness: tuning.thickness ?? glassDefault('glassThickness'),
       saturation: tuning.saturation ?? glassDefault('glassSaturation'),
       // 色散：N49 真实棱镜色散（shader 柯西模型）驱动量回 1.0——

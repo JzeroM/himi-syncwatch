@@ -461,6 +461,38 @@ int main(int argc, char* argv[]) {
     };
     if (!prewarm) showWindows();
 
+    // ── 698 N77：控件层仅在「宿主或控件层任一激活」时显示 ─────────────
+    //
+    // overlay 是逐像素透明的 Qt::Tool 窗口，但**吃鼠标**：它是 host 的
+    // owned 窗（setTransientParent），z-order 上可能盖在 Flutter 主窗之上，
+    // 单人模式下用户切回应用后「看得见、点不动」，点击落到透明且不可
+    // 激活的窗口上还会触发系统 beep（Default Beep）。
+    //
+    // 这里在「双窗都失活」时隐藏控件层（它失活时本来也不显示），
+    // 激活时恢复并抬到最前；用 0ms 单次定时器合并激活切换瞬态，防闪烁。
+    // 【为什么是双窗任一激活】点控件会先让宿主失活——若只看宿主失活就
+    // hide，会在点控件的瞬间把控件层自己藏掉。
+    auto* overlayVisTimer = new QTimer(&app);
+    overlayVisTimer->setSingleShot(true);
+    overlayVisTimer->setInterval(0);
+    QObject::connect(overlayVisTimer, &QTimer::timeout, &app, [host, overlay]() {
+        if (host == nullptr || overlay == nullptr) return;
+        const bool active = host->isActive() || overlay->isActive();
+        if (active) {
+            if (!overlay->isVisible()) {
+                overlay->show();
+                overlay->raise();
+            }
+        } else {
+            overlay->hide();
+        }
+    });
+    const auto syncOverlayVisibility = [overlayVisTimer]() {
+        overlayVisTimer->start();
+    };
+    QObject::connect(host, &QWindow::activeChanged, &app, syncOverlayVisibility);
+    QObject::connect(overlay, &QWindow::activeChanged, &app, syncOverlayVisibility);
+
     auto* syncTimer = new QTimer(&app);
     QObject::connect(syncTimer, &QTimer::timeout, &app,
                      [host, overlay, syncOverlayGeometry]() {

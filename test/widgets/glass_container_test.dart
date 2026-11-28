@@ -203,7 +203,7 @@ void main() {
     });
   });
 
-  group('玻璃着色全平台统一（N76：iOS 不再更淡）', () {
+  group('玻璃着色按平台（iOS 更淡，尽量透）', () {
     Color midTint(WidgetTester tester) {
       final boxes = tester
           .widgetList<DecoratedBox>(find.byType(DecoratedBox))
@@ -216,13 +216,14 @@ void main() {
       return g.colors[1];
     }
 
-    testWidgets('iOS 与安卓同用 12% tint（N76 三端统一）', (tester) async {
+    testWidgets('iOS 用更淡默认 tint（约 5%，低于 12%）', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       await tester.pumpWidget(_wrap(
         const GlassContainer(child: Text('面板内容')),
         const AppSettings(glassUi: true),
       ));
-      expect(midTint(tester), GlassConfig.panelTint);
+      expect(midTint(tester), GlassConfig.panelTintIos);
+      expect(GlassConfig.panelTintIos.a, lessThan(GlassConfig.panelTint.a));
       debugDefaultTargetPlatformOverride = null;
     });
 

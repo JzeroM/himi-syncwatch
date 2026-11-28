@@ -9660,9 +9660,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     if (widget.roomCode == null &&
         defaultTargetPlatform == TargetPlatform.windows) {
       try {
-        await Future<void>.delayed(Duration.zero);
-        await windowManager.show();
-        LogService().log('Player', '单人：已把主窗抬回前台（Qt 后台播放）');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        await windowManager.show();   // 兜底：隐藏/最小化也能恢复
+        // 698 N77：`show()` 对已可见窗不抬 z-order（window_manager 0.5.2
+        // 只在「隐藏→显示」时 SetWindowPos(HWND_TOP)），主窗仍被 Qt 透明
+        // 控件层压在下面吞点击/触发系统 beep。`focus()` 无条件
+        // SetWindowPos(HWND_TOP)，把主窗真正抬到控件层之上。
+        await windowManager.focus();
+        LogService().log('Player', '单人：主窗 focus 抬前（Qt 后台播放）');
       } catch (e) {
         LogService().log('Player', '单人返回主窗抬升失败: $e');
       }

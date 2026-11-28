@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 /// 液态玻璃视觉参数与布局预留量。
@@ -22,13 +24,23 @@ class GlassConfig {
   static const Color barTint = Color(0x1F1A1D23);
   static const Color barTintSoft = Color(0x121A1D23);
 
-  /// 698 N76：手机端三端统一着色（原 iOS standard 路径的 5% 淡膜已作废）。
-  static Color panelTintOf() => panelTint;
+  /// iOS(Impeller) 专用更淡着色：包内已走 GlassBodyMode.clear，本层 tint 再
+  /// 压到约 5% → 背景更透（12% 深色膜是 iOS 看着「不透」的主因）。
+  static const Color panelTintIos = Color(0x0D1A1D23);
+  static const Color barTintIos = Color(0x0D1A1D23);
+  static const Color barTintSoftIos = Color(0x081A1D23);
 
-  /// 顶栏着色（全平台统一）。
-  static Color barTintOf() => barTint;
+  /// 面板着色（按平台）：iOS 用更淡的 [panelTintIos]。
+  static Color panelTintOf() =>
+      defaultTargetPlatform == TargetPlatform.iOS ? panelTintIos : panelTint;
 
-  static Color barTintSoftOf() => barTintSoft;
+  /// 顶栏着色（按平台）。
+  static Color barTintOf() =>
+      defaultTargetPlatform == TargetPlatform.iOS ? barTintIos : barTint;
+
+  static Color barTintSoftOf() => defaultTargetPlatform == TargetPlatform.iOS
+      ? barTintSoftIos
+      : barTintSoft;
 
   /// 面板（GlassContainer）关闭玻璃后的半透明着色底（约 90% 透明，
   /// 仅 10% 深色膜，无模糊/折射；配合 rimColor 白描边定界）。

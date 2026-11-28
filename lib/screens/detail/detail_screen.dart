@@ -600,6 +600,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     return playingId != null && playingId == _item?.id;
   }
 
+  /// 698 N77：构建期**响应式**版本——用 [ref.watch] 订阅，播放中资源
+  /// 变化时详情页重建，「播放/建房」按钮实时变灰/恢复。
+  bool get _qtPlayingThisWatch {
+    final qt = MpvSessionPlatform.activeQtAdapter;
+    if (qt == null || !qt.isAlive || !qt.hasMedia) return false;
+    final playingId = ref.watch(currentPlayingItemIdProvider);
+    return playingId != null && playingId == _item?.id;
+  }
+
   Future<void> _playEpisode(MediaItem ep, {bool resume = false}) async {
     // 698 N72：Qt 双窗口单人——同资源播放中禁用（异资源正常换源播放）。
     if (_qtPlayingThis) {
@@ -1774,10 +1783,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     Widget glassButton({
       required IconData icon,
       required String label,
-      required Future<void> Function() onPressed,
+      required Future<void> Function()? onPressed,
       double? progress,
       double radius = 14,
     }) {
+      // 698 N77：onPressed == null 即禁用态（同资源播放中）——图标/文字灰化。
+      final disabled = onPressed == null;
+      final accent = scheme.primary.withValues(alpha: disabled ? 0.35 : 1.0);
+      final labelColor = HimiText.primary(context)
+          .withValues(alpha: disabled ? 0.35 : 1.0);
       final button = FilledButton(
         onPressed: onPressed,
         style: glassStyle(compact: tvMode),
@@ -1785,12 +1799,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: scheme.primary, size: tvMode ? 20 : 24),
+            Icon(icon, color: accent, size: tvMode ? 20 : 24),
             const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                color: HimiText.primary(context),
+                color: labelColor,
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -1837,6 +1851,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         ));
       }
     } else {
+      // 698 N77：单人 Qt 双窗口「同资源播放中」→ 播放/建房按钮视觉禁用；
+      // 异资源不受影响（playingThis 仅当播放中资源 == 当前详情资源）。
+      final playingThis = _qtPlayingThisWatch;
       // 剧集无集数据时隐藏播放按钮（点了无事发生会误导）
       if (!item.isSeries || _episodes.isNotEmpty) {
         final offerResume = _offerResume;
@@ -1851,8 +1868,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             label: offerResume
                 ? (tvMode ? '继续' : '继续 ${_formatPosition(_resumeMs)}')
                 : (tvMode ? '播放' : '开始播放'),
-            onPressed: play,
-            progress: offerResume ? (_resumePct / 100) : null,
+            onPressed: playingThis ? null : play,
+            progress: (offerResume && !playingThis) ? (_resumePct / 100) : null,
           ),
         ));
       }
@@ -1864,7 +1881,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           button: glassButton(
             icon: Icons.group_add,
             label: '建房',
-            onPressed: _createRoom,
+            onPressed: playingThis ? null : _createRoom,
           ),
         ));
       }

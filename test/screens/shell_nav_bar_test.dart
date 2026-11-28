@@ -311,8 +311,8 @@ void main() {
     expect(lens.settings.lightIntensity, 0,
         reason: 'N37：去镜面（无镜面高光，靠折射形变 + 色散）');
     expect(lens.settings.thickness, 24, reason: 'N49：形变体感回升（默认 24，滑杆仍可调）');
-    expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.12),
-        reason: '698 N76：手机端三端统一 0.12（删 iOS 0.05 差异化）');
+    expect(lens.settings.glassColor, Colors.white.withValues(alpha: 0.14),
+        reason: '白色镜片底色略提亮，配合结构参数增强折射观感');
     // 结构参数（补偿包内标准路径归一化）：ambientRim 驱动中性白微光；
     // glow/ambient 收低弱化白色边框感；edgeAbsorption 收低淡化边缘暗带
     expect(lens.settings.ambientRim, 0.12,
@@ -322,7 +322,7 @@ void main() {
     expect(lens.settings.edgeAbsorption, 0.06, reason: 'N48：边缘暗带再淡化');
     expect(lens.edgeZone, 20, reason: '折射范围默认 20（设置滑杆 20~24，round-7）');
     expect(LiquidBlobLens.quality, lg.GlassQuality.standard,
-        reason: 'N76：三手机端统一 standard（安卓 Impeller=false 即 standard）');
+        reason: '全平台固定 standard（iOS 与安卓同源，不再按引擎分流 premium）');
 
     // 静止镜片不挂载（折射/物理色散只在移动出现）
     expect(find.byType(GlassEffect), findsNothing);
@@ -448,7 +448,7 @@ void main() {
     expect(effect.lensZoom, closeTo(0.32, 0.001),
         reason: 'N74：回退清透微放大');
     expect(effect.quality, lg.GlassQuality.standard,
-        reason: 'N76：三端统一 standard 折射管线');
+        reason: '测试环境 standard → 无捕获降级安全（真机走捕获折射）');
 
     // 外溢不被任何裁剪层吃掉（根因：适配层与包内 Lightweight 均无条件裁剪子级）
     expect(
