@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:himi_syncwatch/services/poster_palette.dart';
 import 'package:himi_syncwatch/widgets/poster_backdrop.dart';
@@ -25,6 +26,7 @@ class HomeHeroItem {
   const HomeHeroItem({
     required this.title,
     this.imageUrl,
+    this.backdropUrl,
     this.logoUrl,
     this.year,
     this.rating,
@@ -36,6 +38,9 @@ class HomeHeroItem {
 
   final String title;
   final String? imageUrl;
+
+  /// 横版背景图（698 N78：桌面轮播/详情 hero 用 16:9 横图，null 回退竖海报）。
+  final String? backdropUrl;
   final String? logoUrl;
   final String? year;
   final double? rating;
@@ -52,8 +57,9 @@ class HomeHeroItem {
   factory HomeHeroItem.fromMediaItem(MediaItem item, {Object? payload}) {
     return HomeHeroItem(
       title: item.name,
-      // 698 N1：轮播只获取电影封面（Primary 海报），不再用宽幅背景图。
+      // 698 N1：手机轮播用电影封面（Primary 海报）；N78 桌面改用横版背景图。
       imageUrl: item.posterUrl,
+      backdropUrl: item.backdropUrl,
       logoUrl: item.logoUrl,
       year: item.year,
       rating: item.communityRating,
@@ -137,18 +143,45 @@ class HomeHeroCarousel extends StatefulWidget {
   static const double heroHeightMin = 300;
   static const double heroHeightMax = 640;
 
-  static double _heroHeight(double byWidth, double screenHeight) {
-    final cap = screenHeight * viewportCapRatio;
-    return (byWidth < cap ? byWidth : cap).clamp(heroHeightMin, heroHeightMax);
+  /// 698 N78：桌面（Windows/macOS/Linux）改用 16:9 横图 + 更矮的护栏。
+  static const double desktopCarouselHeightRatio = 0.5625; // 16:9
+  static const double desktopDetailHeightRatio = 0.5625;    // 16:9
+  static const double desktopViewportCapRatio = 0.5;
+  static const double desktopHeroHeightMin = 240;
+  static const double desktopHeroHeightMax = 480;
+
+  /// 桌面形态（Windows/macOS/Linux）。
+  static bool get _isDesktop =>
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.linux;
+
+  static double _heroHeight(double byWidth, double screenHeight,
+      {bool desktop = false}) {
+    final cap = screenHeight * (desktop ? desktopViewportCapRatio : viewportCapRatio);
+    final minH = desktop ? desktopHeroHeightMin : heroHeightMin;
+    final maxH = desktop ? desktopHeroHeightMax : heroHeightMax;
+    return (byWidth < cap ? byWidth : cap).clamp(minH, maxH);
   }
 
-  /// 轮播高度（纯函数）：宽 × 1.35（贴 2:3 海报）+ 视口护栏。
+  /// 轮播高度（纯函数）：手机宽 × 1.35（贴 2:3 海报）、桌面宽 × 0.5625
+  /// （16:9 横图）+ 视口护栏。
   static double carouselHeightFor(double width, double screenHeight) =>
-      _heroHeight(width * carouselHeightRatio, screenHeight);
+      _heroHeight(
+          width * (_isDesktop ? desktopCarouselHeightRatio : carouselHeightRatio),
+          screenHeight,
+          desktop: _isDesktop);
 
-  /// 详情 hero 高度（纯函数）：宽 × 0.85（≈1.17:1，贴横版背景图）+ 视口护栏。
+  /// 详情 hero 高度（纯函数）：手机宽 × 0.85、桌面宽 × 0.5625（16:9）+ 视口护栏。
   static double detailHeightFor(double width, double screenHeight) =>
-      _heroHeight(width * detailHeightRatio, screenHeight);
+      _heroHeight(
+          width * (_isDesktop ? desktopDetailHeightRatio : detailHeightRatio),
+          screenHeight,
+          desktop: _isDesktop);
+
+  /// 轮播 hero 图片源：桌面用横版背景图（16:9），手机用竖版海报。
+  static String? heroImageUrl(HomeHeroItem item) =>
+      _isDesktop ? (item.backdropUrl ?? item.imageUrl) : item.imageUrl;
 
   /// 轮播高度（取 MediaQuery）。
   static double carouselHeightOf(BuildContext context) {
@@ -236,7 +269,7 @@ class _HomeHeroCarouselState extends State<HomeHeroCarousel> {
     final next = (_index + 1) % widget.items.length;
     // 698 N51：预热下一张背景海报图（降采样解码缓存）+ heroTone 首色
     // ——切换瞬间缓存命中，背景与轮播同步（消除「下方背景是上一张」）。
-    final nextUrl = widget.items[next].imageUrl;
+    final nextUrl = HomeHeroCarousel.heroImageUrl(widget.items[next]);
     if (nextUrl != null && nextUrl.isNotEmpty) {
       precacheAmbientPoster(nextUrl);
       PosterPalette.extract(nextUrl);
@@ -340,7 +373,7 @@ class _HeroSlide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = item.imageUrl;
+    final bg = HomeHeroCarousel.heroImageUrl(item);
     final logo = item.logoUrl;
     final rating = item.rating;
     final year = item.year;

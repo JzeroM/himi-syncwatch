@@ -185,22 +185,16 @@ void main() {
       }
     });
 
-    test('C3 贴在底栏上方（不遮挡任何控件）', () {
-      // 695：改为绝对定位——跨 item 的 readonly property 绑定在 QML 里
-      // 刷新时机不可靠，胶囊曾因此永不显示。
+    test('C3 左右纵轴中心（N78，不再贴底栏）', () {
+      expect(overlayQml, contains('y: (parent.height - height) / 2'));
       expect(overlayQml,
-          contains('y: parent.height - Theme.bottomBarHeight - height - 8'));
-      expect(overlayQml, isNot(contains('sliderRect.y - height - 8')));
+          isNot(contains('y: parent.height - Theme.bottomBarHeight - height - 8')));
     });
 
-    test('C4 片头贴剧集 Logo 右侧、片尾右对齐', () {
-      // 697：片头胶囊贴 Logo 右侧 16px，不遮挡 Logo。
-      expect(overlayQml, contains('episodeLogo.x + episodeLogo.width + 16'));
-      // Logo 不存在时回退到进度条左端（底栏左内边距 + 时间列宽）
-      expect(overlayQml, contains('Theme.barPadH + Theme.timeCellWidth'));
-      // 片尾：屏幕宽 - 右内边距 - 时间列宽 - 胶囊宽
-      expect(overlayQml,
-          contains('x: parent.width - Theme.barPadH - Theme.timeCellWidth - width'));
+    test('C4 片头左侧、片尾右侧（N78，不再依赖 Logo/进度条）', () {
+      expect(overlayQml, contains('x: Theme.barPadH'));
+      expect(overlayQml, contains('x: parent.width - Theme.barPadH - width'));
+      expect(overlayQml, isNot(contains('episodeLogo.x + episodeLogo.width + 16')));
     });
 
     test('C5 不受 controlsVisible 控制（独立倒计时）', () {

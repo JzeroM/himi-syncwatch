@@ -121,23 +121,22 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
 
   group('B 跳过胶囊位置（695 绝对定位）', () {
-    test('B1 片头贴剧集 Logo 右侧（无 Logo 回退进度条左端）', () {
+    test('B1 片头在左侧纵轴中心（N78）', () {
       expect(overlayQml, contains('id: skipIntroCapsule'));
-      // 697：贴 Logo 右侧 16px
-      expect(overlayQml, contains('episodeLogo.x + episodeLogo.width + 16'));
-      // 回退分支：进度条左端
-      expect(overlayQml, contains('Theme.barPadH + Theme.timeCellWidth'));
+      expect(overlayQml, contains('x: Theme.barPadH'));
+      expect(overlayQml, contains('y: (parent.height - height) / 2'));
+      expect(overlayQml, isNot(contains('episodeLogo.x + episodeLogo.width + 16')));
     });
 
-    test('B2 片尾贴进度条右端上方', () {
+    test('B2 片尾在右侧纵轴中心（N78）', () {
       expect(overlayQml, contains('id: skipOutroCapsule'));
-      expect(overlayQml,
-          contains('x: parent.width - Theme.barPadH - Theme.timeCellWidth - width'));
+      expect(overlayQml, contains('x: parent.width - Theme.barPadH - width'));
+      expect(overlayQml, contains('y: (parent.height - height) / 2'));
     });
 
-    test('B3 不遮挡底栏（垂直在底栏上方）', () {
+    test('B3 不再贴底栏（纵轴中心）', () {
       expect(overlayQml,
-          contains('y: parent.height - Theme.bottomBarHeight - height - 8'));
+          isNot(contains('y: parent.height - Theme.bottomBarHeight - height - 8')));
     });
 
     test('B4 不受 controlsVisible 控制（独立倒计时）', () {

@@ -378,10 +378,10 @@ ApplicationWindow {
 
     // ── 692：跳过片头/片尾胶囊（独立层，贴在底栏上方）──
     //
-    // 【位置】697 起：
-    //   · 片头 → **剧集 Logo 右侧 16px**（Logo 不存在时回退进度条左端）
-    //   · 片尾 → 进度条右端上方
-    // 垂直方向都在底栏上方 8px，不遮挡任何控件。
+    // 【位置】698 N78 起（用户要求改到左右纵轴中心）：
+    //   · 片头 → **左侧纵轴中心**（Theme.barPadH 起）
+    //   · 片尾 → **右侧纵轴中心**
+    // 垂直方向均在屏幕纵向居中，不遮挡顶/底栏。
     //
     // 【为什么用 Overlay 而不是 BottomBar】
     // 1. BottomBar 整体 `opacity: showControls ? 1 : 0`——放里面会跟着
@@ -415,24 +415,9 @@ ApplicationWindow {
         Rectangle {
             id: skipIntroCapsule
             visible: playerState.skipPrompt === "intro"
-            // 697：**贴剧集 Logo 右侧 16px**，不遮挡 Logo。
-            //
-            // Logo 不存在（logoUrl 为空 / 房间模式）时回退到进度条左端，
-            // 避免胶囊跑到屏幕最左（那里没有参照物，观感突兀）。
-            //
-            // 【为什么这次绑定可靠】`episodeLogo.x/.width/.visible` 是
-            // 基础属性，QML 对其通知是可靠的——不同于之前失败的
-            // `readonly property rect` 三层链（首帧求值后不再重算）。
-            //
-            // 【坐标系为什么能直接用】`episodeLogo` 直接挂在 root 下
-            // （`anchors.left/bottom`），本层 `skipCapsuleLayer` 是
-            // `anchors.fill: parent`——两者原点都是 root 的 (0,0)，
-            // 所以 `episodeLogo.x` 无需 mapToItem 换算。
-            x: episodeLogo.visible
-               ? episodeLogo.x + episodeLogo.width + 16
-               : Theme.barPadH + Theme.timeCellWidth
-            // 底栏上方 8px（保持原位置）
-            y: parent.height - Theme.bottomBarHeight - height - 8
+            // 698 N78：左侧纵轴中心（不再贴 Logo/进度条，独立于底栏）。
+            x: Theme.barPadH
+            y: (parent.height - height) / 2
             width: introLabel.implicitWidth + 28
             height: 30
             radius: 8
@@ -463,9 +448,9 @@ ApplicationWindow {
         Rectangle {
             id: skipOutroCapsule
             visible: playerState.skipPrompt === "outro"
-            // 进度条右端：屏幕宽 - 右内边距 - 时间列宽 - 胶囊宽
-            x: parent.width - Theme.barPadH - Theme.timeCellWidth - width
-            y: parent.height - Theme.bottomBarHeight - height - 8
+            // 698 N78：右侧纵轴中心。
+            x: parent.width - Theme.barPadH - width
+            y: (parent.height - height) / 2
             width: outroLabel.implicitWidth + 28
             height: 30
             radius: 8

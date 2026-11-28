@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:himi_syncwatch/widgets/home_hero_carousel.dart';
 
@@ -32,6 +33,43 @@ void main() {
       expect(HomeHeroCarousel.viewportCapRatio, 0.65);
       expect(HomeHeroCarousel.heroHeightMin, 300);
       expect(HomeHeroCarousel.heroHeightMax, 640);
+    });
+  });
+
+  group('698 N78：桌面 16:9 横图分支（Windows/macOS/Linux）', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('桌面轮播/详情高度 = 宽×0.5625（16:9）+ 更矮护栏', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      // 1280×800 窗口：1280×0.5625=720 → 护栏 0.5×800=400 → 400。
+      expect(HomeHeroCarousel.carouselHeightFor(1280, 800), 400);
+      expect(HomeHeroCarousel.detailHeightFor(1280, 800), 400);
+      // 1920×1080：1920×0.5625=1080 → 护栏 0.5×1080=540 → 夹紧上限 480。
+      expect(HomeHeroCarousel.carouselHeightFor(1920, 1080), 480);
+      // 桌面钳位下限 240。
+      expect(HomeHeroCarousel.carouselHeightFor(300, 800), 240);
+    });
+
+    test('桌面 hero 图片源用 backdrop（16:9 横图），手机用 poster', () {
+      const item = HomeHeroItem(
+        title: 't',
+        imageUrl: 'poster.jpg',
+        backdropUrl: 'backdrop.jpg',
+      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(HomeHeroCarousel.heroImageUrl(item), 'backdrop.jpg');
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(HomeHeroCarousel.heroImageUrl(item), 'poster.jpg');
+      // 无 backdrop 时桌面回退 poster。
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      const noBackdrop = HomeHeroItem(title: 't', imageUrl: 'poster.jpg');
+      expect(HomeHeroCarousel.heroImageUrl(noBackdrop), 'poster.jpg');
+    });
+
+    test('手机仍走 1.35 / 0.85，不受桌面分支影响', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(HomeHeroCarousel.carouselHeightFor(390, 844), closeTo(526.5, 0.001));
+      expect(HomeHeroCarousel.detailHeightFor(390, 844), closeTo(331.5, 0.001));
     });
   });
 }

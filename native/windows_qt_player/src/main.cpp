@@ -462,8 +462,9 @@ int main(int argc, char* argv[]) {
     if (!prewarm) showWindows();
 
     auto* syncTimer = new QTimer(&app);
+    ULONGLONG lastOverlayDiag = 0;  // 诊断日志节流（每 2s 一条）
     QObject::connect(syncTimer, &QTimer::timeout, &app,
-                     [host, overlay, syncOverlayGeometry]() {
+                     [host, overlay, syncOverlayGeometry, &lastOverlayDiag]() {
         if (host == nullptr || overlay == nullptr) return;
         // QQuickWindow（QWindow）没有 isMinimized()，用 visibility 判定。
         // 698 N77：控件层显隐必须**同时**看可见性与激活态——
@@ -475,10 +476,33 @@ int main(int argc, char* argv[]) {
         const bool active = host->isActive() || overlay->isActive();
         const bool show = hostVisible && active;
         if (overlay->isVisible() != show) {
-            qInfo() << "[overlay] 显隐 ->" << show
-                    << "(hostVisible=" << hostVisible
-                    << ", active=" << active << ")";
             overlay->setVisible(show);
+        }
+        // 698 N78：点击穿透兜底——失活时给透明控件层加 WS_EX_TRANSPARENT，
+        // 让点击**物理上**穿过透明层落到下层 Flutter 主窗（恢复「选哪个
+        // 窗口鼠标就到哪个窗口」），不再依赖 isActive 判断是否可靠。
+        const HWND oh = reinterpret_cast<HWND>(overlay->winId());
+        if (oh != nullptr) {
+            const LONG_PTR ex = ::GetWindowLongPtrW(oh, GWL_EXSTYLE);
+            const LONG_PTR wanted = show
+                ? (ex & ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT))
+                : (ex | static_cast<LONG_PTR>(WS_EX_TRANSPARENT));
+            if (wanted != ex) {
+                ::SetWindowLongPtrW(oh, GWL_EXSTYLE, wanted);
+            }
+        }
+        // 诊断（每 2s）：定位「主窗在前但控件层仍挡」时用。
+        const ULONGLONG now = ::GetTickCount64();
+        if (now - lastOverlayDiag >= 2000) {
+            lastOverlayDiag = now;
+            qInfo().noquote() << "[overlay-diag] show=" << show
+                              << "hostVisible=" << hostVisible
+                              << "hostActive=" << host->isActive()
+                              << "overlayActive=" << overlay->isActive()
+                              << "overlayVisible=" << overlay->isVisible()
+                              << "exStyle=" << Qt::hex
+                              << ::GetWindowLongPtrW(oh, GWL_EXSTYLE)
+                              << Qt::dec;
         }
         if (!show) return;
         syncOverlayGeometry();

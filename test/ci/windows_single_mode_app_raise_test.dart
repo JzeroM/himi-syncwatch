@@ -23,16 +23,15 @@ void main() {
     return src.substring(start, (start + 3400).clamp(0, src.length));
   }
 
-  test('Qt 控件层显隐同时看可见性与激活态（失活即隐藏，不被定时器拉回）', () {
+  test('Qt 控件层显隐 + 点击穿透（失活隐藏且 WS_EX_TRANSPARENT）', () {
     expect(cpp, contains('hostVisible && active'),
         reason: '显示条件必须同时看宿主可见 + 任一激活');
     expect(cpp, contains('host->isActive() || overlay->isActive()'),
         reason: '双窗任一激活才显示（只看宿主失活会把点控件的瞬间误藏）');
     expect(cpp, contains('overlay->setVisible(show)'),
         reason: '用统一的 show 裁决显隐，杜绝透明层在宿主失活时仍显示');
-    // N77 曾加的 activeChanged 防抖块会与定时器打架，必须已删除
-    expect(cpp, isNot(contains('overlayVisTimer')),
-        reason: '不要单独用 activeChanged 防抖，统一由 50ms 定时器裁决');
+    expect(cpp, contains('WS_EX_TRANSPARENT'),
+        reason: 'N78：失活时点击穿透，透明层物理上挡不住鼠标（恢复选哪个窗口鼠标就到哪个窗口）');
   });
 
   test('单人退出/会话顶替路径用 focus() 抬主窗（不自动抬）', () {
