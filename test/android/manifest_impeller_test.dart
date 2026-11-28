@@ -63,4 +63,20 @@ void main() {
       );
     });
   });
+
+  /// 698 N76 实战教训：注释里写 `--enable-impeller` 会让
+  /// `ManifestMerger2` 解析失败（XML 注释禁止连续 `--`），CI build-android
+  /// 直接挂。文件仍是合法文本，普通字符串断言抓不到，必须专门守卫。
+  test('XML 注释不含连续 "--"（Manifest 合并解析守卫）', () {
+    final xml = File(manifestPath).readAsStringSync();
+    final comments = RegExp(r'<!--([\s\S]*?)-->').allMatches(xml);
+    expect(comments, isNotEmpty);
+    for (final c in comments) {
+      expect(
+        c.group(1)!.contains('--'),
+        isFalse,
+        reason: 'XML 注释禁止连续 --（如 --enable-impeller= 写法）',
+      );
+    }
+  });
 }

@@ -208,7 +208,7 @@
             android:value="2" />
         <!-- 698 N76：全端启用 Impeller（手机 + TV）。
              引擎与 fvp 插件**都读这一处 meta-data**（单一事实源）：
-             FlutterLoader 把它转成 --enable-impeller=true；
+             FlutterLoader 把它转成 enable-impeller 启动参数；
              FvpPlugin.java 据此注册 SurfaceProducer（Impeller 通道）。
              两边永远成对，不会出现「引擎 Impeller + 插件 SurfaceTexture」
              的黑屏错配。
