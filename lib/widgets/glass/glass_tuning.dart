@@ -1,5 +1,3 @@
-import 'dart:ui' show Color;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:himi_syncwatch/core/himi_platform.dart';
@@ -128,48 +126,13 @@ const List<GlassParamSpec> glassParamSpecs = [
   ),
 ];
 
-/// iOS(Impeller) standard 路径专属调参。
+/// 取 [key] 对应参数的默认值：全平台同源 [glassParamSpecs]。
 ///
-/// 两端跑同一 standard 着色器，但 iOS 为 Impeller、安卓为 Skia；同一参数在
-/// Impeller 下模糊/高光更重、观感发白偏糊。这里给 iOS 一组更「透亮」的
-/// 默认值（降雾化模糊/厚度/高光/环境光、略升饱和）以贴近安卓观感；
-/// 滑杆回显、渲染兜底与调用方显式取值同源。安卓/其余平台仍用 spec 默认。
-///
-/// v1.1.161：standard 的 PATH B 里有硬编码 8% 白霜底 + 3% 灰化增暗，
-/// 旋钮压不掉——iOS 额外走 `GlassBodyMode.clear`（见 [GlassTuning.toThemeData]）
-/// 归零这两项，真正「去磨砂、变透」。
-class GlassIosStandard {
-  const GlassIosStandard._();
-
-  static const double blur = 0; // 默认 4（去雾化模糊）
-  static const double thickness = 24; // N49：与安卓统一 24（形变体感）
-  static const double saturation = 1.1; // 默认 1.7（去奶感，尽量透）
-  static const double lightIntensity = 0.5; // 默认 1.2（降白色高光）
-  static const double ambientStrength = 0.0; // 环境光归零（安卓 dark 默认也是 0）
-
-  /// 玻璃体着色 alpha：clear 模式下体色透明度 = 该值，0 = 体完全透明
-  /// （仅留菲涅尔/折射边缘），背景最大透出。
-  static const double glassColorAlpha = 0.0;
-}
-
-/// 取 [key] 对应参数的默认值：iOS(standard/Impeller) 用 [GlassIosStandard]
-/// 微调组，其余平台用 [glassParamSpecs] 应用默认。滑杆回显、渲染兜底与调用
-/// 方（如导航水珠镜片的显式 settings）同源。
-double glassDefault(String key) {
-  if (defaultTargetPlatform == TargetPlatform.iOS) {
-    switch (key) {
-      case 'glassBlur':
-        return GlassIosStandard.blur;
-      case 'glassThickness':
-        return GlassIosStandard.thickness;
-      case 'glassSaturation':
-        return GlassIosStandard.saturation;
-      case 'glassLightIntensity':
-        return GlassIosStandard.lightIntensity;
-    }
-  }
-  return glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
-}
+/// 698 N76：手机端三端全部走 Impeller premium，iOS 旧 standard 路径
+/// 微调组（更透亮/去白霜）已作废——保留会让 iOS 的饱和/模糊与安卓不同。
+/// 滑杆回显、渲染兜底与调用方（如导航水珠镜片的显式 settings）同源。
+double glassDefault(String key) =>
+    glassParamSpecs.firstWhere((s) => s.key == key).defaultValue;
 
 /// 折射范围（glassEdgeZone）滑杆可见性：Android / iOS / 鸿蒙 非 TV 模式显示。
 ///
@@ -237,36 +200,14 @@ class GlassTuning {
   /// 映射为包主题：null 字段（恢复默认态）兜底到 [glassDefault]（应用
   /// 默认），保证默认观感 = 目标效果而非包 variant 的保守默认。
   GlassThemeData toThemeData() {
-    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
-    final data = GlassThemeData.simple(
+    // 698 N76：全平台同参数（手机端三端 premium，iOS 旧 standard 补偿作废）。
+    return GlassThemeData.simple(
       blur: blur ?? glassDefault('glassBlur'),
       thickness: thickness ?? glassDefault('glassThickness'),
       saturation: saturation ?? glassDefault('glassSaturation'),
       chromaticAberration: chromatic ?? glassDefault('glassChromatic'),
       lightIntensity: lightIntensity ?? glassDefault('glassLightIntensity'),
       refractiveIndex: refractiveIndex ?? glassDefault('glassRefractiveIndex'),
-      // 不指定画质：交给包按引擎能力决定（iOS/安卓均落到 standard 路径）
-    );
-    if (!isIOS) return data;
-    // iOS(Impeller)：同参数偏白发糊 → 直接压低玻璃白纱/环境光/磨砂奶白，
-    // 让静态玻璃（顶栏/卡片/胶囊）更透亮，贴近安卓 Skia 观感。
-    // 另走 GlassBodyMode.clear：归零 standard PATH B 里硬编码的 8% 白霜底
-    // 与 3% 灰化增暗（旋钮无法触及），真正「去磨砂、变透」。
-    GlassThemeVariant tune(GlassThemeVariant v) => v.copyWith(
-          settings: (v.settings ?? const GlassThemeSettings()).copyWith(
-            glassColor:
-                Color.fromRGBO(255, 255, 255, GlassIosStandard.glassColorAlpha),
-            ambientStrength: GlassIosStandard.ambientStrength,
-            frostOpacity: 0.0,
-            rimLight: 0.0,
-            bodyMode: GlassBodyMode.clear,
-          ),
-        );
-    return GlassThemeData(
-      light: tune(data.light),
-      dark: tune(data.dark),
-      interaction: data.interaction,
-      brightness: data.brightness,
     );
   }
 }

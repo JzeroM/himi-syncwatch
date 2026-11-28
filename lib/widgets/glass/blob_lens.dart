@@ -88,15 +88,13 @@ class LiquidBlobLens extends StatelessWidget {
   /// 活动态矩形外扩量（相对静止矩形上下各扩，11 → 超出胶囊各 6px）。
   final double expansionV;
 
-  /// 画质：全平台固定 `standard`（单通道 `interactive_indicator.frag` +
-  /// RepaintBoundary 截帧采样，含 [PATCH himi] 调校）。
+  /// 画质：Impeller 可用 → `premium`（真透底 BackdropFilter，透视全内容、
+  /// 零 shader 白圈）；否则 `standard`（截帧采样，含 [PATCH himi] 调校）。
   ///
-  /// 不按引擎分流：iOS 虽为 Impeller，但 premium 的 `liquid_glass_render.frag`
-  /// 多通道几何管线会忽略结构参数、且 capture/UV 映射导致水珠放大外溢与玻璃面
-  /// 发灰；standard 与渲染引擎无关（Impeller 亦可运行），观感与安卓对齐。
-  /// 698 N74d：分平台玻璃——Impeller（安卓/iOS/鸿蒙）用 premium 真透底
-  ///（BackdropFilter，零截帧、透视全内容、无 shader 白圈）；Windows/Web
-  ///（Skia）回 standard 截帧（采样只包背景层，不卡）。
+  /// 698 N76：**全端 Impeller**——安卓由 Manifest meta-data
+  /// `EnableImpeller=true` 统一开启（iOS/鸿蒙引擎本身 Impeller），
+  /// 因此手机三端 + TV 的 `isShaderFilterSupported` 均为 true → 同走
+  /// premium 管线，观感一致；Windows/Web（Skia）走 standard。
   static lg.GlassQuality get quality =>
       (!kIsWeb && ui.ImageFilter.isShaderFilterSupported)
           ? lg.GlassQuality.premium

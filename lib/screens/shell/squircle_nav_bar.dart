@@ -1,6 +1,6 @@
 import 'dart:math' as math;
-
 import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,7 +27,9 @@ import 'package:liquid_glass_widgets/widgets/shared/glass_effect.dart';
 /// - **点击/拖动双交互**：点击切换；横向拖动浮块跟手平移（凹口实时
 ///   跟随、经过槽点亮预览），松手吸附最近槽触发接力动效。
 
-/// 698 N74d：分平台玻璃 quality（Impeller premium 真透底 / Skia standard）。
+/// 玻璃 quality（698 N74d/N76）：Impeller 可用 → premium 真透底
+/// （BackdropFilter）；否则 standard 截帧。安卓已全端开启 Impeller
+/// （Manifest meta-data，iOS/鸿蒙引擎自带），手机三端 + TV 同管线。
 lg.GlassQuality get _navGlassQuality =>
     (!kIsWeb && ui.ImageFilter.isShaderFilterSupported)
         ? lg.GlassQuality.premium

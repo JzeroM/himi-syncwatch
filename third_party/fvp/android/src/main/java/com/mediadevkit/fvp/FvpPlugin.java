@@ -48,6 +48,10 @@ public class FvpPlugin implements FlutterPlugin, MethodCallHandler {
     } catch (PackageManager.NameNotFoundException e) {
         throw new RuntimeException(e);
     }
+    // 698 N76：与引擎同源读取 Manifest meta-data（单一事实源）。
+    // 引擎 FlutterLoader 把同一 meta-data 转成 --enable-impeller；
+    // 这里据此选择 SurfaceProducer（Impeller）/SurfaceTexture（Skia），
+    // 两边永远成对，杜绝「引擎 Impeller + 插件 SurfaceTexture」黑屏。
     impeller = false;
     if (metaData != null) {
       impeller = metaData.getBoolean("io.flutter.embedding.android.EnableImpeller", false);

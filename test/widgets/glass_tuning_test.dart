@@ -232,81 +232,60 @@ void main() {
     });
   });
 
-  group('iOS 专属调参（standard 路径，更透亮）', () {
-    test('iOS 的 glassDefault 用 GlassIosStandard 微调组', () {
+  group('698 N76：手机端三端玻璃默认同源（iOS 不再微调）', () {
+    test('iOS glassDefault 与安卓同为 spec 默认', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      expect(glassDefault('glassBlur'), GlassIosStandard.blur);
-      expect(glassDefault('glassThickness'), GlassIosStandard.thickness);
-      expect(glassDefault('glassSaturation'), GlassIosStandard.saturation);
-      expect(
-          glassDefault('glassLightIntensity'), GlassIosStandard.lightIntensity);
-      // 非微调项仍与 spec 同源
-      expect(
-        glassDefault('glassChromatic'),
-        glassParamSpecs
-            .firstWhere((s) => s.key == 'glassChromatic')
-            .defaultValue,
-      );
-      // 微调方向：比 spec 默认更透亮（降模糊/厚度/高光、升饱和）
-      final blurSpec = glassParamSpecs.firstWhere((s) => s.key == 'glassBlur');
-      expect(GlassIosStandard.blur, lessThan(blurSpec.defaultValue));
-      expect(
-          GlassIosStandard.thickness,
-          lessThanOrEqualTo(glassParamSpecs
-              .firstWhere((s) => s.key == 'glassThickness')
-              .defaultValue),
-          reason: 'N48：iOS 与安卓统一 18（折弯平滑）');
-      expect(
-          GlassIosStandard.lightIntensity,
-          lessThan(glassParamSpecs
-              .firstWhere((s) => s.key == 'glassLightIntensity')
-              .defaultValue));
-    });
-
-    test('iOS toThemeData 不强制 premium 画质且降环境白光', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final data = const GlassTuning().toThemeData();
-      expect(data.light.quality, isNull,
-          reason: '不再对 iOS 强制 GlassQuality.premium');
-      expect(data.light.settings?.ambientStrength,
-          GlassIosStandard.ambientStrength);
-    });
-
-    test('iOS 走 GlassBodyMode.clear（去 standard PATH B 的硬编码霜底/灰化）', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final data = const GlassTuning().toThemeData();
-      expect(data.dark.settings?.bodyMode, GlassBodyMode.clear);
-      expect(data.light.settings?.bodyMode, GlassBodyMode.clear);
-      // 传到真正渲染用的 LiquidGlassSettings
-      final resolved = data.dark.settings!.applyTo(const LiquidGlassSettings());
-      expect(resolved.bodyMode, GlassBodyMode.clear);
-    });
-
-    test('iOS clear 模式体色全透明（glassColor alpha=0）+ 降饱和/去模糊/降高光', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final s = const GlassTuning().toThemeData().dark.settings!;
-      expect(s.glassColor!.a, GlassIosStandard.glassColorAlpha);
-      expect(s.glassColor!.a, 0.0, reason: '体色全透明 → 背景最大透出');
-      expect(s.blur, GlassIosStandard.blur);
-      expect(s.blur, 0);
-      expect(s.saturation, GlassIosStandard.saturation);
-      expect(s.lightIntensity, GlassIosStandard.lightIntensity);
-    });
-
-    test('安卓/其余平台 bodyMode 保持默认 adaptive（不传）', () {
+      for (final spec in glassParamSpecs) {
+        expect(glassDefault(spec.key), spec.defaultValue,
+            reason: 'iOS ${spec.key} 应取 spec 默认');
+      }
+      final ios = {
+        for (final spec in glassParamSpecs) spec.key: glassDefault(spec.key),
+      };
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
-      final data = const GlassTuning().toThemeData();
-      expect(data.dark.settings?.bodyMode, isNull, reason: '未覆盖 → 交给包默认');
-      final resolved = data.dark.settings!.applyTo(const LiquidGlassSettings());
-      expect(resolved.bodyMode, GlassBodyMode.adaptive);
+      final android = {
+        for (final spec in glassParamSpecs) spec.key: glassDefault(spec.key),
+      };
+      expect(ios, android, reason: 'iOS 与安卓默认值完全一致');
     });
 
-    test('安卓沿用 spec 默认（不受 iOS 微调影响）', () {
+    test('iOS toThemeData 与安卓完全一致（无 clear body/降白补偿）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final ios = const GlassTuning().toThemeData();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final android = const GlassTuning().toThemeData();
+      for (final pair in [
+        (ios.light, android.light),
+        (ios.dark, android.dark),
+      ]) {
+        final a = pair.$1.settings;
+        final b = pair.$2.settings;
+        expect(a?.blur, b?.blur);
+        expect(a?.thickness, b?.thickness);
+        expect(a?.saturation, b?.saturation);
+        expect(a?.lightIntensity, b?.lightIntensity);
+        expect(a?.glassColor, b?.glassColor);
+        expect(a?.bodyMode, b?.bodyMode);
+      }
+      final resolved = ios.dark.settings!.applyTo(const LiquidGlassSettings());
+      expect(resolved.bodyMode, GlassBodyMode.adaptive,
+          reason: '未覆盖 bodyMode → 包默认 adaptive（原 iOS 强制 clear 已移除）');
+    });
+
+    test('iOS 不再给 ambientStrength/glassColor 归零补偿（与安卓相同）', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final ios = const GlassTuning().toThemeData().dark.settings!;
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final android = const GlassTuning().toThemeData().dark.settings!;
+      expect(ios.ambientStrength, android.ambientStrength,
+          reason: '不再强制 0，与安卓一致');
+      expect(ios.glassColor, android.glassColor, reason: '不再强制全透明');
+    });
+
+    test('安卓沿用 spec 默认', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(

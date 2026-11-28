@@ -3982,15 +3982,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   /// 由 Qt 的 `raised` 帧触发——用户点了 Qt 视频窗，面板也要跟上来，
   /// 否则会出现「视频在前面、面板在后面」的割裂观感。
   ///
-  /// 【为什么不调 focus()】`focus()` 会把**键盘焦点**抢到面板窗，用户
-  /// 刚点的 Qt 视频窗立刻失活（空格/方向键全失效）。这里只做「提到
-  /// 非置顶层最前」——`show(inactive: true)` 正好是这个语义：显示但
-  /// 不激活。
+  /// 【实际行为注意】`window_manager 0.5.2` 的 Windows 实现**忽略
+  /// `inactive`**：`Show()` 恒 `ShowWindowAsync + SetForegroundWindow`，
+  /// 因此本方法会把焦点抢到面板（`inactive` 参数不生效）。
+  /// 房间并排时两窗相邻，抢焦点可接受；单人模式不再走本方法
+  /// （见 `_safePopPlayerPage`：pop 后显式抬主窗）。
   Future<void> _raisePanelWithQt() async {
     if (!mounted || _disposed) return;
     if (defaultTargetPlatform != TargetPlatform.windows) return;
-    // 698 N75：单人模式也抬面板（原 roomCode==null 拦截导致单人点 Qt
-    // 窗面板不跟着抬、被 Qt 窗挡无法操作）。show(inactive) 不抢焦点。
+    // 698 N76：Qt 侧联动信号仅在联动开关（topmost_）开启时发出，单人模式
+    // 不启用该开关且不注册 onRaised——本方法实际只服务房间并排。
     try {
       await windowManager.show(inactive: true);
     } catch (e) {
@@ -9649,6 +9650,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       Navigator.pop(context);
+    }
+    // 698 N76：单人模式 Qt 窗接管后（`forceForeground()` 恒在最前）主窗
+    // 一直被压在后面，用户「无法操作 Flutter 窗换资源」。这里在回到详情页
+    // 后把主窗抬回前台——Qt 继续在后台播放，想看画面点任务栏（680 两窗
+    // 都有任务栏项）或播放窗即可。
+    //
+    // 【为什么只单人】房间并排两窗本就同层联动；多余抬升会破坏面板摆位。
+    if (widget.roomCode == null &&
+        defaultTargetPlatform == TargetPlatform.windows) {
+      try {
+        await Future<void>.delayed(Duration.zero);
+        await windowManager.show();
+        LogService().log('Player', '单人：已把主窗抬回前台（Qt 后台播放）');
+      } catch (e) {
+        LogService().log('Player', '单人返回主窗抬升失败: $e');
+      }
     }
   }
 

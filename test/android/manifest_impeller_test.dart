@@ -2,11 +2,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+/// 698 N76：Android 渲染后端守卫。
+///
+/// 需求：**全端 Impeller**（手机 + TV），玻璃 premium 真透底
+/// （BackdropFilter）观感一致。
+///
+/// 落地：Manifest meta-data 是**单一事实源**——
+/// - 引擎 `FlutterLoader` 读到 `true` → `--enable-impeller=true`；
+/// - fvp 插件 `FvpPlugin` 读同一 meta-data → `SurfaceProducer`（Impeller）
+///   而不是 `SurfaceTexture`（Skia）。
+/// 两边同源，杜绝「引擎 Impeller + 插件 SurfaceTexture」的黑屏错配
+/// （v1.1.61 RK3528 盒子回归的根因）。
+///
+/// 回退：只把 meta-data 改回 false，引擎与插件自动成对回到 Skia。
 void main() {
   const manifestPath = 'android/app/src/main/AndroidManifest.xml';
+  const fvpPluginPath = 'third_party/fvp/android/src/main/java/'
+      'com/mediadevkit/fvp/FvpPlugin.java';
 
-  group('AndroidManifest Impeller 配置', () {
-    test('EnableImpeller 显式声明且为 false（fvp 纹理路径依赖）', () {
+  group('AndroidManifest Impeller 配置（单一事实源）', () {
+    test('EnableImpeller meta-data 显式声明且为 true（全端 Impeller）', () {
       final xml = File(manifestPath).readAsStringSync();
       final match = RegExp(
         '<meta-data\\s+'
@@ -18,15 +33,33 @@ void main() {
       expect(
         match,
         isNotNull,
-        reason: '必须显式声明 EnableImpeller meta-data：'
-            '删除后 fvp 按 false 注册 SurfaceTexture，'
-            '而引擎缺省开启 Impeller，会错配导致黑屏',
+        reason: '必须显式声明：它是引擎与 fvp 的共同事实源，'
+            '删除后插件按 false 注册 SurfaceTexture，会与引擎错配黑屏',
       );
       expect(
         match!.group(1),
-        'false',
-        reason: '必须为 false：Impeller 外部纹理合成在部分设备'
-            '（如 RK3528 盒子）黑帧，Skia + SurfaceTexture 才是可用组合',
+        'true',
+        reason: '698 N76：全端（手机 + TV）启用 Impeller，玻璃 premium 一致',
+      );
+    });
+
+    test('fvp 插件从 meta-data 读取 Impeller（与引擎同源）', () {
+      final java = File(fvpPluginPath).readAsStringSync();
+      expect(
+        java,
+        contains(
+            'io.flutter.embedding.android.EnableImpeller'),
+        reason: '插件必须读同一 meta-data key',
+      );
+      expect(
+        java,
+        contains('createSurfaceProducer'),
+        reason: 'Impeller 下必须用 SurfaceProducer',
+      );
+      expect(
+        java,
+        isNot(contains('impeller = true;')),
+        reason: '不能硬编码：硬编码会与引擎来源脱钩，回退时可能错配',
       );
     });
   });
